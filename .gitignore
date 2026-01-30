@@ -2,6 +2,7 @@ config/*
 
 !config/custom_components/
 !config/configuration.yaml
+!config/ui-lovelace.yaml
 
 config/custom_components/green_shift/__pycache__/
 
