@@ -227,7 +227,7 @@ Green Shift implements a **Markov Decision Process** (MDP):
 
 $$\langle S, A, M, P, R, \gamma \rangle$$
 
-**S - State Vector** (12 components):
+**S - State Vector** (9 components):
 - Total power consumption + existence flag
 - Individual appliance power + existence flag
 - Temperature + existence flag
