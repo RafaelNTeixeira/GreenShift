@@ -6,6 +6,8 @@ default_config:
 frontend:
   themes: !include_dir_merge_named themes
 
+green_shift:
+
 automation: !include automations.yaml
 script: !include scripts.yaml
 scene: !include scenes.yaml

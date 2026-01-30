@@ -1,0 +1,11 @@
+{
+  "domain": "green_shift",
+  "name": "Green Shift",
+  "codeowners": ["@RafaelNTeixeira"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/RafaelNTeixeira/GreenShift",
+  "iot_class": "local_polling",
+  "requirements": ["numpy>=1.21.0"],
+  "version": "1.0.0"
+}

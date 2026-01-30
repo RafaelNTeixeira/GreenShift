@@ -3,8 +3,11 @@ config/*
 !config/custom_components/
 !config/configuration.yaml
 
+config/custom_components/green_shift/__pycache__/
+
 config/secrets.yaml
 config/home-assistant_v2.db
 config/.storage/
 config/*.log
 config/backups/
+
