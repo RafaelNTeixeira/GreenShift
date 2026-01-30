@@ -3,6 +3,9 @@ config/*
 !config/custom_components/
 !config/configuration.yaml
 !config/ui-lovelace.yaml
+!config/input_booleans.yaml 
+!config/input_numbers.yaml 
+!config/input_selects.yaml
 
 config/custom_components/green_shift/__pycache__/
 

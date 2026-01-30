@@ -1,0 +1,16 @@
+currency:
+  name: "Currency"
+  icon: mdi:currency-eur
+  options:
+    - EUR
+    - USD
+    - GBP
+  initial: EUR
+
+task_difficulty:
+  name: "Task Difficulty"
+  options:
+    - too_easy
+    - just_right
+    - too_hard
+  initial: just_right

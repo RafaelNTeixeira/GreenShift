@@ -6,9 +6,21 @@ default_config:
 frontend:
   themes: !include_dir_merge_named themes
 
-#lovelace:
-#  mode: yaml
-#  resources: []
+# Lovelace UI configuration (YAML mode)
+lovelace:
+  mode: yaml
+  resources: []
+  dashboards:
+    lovelace-green-shift:
+      mode: yaml
+      filename: ui-lovelace.yaml
+      title: Green Shift
+      icon: mdi:leaf
+
+# Load helpers (separated by type)
+input_number: !include input_numbers.yaml
+input_select: !include input_selects.yaml
+input_boolean: !include input_booleans.yaml
 
 automation: !include automations.yaml
 script: !include scripts.yaml

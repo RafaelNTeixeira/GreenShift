@@ -211,6 +211,7 @@ class DecisionAgent:
             )
             _LOGGER.info("Action executed: %s", action_name)
     
+    # TODO: Implement reward update after user feedback
     def update_reward(self, feedback: str):
         """
         Updates Q-table with user feedback.

@@ -1,0 +1,19 @@
+energy_saving_target:
+  name: "Savings Target (%)"
+  unit_of_measurement: "%"
+  min: 0
+  max: 50
+  step: 5
+  mode: slider
+  icon: mdi:target
+  initial: 15
+
+electricity_price:
+  name: "Electricity Price (€/kWh)"
+  unit_of_measurement: "€/kWh"
+  min: 0.10
+  max: 0.50
+  step: 0.01
+  mode: box
+  icon: mdi:currency-eur
+  initial: 0.25

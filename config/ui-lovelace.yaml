@@ -1,0 +1,256 @@
+title: Energy Research Platform
+views:
+  # ========== TAB 1: DEVICES (Always Visible) ==========
+  - title: Devices
+    path: devices
+    icon: mdi:power-plug
+    badges: []
+    cards:
+      - type: markdown
+        content: |
+          # Monitored Devices
+          Real-time consumption of each automatically discovered smart plug.
+      
+      # Dynamic card: repeats for each power sensor
+      - type: entities
+        title: Consumption by Device
+        entities:
+          - entity: sensor.current_consumption
+            name: Total Consumption
+            icon: mdi:lightning-bolt
+      
+      # Placeholder for auto-discovered sensors
+      - type: markdown
+        content: |
+          **Note**: Devices are automatically discovered by Green Shift.
+          Access the Entity Registry to see all active sensors.
+
+  # ========== TAB 2: DASHBOARD (Always Visible) ==========
+  - title: Dashboard
+    path: dashboard
+    icon: mdi:chart-line
+    badges: []
+    cards:
+      # Calibration banner (visible only during baseline)
+      - type: conditional
+        conditions:
+          - entity: sensor.research_phase
+            state: baseline
+        card:
+          type: markdown
+          content: |
+            ## Calibration Mode
+            The system is learning your consumption patterns.
+            **{{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining**
+            
+            During this period, you will not receive notifications or challenges.
+      
+      # Graph: Current Consumption vs Baseline
+      - type: history-graph
+        title: Consumption vs Baseline (Last Week)
+        hours_to_show: 168
+        entities:
+          - entity: sensor.current_consumption
+            name: Current Consumption
+          - entity: sensor.energy_baseline
+            name: Baseline
+
+      # Summary statistics
+      - type: glance
+        title: Weekly Summary
+        entities:
+          - entity: sensor.current_consumption
+            name: Current Consumption
+            icon: mdi:lightning-bolt
+          - entity: sensor.energy_baseline
+            name: Baseline
+            icon: mdi:chart-line
+          - entity: sensor.savings_accumulated
+            name: Savings
+            icon: mdi:currency-eur
+
+  # ========== TAB 3: USER PROFILE (Always Visible) ==========
+  - title: Profile
+    path: profile
+    icon: mdi:account-circle
+    badges: []
+    cards:
+      # Calibration banner
+      - type: conditional
+        conditions:
+          - entity: sensor.research_phase
+            state: baseline
+        card:
+          type: markdown
+          content: |
+            ## Profile Under Construction
+            **Calibration Mode**: {{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining
+            
+            Your profile will be available after the initial phase.
+
+      # Accumulated statistics
+      - type: glance
+        title: Total Impact
+        entities:
+          - entity: sensor.savings_accumulated
+            name: Savings
+            icon: mdi:currency-eur
+          - entity: sensor.co2_saved
+            name: CO2 Avoided
+            icon: mdi:leaf
+          - entity: sensor.tasks_completed
+            name: Tasks
+            icon: mdi:check-circle
+
+      # Behavior indices
+      - type: entities
+        title: Engagement Metrics
+        entities:
+          - entity: sensor.behaviour_index
+            name: Adherence Index
+            icon: mdi:thumb-up
+          - entity: sensor.fatigue_index
+            name: Fatigue Index
+            icon: mdi:alert-circle
+
+      # Weekly progress
+      - type: gauge
+        entity: sensor.collaborative_goal_progress
+        name: Weekly Target
+        min: 0
+        max: 100
+        severity:
+          green: 0
+          yellow: 85
+          red: 100
+
+  # ========== TAB 4: SETTINGS (Always Visible) ==========
+  - title: Settings
+    path: settings
+    icon: mdi:cog
+    badges: []
+    cards:
+      - type: markdown
+        content: |
+          # System Settings
+
+      - type: entities
+        title: Goals and Preferences
+        entities:
+          - entity: input_number.energy_saving_target
+            name: Savings Target (%)
+          - entity: input_select.currency
+            name: Currency
+          - entity: input_number.electricity_price
+            name: Electricity Price (€/kWh)
+          - entity: input_boolean.enable_notifications
+            name: Enable Notifications
+
+      - type: markdown
+        content: |
+          ## System Status
+      
+      - type: entities
+        title: Status
+        entities:
+          - entity: sensor.research_phase
+            name: Operating Phase
+          - entity: sensor.energy_baseline
+            name: Learned Baseline
+          - entity: sensor.behaviour_index
+            name: Behavior Index
+
+  # ========== TAB 5: CHALLENGES (Locked until active phase) ==========
+  - title: Challenges
+    path: tasks
+    icon: mdi:clipboard-check
+    badges: []
+    # Conditional visibility: only if phase == active
+    visible:
+      - condition: state
+        entity: sensor.research_phase
+        state: active
+    cards:
+      - type: markdown
+        content: |
+          # Daily Challenges
+          Complete tasks to improve your energy efficiency!
+
+      # Daily tasks
+      - type: entities
+        title: Today's Tasks
+        entities:
+          - entity: input_boolean.task_1
+            name: Turn off standby before bed
+          - entity: input_boolean.task_2
+            name: Use natural light during the day
+          - entity: input_boolean.task_3
+            name: Avoid heating above 20°C
+
+      # Feedback on difficulty
+      - type: entities
+        title: How did you find the challenge?
+        entities:
+          - entity: input_select.task_difficulty
+            name: Difficulty Level
+
+      - type: markdown
+        content: |
+          **Tip**: Rate the difficulty to help us improve future challenges!
+
+  # ========== TAB 6: COLLABORATIVE GOAL (Locked until active phase) ==========
+  - title: Collaborative Goal
+    path: collaborative
+    icon: mdi:account-group
+    badges: []
+    visible:
+      - condition: state
+        entity: sensor.research_phase
+        state: active
+    cards:
+      - type: markdown
+        content: |
+          # Collaborative Goal
+          Work with your department to achieve the reduction target!
+
+      # Progress gauge
+      - type: gauge
+        entity: sensor.collaborative_goal_progress
+        name: Group Consumption vs Limit
+        min: 0
+        max: 100
+        severity:
+          green: 0
+          yellow: 85
+          red: 100
+        needle: true
+
+      # Goal details
+      - type: entities
+        title: Goal Details
+        entities:
+          - entity: sensor.collaborative_goal_progress
+            name: Progress
+
+      # Motivational message (below limit)
+      - type: conditional
+        conditions:
+          - entity: sensor.collaborative_goal_progress
+            state_not: "100"
+            state: "< 100"
+        card:
+          type: markdown
+          content: |
+            ### Congratulations!
+            Your group is within the target. Keep it up!
+      
+      # Alert message (above limit)
+      - type: conditional
+        conditions:
+          - entity: sensor.collaborative_goal_progress
+            state: "> 100"
+        card:
+          type: markdown
+          content: |
+            ### Attention
+            The group has exceeded the limit. Small individual actions make a difference!
