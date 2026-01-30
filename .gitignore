@@ -1,1 +1,10 @@
-/config
+config/*
+
+!config/custom_components/
+!config/configuration.yaml
+
+config/secrets.yaml
+config/home-assistant_v2.db
+config/.storage/
+config/*.log
+config/backups/
