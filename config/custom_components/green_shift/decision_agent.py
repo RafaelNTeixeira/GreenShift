@@ -331,7 +331,7 @@ class DecisionAgent:
             return False
         return state.state.lower() in ["on", "true", "detected"]
     
-    # TODO: Place daily tasks in separate module
+    # TODO: Place daily tasks in separate module and call this function periodically
     def _generate_daily_tasks(self):
         """Generates 3 random daily tasks based on available sensors."""
         today = datetime.now().date()
@@ -397,6 +397,7 @@ class DecisionAgent:
         
         _LOGGER.info("Generated daily tasks: %s", [t["title"] for t in self.daily_tasks])
     
+    # TODO: Call this function periodically
     def _update_weekly_baseline(self):
         """Updates the fixed baseline once per week."""
         today = datetime.now().date()
@@ -410,6 +411,7 @@ class DecisionAgent:
                 self.baseline_consumption_week = np.mean(self.consumption_history)
                 _LOGGER.info("Weekly baseline updated: %.2f W", self.baseline_consumption_week)
     
+    # TODO: Call this function when needed
     def get_weekly_challenge_status(self) -> dict:
         """Calculates weekly challenge status (consumption reduction goal)."""
         # Use fixed weekly baseline for consistent comparison

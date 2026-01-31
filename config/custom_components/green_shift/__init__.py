@@ -55,8 +55,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             agent.phase = PHASE_ACTIVE
             # Freeze baseline_consumption and set fixed baseline for active phase
             agent.baseline_consumption_week = agent.baseline_consumption
-            _LOGGER.info("System entered active phase after %d days with baseline: %.2f W", 
-                        days_running, agent.baseline_consumption)
+            _LOGGER.info("System entered active phase after %d days with baseline: %.2f W", days_running, agent.baseline_consumption)
     
     hass.data[DOMAIN]["update_listener"] = async_track_time_interval(
         hass, update_agent, timedelta(seconds=UPDATE_INTERVAL_SECONDS)
