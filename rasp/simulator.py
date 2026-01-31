@@ -20,7 +20,7 @@ current_values = {
     "total_e": 120.0,  # Total House Energy (kWh)
     "plug_a_e": 15.0,  # Plug A Energy (kWh)
     "plug_b_e": 8.0,   # Plug B Energy (kWh)
-    "plug_c_w": 4.5,  # Plug C Power (kW)
+    "plug_c_w": 45.0,  # Plug C Power (W)
     "presence": "OFF"
 }
 
@@ -61,7 +61,7 @@ def publish_discovery():
         (HUB_ID, "Overall Consumption", "energy", "kWh", hub_device, "total_e", "total_increasing"),
         (PLUG_A_ID, "Plug Alpha Consumption", "energy", "kWh", plug_a_device, "energy", "total_increasing"),
         (PLUG_B_ID, "Plug Beta Consumption", "energy", "kWh", plug_b_device, "energy", "total_increasing"),
-        (PLUG_C_ID, "Plug Charlie Power", "power", "kW", plug_c_device, "power", "measurement")
+        (PLUG_C_ID, "Plug Charlie Power", "power", "W", plug_c_device, "power", "measurement")
     ]
 
     for dev_id, name, d_class, unit, dev_info, v_key, s_class in sensor_configs:
@@ -134,7 +134,7 @@ try:
         client.publish(f"homeassistant/sensor/{PLUG_B_ID}/state", json.dumps({"energy": round(current_values["plug_b_e"], 4)}))
         client.publish(f"homeassistant/sensor/{PLUG_C_ID}/state", json.dumps({"power": round(current_values["plug_c_w"], 1)}))
 
-        print(f"Update: Temp {hub_data['temp']}°C | Energy Total {hub_data['total_e']} kWh | Presence {hub_data['presence']} | Plug A {round(current_values['plug_a_e'],4)} kWh | Plug B {round(current_values['plug_b_e'],4)} kWh | Plug C {round(current_values['plug_c_w'],1)} kW")
+        print(f"Update: Temp {hub_data['temp']}°C | Energy Total {hub_data['total_e']} kWh | Presence {hub_data['presence']} | Plug A {round(current_values['plug_a_e'],4)} kWh | Plug B {round(current_values['plug_b_e'],4)} kWh | Plug C {round(current_values['plug_c_w'],1)} W")
         
         # Every 5 seconds
         time.sleep(5) 

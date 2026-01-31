@@ -17,6 +17,7 @@ async def async_setup_entry(
 ) -> None:
     """Setup of virtual sensors."""
     agent = hass.data[DOMAIN]["agent"]
+    collector = hass.data[DOMAIN]["collector"]
     start_date = hass.data[DOMAIN]["start_date"]
     discovered_sensors = hass.data[DOMAIN]["discovered_sensors"]
     
@@ -24,14 +25,14 @@ async def async_setup_entry(
         HardwareSensorsSensor(hass, discovered_sensors),
         ResearchPhaseSensor(agent, start_date),
         EnergyBaselineSensor(agent),
-        CurrentConsumptionSensor(agent),
-        CostConsumptionSensor(hass, agent),
-        SavingsAccumulatedSensor(agent),
-        CO2SavedSensor(agent),
+        CurrentConsumptionSensor(collector),
+        CostConsumptionSensor(hass, collector),
+        SavingsAccumulatedSensor(agent, collector),
+        CO2SavedSensor(agent, collector),
         TasksCompletedSensor(agent),
         DailyTasksSensor(agent),
         WeeklyChallengeSensor(agent),
-        CollaborativeGoalSensor(agent),
+        CollaborativeGoalSensor(agent, collector),
         BehaviourIndexSensor(agent),
         FatigueIndexSensor(agent),
     ]
@@ -106,7 +107,7 @@ class EnergyBaselineSensor(SensorEntity):
         self._agent = agent
         self._attr_name = "Energy Baseline"
         self._attr_unique_id = f"{DOMAIN}_baseline"
-        self._attr_unit_of_measurement = "W"
+        self._attr_unit_of_measurement = "kW"
         self._attr_device_class = "power"
         self._attr_icon = "mdi:chart-line"
     
@@ -117,27 +118,25 @@ class EnergyBaselineSensor(SensorEntity):
 
 
 class CurrentConsumptionSensor(SensorEntity):
-    """Sensor with the current consumption."""
+    """Sensor with the current consumption from DataCollector."""
     
-    def __init__(self, agent):
-        self._agent = agent
+    def __init__(self, collector):
+        self._collector = collector
         self._attr_name = "Current Consumption"
         self._attr_unique_id = f"{DOMAIN}_current"
-        self._attr_unit_of_measurement = "W"
+        self._attr_unit_of_measurement = "kW"
         self._attr_device_class = "power"
     
     @property
     def state(self):
-        if len(self._agent.consumption_history) > 0:
-            return round(self._agent.consumption_history[-1], 2)
-        return 0
+        return round(self._collector.current_total_power, 3)
     
 class CostConsumptionSensor(SensorEntity):
-    """Sensor that calculates the current cost per hour based on consumption."""
+    """Sensor that calculates the current cost per hour based on consumption from DataCollector."""
 
-    def __init__(self, hass, agent):
+    def __init__(self, hass, collector):
         self.hass = hass
-        self._agent = agent
+        self._collector = collector
         self._attr_name = "Current Hourly Cost"
         self._attr_unique_id = f"{DOMAIN}_current_cost"
         self._attr_unit_of_measurement = "EUR/h"
@@ -147,15 +146,11 @@ class CostConsumptionSensor(SensorEntity):
     def unit_of_measurement(self):
         """Dynamic unit based on input_select."""
         currency_state = self.hass.states.get("input_select.currency")
-        # Default to EUR/h if the input_select is missing
-        return f"{currency_state.state}/h" if currency_state else "EUR/h"
+        
+        return f"{currency_state.state}/h" if currency_state else "EUR/h" # Default to EUR/h if the input_select is missing
 
     @property
     def state(self):
-        if not self._agent.consumption_history:
-            return 0
-        current_kWh = self._agent.consumption_history[-1]
-
         # Get electricity price from input_number (default to 0.25 if unavailable)
         price_state = self.hass.states.get("input_number.electricity_price")
         try:
@@ -163,7 +158,7 @@ class CostConsumptionSensor(SensorEntity):
         except (ValueError, TypeError):
             price_per_kwh = 0.25
 
-        cost_hourly = current_kWh * price_per_kwh
+        cost_hourly = self._collector.current_total_power * price_per_kwh
         
         return round(cost_hourly, 3)
 
@@ -179,8 +174,9 @@ class CostConsumptionSensor(SensorEntity):
 class SavingsAccumulatedSensor(SensorEntity):
     """Sensor with the accumulated savings in EUR."""
     
-    def __init__(self, agent):
+    def __init__(self, agent, collector):
         self._agent = agent
+        self._collector = collector
         self._attr_name = "Savings Accumulated"
         self._attr_unique_id = f"{DOMAIN}_savings"
         self._attr_unit_of_measurement = "EUR"
@@ -189,17 +185,16 @@ class SavingsAccumulatedSensor(SensorEntity):
     @property
     def state(self):
         # Calculate savings: (baseline - avg_consumption) * kWh_price * hours
-        if len(self._agent.consumption_history) < 10:
+        consumption_history = self._collector.get_consumption_history()
+        if len(consumption_history) < 10:
             return 0
         
-        avg_consumption = sum(self._agent.consumption_history) / len(
-            self._agent.consumption_history
-        )
+        avg_consumption = sum(consumption_history) / len(consumption_history)
         saving_watts = self._agent.baseline_consumption - avg_consumption
         
         # Convert to kWh and multiply by price (€0.25/kWh estimated)
         # 15-second intervals: 240 readings per hour
-        hours = len(self._agent.consumption_history) / 240
+        hours = len(consumption_history) / 240
         saving_kwh = (saving_watts * hours) / 1000
         savings_eur = saving_kwh * 0.25
         
@@ -209,8 +204,9 @@ class SavingsAccumulatedSensor(SensorEntity):
 class CO2SavedSensor(SensorEntity):
     """Sensor with the saved CO2 (kg)."""
     
-    def __init__(self, agent):
+    def __init__(self, agent, collector):
         self._agent = agent
+        self._collector = collector
         self._attr_name = "CO2 Saved"
         self._attr_unique_id = f"{DOMAIN}_co2"
         self._attr_unit_of_measurement = "kg"
@@ -219,16 +215,15 @@ class CO2SavedSensor(SensorEntity):
     @property
     def state(self):
         # CO2: ~0.5 kg/kWh (mix energy Portugal)
-        if len(self._agent.consumption_history) < 10:
+        consumption_history = self._collector.get_consumption_history()
+        if len(consumption_history) < 10:
             return 0
         
-        avg_consumption = sum(self._agent.consumption_history) / len(
-            self._agent.consumption_history
-        )
+        avg_consumption = sum(consumption_history) / len(consumption_history)
         saving_watts = self._agent.baseline_consumption - avg_consumption
         
         # 15-second intervals: 240 readings per hour
-        hours = len(self._agent.consumption_history) / 240
+        hours = len(consumption_history) / 240
         saving_kwh = (saving_watts * hours) / 1000
         co2_saved = saving_kwh * 0.5
         
@@ -299,8 +294,9 @@ class WeeklyChallengeSensor(SensorEntity):
 class CollaborativeGoalSensor(SensorEntity):
     """Sensor with the collaborative goal progress (% of limit)."""
     
-    def __init__(self, agent):
+    def __init__(self, agent, collector):
         self._agent = agent
+        self._collector = collector
         self._attr_name = "Collaborative Goal Progress"
         self._attr_unique_id = f"{DOMAIN}_collab_goal"
         self._attr_unit_of_measurement = "%"
@@ -309,10 +305,10 @@ class CollaborativeGoalSensor(SensorEntity):
     @property
     def state(self):
         # Simulation: consumption of group vs. limit (85% of baseline)
-        if len(self._agent.consumption_history) == 0:
+        current = self._collector.current_total_power
+        if current == 0:
             return 0
         
-        current = self._agent.consumption_history[-1]
         # Use fixed baseline for consistent comparison during active phase
         baseline = self._agent.baseline_consumption_week or self._agent.baseline_consumption
         limit = baseline * 0.85  # Meta: -15%

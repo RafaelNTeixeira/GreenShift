@@ -25,7 +25,7 @@ views:
 
       # POWER SECTION
       - type: grid
-        title: ⚡ Live Power (Watts)
+        title: ⚡ Live Power
         columns: 1
         square: false
         cards:
@@ -332,11 +332,11 @@ views:
       - type: markdown
         content: |
           {% set challenge = state_attr('sensor.weekly_challenge', '__dict__') %}
-          **Current Average**: {{ state_attr('sensor.weekly_challenge', 'current_avg_w') }} W
+          **Current Average**: {{ state_attr('sensor.weekly_challenge', 'current_avg_w') }} kW
           
-          **Target Average**: {{ state_attr('sensor.weekly_challenge', 'target_avg_w') }} W
+          **Target Average**: {{ state_attr('sensor.weekly_challenge', 'target_avg_w') }} kW
           
-          **Baseline**: {{ state_attr('sensor.weekly_challenge', 'baseline_w') }} W
+          **Baseline**: {{ state_attr('sensor.weekly_challenge', 'baseline_w') }} kW
           
           **Status**: 
           {% if state_attr('sensor.weekly_challenge', 'status') == 'completed' %}

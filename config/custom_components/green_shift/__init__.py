@@ -15,6 +15,7 @@ from .const import (
     BASELINE_DAYS,
     UPDATE_INTERVAL_SECONDS,
 )
+from .data_collector import DataCollector
 from .decision_agent import DecisionAgent
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,8 +30,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Auto-discovery of the sensors
     discovered_sensors = await async_discover_sensors(hass)
     
-    # Initialize the decision agent
-    agent = DecisionAgent(hass, discovered_sensors)
+    # Initialize the real-time data collector
+    collector = DataCollector(hass, discovered_sensors)
+    await collector.setup()
+    
+    # Initialize the decision agent (AI)
+    agent = DecisionAgent(hass, discovered_sensors, collector)
+    
+    hass.data[DOMAIN]["collector"] = collector
     hass.data[DOMAIN]["agent"] = agent
     hass.data[DOMAIN]["discovered_sensors"] = discovered_sensors
     hass.data[DOMAIN]["start_date"] = datetime.now()
@@ -38,27 +45,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Platform setup
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     
-    # Periodic update task
-    async def update_agent(now):
-        """Update agent state periodically."""
-        await agent.update_state()
+    # Periodic AI model update task (runs every UPDATE_INTERVAL_SECONDS)
+    async def update_agent_ai_model(now):
+        """Update agent AI model periodically - processes data collected by DataCollector."""
+        _LOGGER.debug("Running AI model update cycle")
+        
+        # Run AI model processing
+        await agent.process_ai_model()
         
         days_running = (datetime.now() - hass.data[DOMAIN]["start_date"]).days
 
         # During baseline phase: continuously update baseline_consumption
-        if agent.phase == PHASE_BASELINE and len(agent.consumption_history) > 0:
-            agent.baseline_consumption = np.mean(agent.consumption_history)
-            _LOGGER.debug("Baseline consumption updated: %.2f W", agent.baseline_consumption)
+        if agent.phase == PHASE_BASELINE:
+            consumption_history = collector.get_consumption_history()
+            if len(consumption_history) > 0:
+                agent.baseline_consumption = np.mean(consumption_history)
+                _LOGGER.debug("Baseline consumption updated: %.2f kW", agent.baseline_consumption)
         
         # Verify if the baseline phase is complete
         if days_running >= BASELINE_DAYS and agent.phase == PHASE_BASELINE:
             agent.phase = PHASE_ACTIVE
             # Freeze baseline_consumption and set fixed baseline for active phase
             agent.baseline_consumption_week = agent.baseline_consumption
-            _LOGGER.info("System entered active phase after %d days with baseline: %.2f W", days_running, agent.baseline_consumption)
+            _LOGGER.info("System entered active phase after %d days with baseline: %.2f kW", 
+                        days_running, agent.baseline_consumption)
     
     hass.data[DOMAIN]["update_listener"] = async_track_time_interval(
-        hass, update_agent, timedelta(seconds=UPDATE_INTERVAL_SECONDS)
+        hass, update_agent_ai_model, timedelta(seconds=UPDATE_INTERVAL_SECONDS)
     )
     
     return True
@@ -70,6 +83,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN]["update_listener"]()
         hass.data.pop(DOMAIN)
     return unload_ok
+
 
 async def async_discover_sensors(hass: HomeAssistant) -> dict:
     entity_reg = er.async_get(hass)
@@ -110,4 +124,5 @@ async def async_discover_sensors(hass: HomeAssistant) -> dict:
             _LOGGER.debug("Entity %s classified as %s", entity_id, matched_category)
             
     _LOGGER.info("Discovery complete: %s", discovered)
+
     return discovered
