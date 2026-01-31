@@ -97,6 +97,6 @@ async def async_discover_sensors(hass: HomeAssistant) -> dict:
     
     # Log summary of discovered sensors
     for cat, entities in discovered.items():
-        _LOGGER.info("Found %d %s sensors", len(entities), cat, entities)
+        _LOGGER.info("Found %d %s sensors: %s", len(entities), cat, entities)
     
     return discovered
