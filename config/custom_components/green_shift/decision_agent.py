@@ -447,30 +447,3 @@ class DecisionAgent:
             "baseline": round(self.baseline_consumption_week, 2),
         }
     
-
-
-
-# async def _execute_action(self, action: int):
-#         """Fires a notification/service based on action."""
-#         action_name = [k for k, v in ACTIONS.items() if v == action][0]
-        
-#         # TODO: Implement actual notification logic
-#         messages = {
-#             "specific": "Tip: The heater is consuming more than normal.",
-#             "anomaly": "Anomaly detected in energy consumption.",
-#             "behavioural": "Try turning off devices in standby before going to bed.",
-#             "normative": "Your department is 15% above the weekly target.",
-#         }
-        
-#         message = messages.get(action_name, "")
-#         if message:
-#             await self.hass.services.async_call(
-#                 "persistent_notification",
-#                 "create",
-#                 {
-#                     "title": "Energy Nudge",
-#                     "message": message,
-#                     "notification_id": f"energy_nudge_{datetime.now().timestamp()}",
-#                 },
-#             )
-#             _LOGGER.info("Action executed: %s", action_name)
