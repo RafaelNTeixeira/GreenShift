@@ -79,6 +79,7 @@ class DecisionAgent:
         # Collect sensor values with zero padding
         state = []
 
+        # TODO: Need to separate energy and power sensors
         # TODO: Might need to just retrieve a single main power sensor
         # E_total, F_total (Total Power Consumption)
         power_sensors = self.sensors.get("power", [])
@@ -88,7 +89,7 @@ class DecisionAgent:
             self.consumption_history.append(total_power)
         else:
             state.extend([0.0, 0.0])
-        _LOGGER.debug("Total power consumption: %.2f W", state[0])
+        _LOGGER.debug("Total power consumption: %.2f kW", state[0])
         
         # TODO: Might need to update sensor value retrieval based on the TODO defined previously
         # E_app, F_app (Individual Appliance Power)
@@ -97,7 +98,7 @@ class DecisionAgent:
             state.extend([app_power, 1.0])
         else:
             state.extend([0.0, 0.0])
-        _LOGGER.debug("Appliance power consumption: %.2f W", state[2])
+        _LOGGER.debug("Appliance power consumption: %.2f kWh", state[2])
         
         # T_in, F_T (Temperature)
         temp_sensors = self.sensors.get("temperature", [])

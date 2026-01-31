@@ -20,7 +20,7 @@ current_values = {
     "total_e": 120.0,  # Total House Energy (kWh)
     "plug_a_e": 15.0,  # Plug A Energy (kWh)
     "plug_b_e": 8.0,   # Plug B Energy (kWh)
-    "plug_c_e": 8.0,   # Plug C Energy (kWh)
+    "plug_c_w": 4.5,  # Plug C Power (kW)
     "presence": "OFF"
 }
 
@@ -61,7 +61,7 @@ def publish_discovery():
         (HUB_ID, "Overall Consumption", "energy", "kWh", hub_device, "total_e", "total_increasing"),
         (PLUG_A_ID, "Plug Alpha Consumption", "energy", "kWh", plug_a_device, "energy", "total_increasing"),
         (PLUG_B_ID, "Plug Beta Consumption", "energy", "kWh", plug_b_device, "energy", "total_increasing"),
-        (PLUG_C_ID, "Plug Charlie Consumption", "energy", "kWh", plug_c_device, "energy", "total_increasing")
+        (PLUG_C_ID, "Plug Charlie Power", "power", "kW", plug_c_device, "power", "measurement")
     ]
 
     for dev_id, name, d_class, unit, dev_info, v_key, s_class in sensor_configs:
@@ -110,7 +110,9 @@ try:
         current_values["total_e"] += random.uniform(0.005, 0.02)
         current_values["plug_a_e"] += random.uniform(0.001, 0.005)
         current_values["plug_b_e"] += random.uniform(0.001, 0.003)
-        current_values["plug_c_e"] += random.uniform(0.001, 0.008)
+
+        # Randomly walk the wattage between 5W and 150W
+        current_values["plug_c_w"] = get_random_walk(current_values["plug_c_w"], 5.0, 150.0, 10.0)
         
         # Presence (5% chance to flip state)
         if random.random() < 0.05:
@@ -130,9 +132,9 @@ try:
         client.publish(f"homeassistant/binary_sensor/{HUB_ID}/state", json.dumps(hub_data))
         client.publish(f"homeassistant/sensor/{PLUG_A_ID}/state", json.dumps({"energy": round(current_values["plug_a_e"], 4)}))
         client.publish(f"homeassistant/sensor/{PLUG_B_ID}/state", json.dumps({"energy": round(current_values["plug_b_e"], 4)}))
-        client.publish(f"homeassistant/sensor/{PLUG_C_ID}/state", json.dumps({"energy": round(current_values["plug_c_e"], 4)}))
+        client.publish(f"homeassistant/sensor/{PLUG_C_ID}/state", json.dumps({"power": round(current_values["plug_c_w"], 1)}))
 
-        print(f"Update: Temp {hub_data['temp']}°C | Energy Total {hub_data['total_e']} kWh | Presence {hub_data['presence']} | Plug A {round(current_values['plug_a_e'],4)} kWh | Plug B {round(current_values['plug_b_e'],4)} kWh | Plug C {round(current_values['plug_c_e'],4)} kWh")
+        print(f"Update: Temp {hub_data['temp']}°C | Energy Total {hub_data['total_e']} kWh | Presence {hub_data['presence']} | Plug A {round(current_values['plug_a_e'],4)} kWh | Plug B {round(current_values['plug_b_e'],4)} kWh | Plug C {round(current_values['plug_c_w'],1)} kW")
         
         # Every 5 seconds
         time.sleep(5) 

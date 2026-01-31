@@ -25,6 +25,7 @@ async def async_setup_entry(
         ResearchPhaseSensor(agent, start_date),
         EnergyBaselineSensor(agent),
         CurrentConsumptionSensor(agent),
+        CostConsumptionSensor(hass, agent),
         SavingsAccumulatedSensor(agent),
         CO2SavedSensor(agent),
         TasksCompletedSensor(agent),
@@ -130,6 +131,49 @@ class CurrentConsumptionSensor(SensorEntity):
         if len(self._agent.consumption_history) > 0:
             return round(self._agent.consumption_history[-1], 2)
         return 0
+    
+class CostConsumptionSensor(SensorEntity):
+    """Sensor that calculates the current cost per hour based on consumption."""
+
+    def __init__(self, hass, agent):
+        self.hass = hass
+        self._agent = agent
+        self._attr_name = "Current Hourly Cost"
+        self._attr_unique_id = f"{DOMAIN}_current_cost"
+        self._attr_unit_of_measurement = "EUR/h"
+        self._attr_icon = "mdi:cash-clock"
+
+    @property
+    def unit_of_measurement(self):
+        """Dynamic unit based on input_select."""
+        currency_state = self.hass.states.get("input_select.currency")
+        # Default to EUR/h if the input_select is missing
+        return f"{currency_state.state}/h" if currency_state else "EUR/h"
+
+    @property
+    def state(self):
+        if not self._agent.consumption_history:
+            return 0
+        current_kWh = self._agent.consumption_history[-1]
+
+        # Get electricity price from input_number (default to 0.25 if unavailable)
+        price_state = self.hass.states.get("input_number.electricity_price")
+        try:
+            price_per_kwh = float(price_state.state) if price_state else 0.25
+        except (ValueError, TypeError):
+            price_per_kwh = 0.25
+
+        cost_hourly = current_kWh * price_per_kwh
+        
+        return round(cost_hourly, 3)
+
+    @property
+    def extra_state_attributes(self):
+        price_state = self.hass.states.get("input_number.electricity_price")
+        return {
+            "applied_price_per_kwh": price_state.state if price_state else "0.25 (default)",
+            "currency": "EUR"
+        }
 
 
 class SavingsAccumulatedSensor(SensorEntity):

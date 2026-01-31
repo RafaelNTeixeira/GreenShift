@@ -14,9 +14,14 @@ UPDATE_INTERVAL_SECONDS = 15
 # Sensor categories and keywords for auto-discovery
 SENSOR_MAPPING = {
     "power": {
-        "classes": [SensorDeviceClass.POWER, SensorDeviceClass.ENERGY],
-        "units": ["W", "kW", "Wh", "kWh"],
-        "keywords": ["power", "watt", "energy"]
+        "classes": ["power"],
+        "units": ["W", "kW"],
+        "keywords": ["power", "consumption", "current_load"]
+    },
+    "energy": {
+        "classes": ["energy"],
+        "units": ["kWh", "Wh"],
+        "keywords": ["energy", "total_consumption", "meter"]
     },
     "temperature": {
         "classes": [SensorDeviceClass.TEMPERATURE],

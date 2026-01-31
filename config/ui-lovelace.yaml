@@ -11,9 +11,21 @@ views:
           # Monitored Devices
           Real-time values from automatically discovered **hardware sensors**.
 
+      # LIVE POWER & COST
+      - type: horizontal-stack
+        cards:
+          - type: sensor
+            entity: sensor.current_consumption
+            name: Total Load
+            graph: line
+          - type: sensor
+            entity: sensor.current_hourly_cost
+            name: Current Hourly Cost
+            graph: line
+
       # POWER SECTION
       - type: grid
-        title: 🔌 Power Sensors
+        title: ⚡ Live Power (Watts)
         columns: 1
         square: false
         cards:
@@ -24,11 +36,34 @@ views:
               | Device | Usage |
               |:--- | ---:|
               {%- for s in sensors %}
-              | <ha-icon icon="mdi:lightning-bolt"></ha-icon> **{{ s.name }}** | `{{ s.value }} {{ s.unit }}` |
+              | <ha-icon icon="mdi:lightning-bolt" style="color:var(--energy-grid-consumption-color)"></ha-icon> **{{ s.name }}** | `{{ s.value }} {{ s.unit }}` |
               {%- endfor %}
+              | **Total Current Load** | **{{ states('sensor.current_consumption') }} kW** |
               {%- else %}
               *No power sensors detected.*
               {%- endif %}
+
+      # ENERGY SECTION (The "Odometer" Values)
+      - type: grid
+        title: 📊 Cumulative Energy
+        columns: 1
+        square: false
+        cards:
+          - type: markdown
+            content: |
+              <table width="100%">
+              {% set e_sensors = state_attr('sensor.hardware_sensors', 'energy') %}
+              {% if e_sensors -%}
+                {%- for s in e_sensors %}
+                <tr>
+                  <td><ha-icon icon="mdi:counter" style="color:var(--secondary-text-color)"></ha-icon> {{ s.name }}</td>
+                  <td align="right"><b>{{ s.value }}</b> <small>{{ s.unit }}</small></td>
+                </tr>
+                {%- endfor %}
+              {%- else -%}
+                <tr><td><i>No energy meters discovered</i></td></tr>
+              {%- endif %}
+              </table>
 
       # ENVIRONMENTAL
       - type: vertical-stack

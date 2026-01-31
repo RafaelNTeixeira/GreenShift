@@ -71,24 +71,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data.pop(DOMAIN)
     return unload_ok
 
-
 async def async_discover_sensors(hass: HomeAssistant) -> dict:
     entity_reg = er.async_get(hass)
     device_reg = dr.async_get(hass)
     discovered = {cat: [] for cat in SENSOR_MAPPING}
     
     for entity in entity_reg.entities.values():
-        if entity.platform == DOMAIN:
-            continue
-
-        if entity.device_id is None:
+        if entity.platform == DOMAIN or entity.device_id is None:
             continue
 
         device = device_reg.devices.get(entity.device_id)
-        if device is None:
-            continue
-
-        if device.manufacturer == "Home Assistant": 
+        if device is None or device.manufacturer == "Home Assistant": 
             continue
 
         entity_id = entity.entity_id
@@ -98,22 +91,23 @@ async def async_discover_sensors(hass: HomeAssistant) -> dict:
         unit = entity.unit_of_measurement or (state.attributes.get("unit_of_measurement") if state else "")
         original_name = (entity.original_name or "").lower()
 
+        # Direct Matching by Device Class or Unit
+        matched_category = None
         for category, criteria in SENSOR_MAPPING.items():
-            # 1. Check Device Class (First option)
-            if device_class in criteria["classes"]:
-                discovered[category].append(entity_id)
-                break
-            
-            # 2. Check Units (Second option)
-            if unit in criteria["units"]:
-                discovered[category].append(entity_id)
-                break
+            if device_class in criteria["classes"] or (unit and unit in criteria["units"]):
+                matched_category = category
+                break # Found a definitive match
+        
+        # Fallback to Keyword Matching
+        if not matched_category:
+            for category, criteria in SENSOR_MAPPING.items():
+                if any(kw in entity_id.lower() or kw in original_name for kw in criteria["keywords"]):
+                    matched_category = category
+                    break
 
-            # 3. Fallback to Keywords (Last option)
-            if any(kw in entity_id.lower() or kw in original_name for kw in criteria["keywords"]):
-                discovered[category].append(entity_id)
-                break
-            _LOGGER.debug("Entity %s did not match category %s", entity_id, category)
-    
-    _LOGGER.info("Discovered sensors: %s", discovered)
+        if matched_category:
+            discovered[matched_category].append(entity_id)
+            _LOGGER.debug("Entity %s classified as %s", entity_id, matched_category)
+            
+    _LOGGER.info("Discovery complete: %s", discovered)
     return discovered
