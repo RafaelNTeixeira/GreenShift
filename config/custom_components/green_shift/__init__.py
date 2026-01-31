@@ -47,9 +47,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             agent.phase = PHASE_ACTIVE
             _LOGGER.info("System entered active phase after %d days", days_running)
     
-    # Update every 5 minutes
+    # Update every 15 seconds
     hass.data[DOMAIN]["update_listener"] = async_track_time_interval(
-        hass, update_agent, timedelta(minutes=5)
+        hass, update_agent, timedelta(seconds=15)
     )
     
     return True

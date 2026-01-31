@@ -16,7 +16,7 @@ from .const import (
     GAMMA,
 )
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(f"{__name__}.ai_model")
 
 
 class DecisionAgent:
@@ -33,7 +33,8 @@ class DecisionAgent:
     def __init__(self, hass: HomeAssistant, discovered_sensors: dict):
         self.hass = hass
         self.sensors = discovered_sensors
-        self.phase = PHASE_BASELINE
+        self.phase = PHASE_BASELINE 
+        # self.phase = PHASE_ACTIVE  # TEMP: For testing purposes, start in active phase
         
         # Internal state
         self.state_vector = None
@@ -66,7 +67,6 @@ class DecisionAgent:
         
         # Collect sensor values with zero padding
         state = []
-        
 
         # TODO: Might need to just retrieve a single main power sensor
         # E_total, F_total (Total Power Consumption)
@@ -77,6 +77,7 @@ class DecisionAgent:
             self.consumption_history.append(total_power)
         else:
             state.extend([0.0, 0.0])
+        _LOGGER.debug("Total power consumption: %.2f W", state[0])
         
         # TODO: Might need to update sensor value retrieval based on the TODO defined previously
         # E_app, F_app (Individual Appliance Power)
@@ -85,6 +86,7 @@ class DecisionAgent:
             state.extend([app_power, 1.0])
         else:
             state.extend([0.0, 0.0])
+        _LOGGER.debug("Appliance power consumption: %.2f W", state[2])
         
         # T_in, F_T (Temperature)
         temp_sensors = self.sensors.get("temperature", [])
@@ -93,6 +95,7 @@ class DecisionAgent:
             state.extend([temp, 1.0])
         else:
             state.extend([0.0, 0.0])
+        _LOGGER.debug("Indoor temperature: %.2f °C", state[4])
         
         # H_in, F_H (Humidity)
         hum_sensors = self.sensors.get("humidity", [])
@@ -101,6 +104,7 @@ class DecisionAgent:
             state.extend([humidity, 1.0])
         else:
             state.extend([0.0, 0.0])
+        _LOGGER.debug("Indoor humidity: %.2f %%", state[6])
         
         # L_in, F_L (Luminosity)
         lux_sensors = self.sensors.get("illuminance", [])
@@ -109,6 +113,7 @@ class DecisionAgent:
             state.extend([lux, 1.0])
         else:
             state.extend([0.0, 0.0])
+        _LOGGER.debug("Indoor luminosity: %.2f lx", state[8])
         
         # O_status, F_O (Occupancy)
         occ_sensors = self.sensors.get("occupancy", [])
@@ -117,6 +122,7 @@ class DecisionAgent:
             state.extend([float(occupied), 1.0])
         else:
             state.extend([0.0, 0.0])
+        _LOGGER.debug("Occupancy status: %s", "Occupied" if state[10] == 1.0 else "Unoccupied")
         
         # Calculate indices
         self._update_anomaly_index()
@@ -124,6 +130,7 @@ class DecisionAgent:
         self._update_fatigue_index()
         
         state.extend([self.anomaly_index, self.behaviour_index, self.fatigue_index])
+        _LOGGER.debug("State vector: %s", state)
         
         self.state_vector = np.array(state)
         
@@ -160,10 +167,12 @@ class DecisionAgent:
             mask[ACTIONS["normative"]] = 0
         
         self.action_mask = mask
+        _LOGGER.debug("Action mask: %s", mask)
     
     async def _decide_action(self):
         """Selects an action using epsilon-greedy policy."""
         if self.notification_count_today >= MAX_NOTIFICATIONS_PER_DAY:
+            _LOGGER.info("Max daily notifications reached, no action taken.")
             return  # Notification limit reached
         
         # Discretize state for Q-table lookup
@@ -263,6 +272,7 @@ class DecisionAgent:
         if std > 0:
             z_score = abs((current - mean) / std)
             self.anomaly_index = min(z_score / 3.0, 1.0)
+            _LOGGER.debug("Anomaly index updated: %.2f", self.anomaly_index)
         else:
             self.anomaly_index = 0.0
     
@@ -270,10 +280,12 @@ class DecisionAgent:
         """History of user engagement."""
         if len(self.engagement_history) > 0:
             self.behaviour_index = np.clip(np.mean(self.engagement_history), 0, 1)
+            _LOGGER.debug("Behaviour index updated: %.2f", self.behaviour_index)
     
     def _update_fatigue_index(self):
         """Risk of user fatigue from too many notifications."""
         self.fatigue_index = self.notification_count_today / MAX_NOTIFICATIONS_PER_DAY
+        _LOGGER.debug("Fatigue index updated: %.2f", self.fatigue_index)
     
     def _discretize_state(self) -> tuple:
         """Converts continuous state vector to discrete tuple for Q-table."""
@@ -283,6 +295,9 @@ class DecisionAgent:
         power = int(self.state_vector[0] / 100)  # Bins of 100W
         anomaly = int(self.anomaly_index * 10)
         fatigue = int(self.fatigue_index * 10)
+
+        _LOGGER.debug("State discretized: power=%d, anomaly=%d, fatigue=%d", power, anomaly, fatigue)
+
         return (power, anomaly, fatigue)
     
     async def _get_sensor_value(self, entity_id: str) -> float:
