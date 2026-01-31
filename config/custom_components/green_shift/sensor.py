@@ -18,8 +18,10 @@ async def async_setup_entry(
     """Setup of virtual sensors."""
     agent = hass.data[DOMAIN]["agent"]
     start_date = hass.data[DOMAIN]["start_date"]
+    discovered_sensors = hass.data[DOMAIN]["discovered_sensors"]
     
     sensors = [
+        HardwareSensorsSensor(hass, discovered_sensors),
         ResearchPhaseSensor(agent, start_date),
         EnergyBaselineSensor(agent),
         CurrentConsumptionSensor(agent),
@@ -35,6 +37,41 @@ async def async_setup_entry(
     
     async_add_entities(sensors)
 
+class HardwareSensorsSensor(SensorEntity):
+    """Aggregates hardware sensors by category with live values."""
+
+    def __init__(self, hass, discovered):
+        self.hass = hass
+        self._discovered = discovered
+        self._attr_name = "Hardware Sensors"
+        self._attr_unique_id = f"{DOMAIN}_hardware_sensors"
+        self._attr_icon = "mdi:database"
+
+    @property
+    def state(self):
+        return "ok"
+
+    @property
+    def extra_state_attributes(self):
+        data = {}
+
+        for category, entities in self._discovered.items():
+            data[category] = []
+
+            for entity_id in entities:
+                state = self.hass.states.get(entity_id)
+                if not state:
+                    continue
+
+                data[category].append({
+                    "entity_id": entity_id,
+                    "name": state.attributes.get("friendly_name", entity_id),
+                    "value": state.state,
+                    "unit": state.attributes.get("unit_of_measurement", ""),
+                })
+
+        return data
+    
 
 class ResearchPhaseSensor(SensorEntity):
     """Sensor that indicates the current research phase."""

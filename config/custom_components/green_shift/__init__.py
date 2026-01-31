@@ -4,12 +4,12 @@ import numpy as np
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 
 from .const import (
     DOMAIN,
-    SENSOR_CATEGORIES,
+    SENSOR_MAPPING,
     PHASE_BASELINE,
     PHASE_ACTIVE,
     BASELINE_DAYS,
@@ -73,29 +73,47 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_discover_sensors(hass: HomeAssistant) -> dict:
-    """
-    Auto-Discovery of sensors in Home Assistant Entity Registry.
-    Returns a dictionary with categories and lists of entity_ids.
-    """
     entity_reg = er.async_get(hass)
-    discovered = {cat: [] for cat in SENSOR_CATEGORIES}
+    device_reg = dr.async_get(hass)
+    discovered = {cat: [] for cat in SENSOR_MAPPING}
     
     for entity in entity_reg.entities.values():
+        if entity.platform == DOMAIN:
+            continue
+
+        if entity.device_id is None:
+            continue
+
+        device = device_reg.devices.get(entity.device_id)
+        if device is None:
+            continue
+
+        if device.manufacturer == "Home Assistant": 
+            continue
+
         entity_id = entity.entity_id
-        original_name = entity.original_name or ""
-        unit = entity.unit_of_measurement or ""
+        state = hass.states.get(entity_id)
         
-        # Verify each category
-        for category, keywords in SENSOR_CATEGORIES.items():
-            if any(kw in entity_id.lower() or 
-                   kw in original_name.lower() or 
-                   kw in unit.lower() for kw in keywords):
+        device_class = entity.device_class or (state.attributes.get("device_class") if state else None)
+        unit = entity.unit_of_measurement or (state.attributes.get("unit_of_measurement") if state else "")
+        original_name = (entity.original_name or "").lower()
+
+        for category, criteria in SENSOR_MAPPING.items():
+            # 1. Check Device Class (First option)
+            if device_class in criteria["classes"]:
                 discovered[category].append(entity_id)
-                _LOGGER.debug("Discovered %s sensor: %s", category, entity_id)
                 break
+            
+            # 2. Check Units (Second option)
+            if unit in criteria["units"]:
+                discovered[category].append(entity_id)
+                break
+
+            # 3. Fallback to Keywords (Last option)
+            if any(kw in entity_id.lower() or kw in original_name for kw in criteria["keywords"]):
+                discovered[category].append(entity_id)
+                break
+            _LOGGER.debug("Entity %s did not match category %s", entity_id, category)
     
-    # Log summary of discovered sensors
-    for cat, entities in discovered.items():
-        _LOGGER.info("Found %d %s sensors: %s", len(entities), cat, entities)
-    
+    _LOGGER.info("Discovered sensors: %s", discovered)
     return discovered

@@ -4,26 +4,86 @@ views:
   - title: Devices
     path: devices
     icon: mdi:power-plug
-    badges: []
+    type: sidebar
     cards:
       - type: markdown
         content: |
           # Monitored Devices
-          Real-time consumption of each automatically discovered smart plug.
-      
-      # Dynamic card: repeats for each power sensor
-      - type: entities
-        title: Consumption by Device
-        entities:
-          - entity: sensor.current_consumption
-            name: Total Consumption
-            icon: mdi:lightning-bolt
-      
-      # Placeholder for auto-discovered sensors
-      - type: markdown
-        content: |
-          **Note**: Devices are automatically discovered by Green Shift.
-          Access the Entity Registry to see all active sensors.
+          Real-time values from automatically discovered **hardware sensors**.
+
+      # POWER SECTION
+      - type: grid
+        title: 🔌 Power Sensors
+        columns: 1
+        square: false
+        cards:
+          - type: markdown
+            content: |
+              {% set sensors = state_attr('sensor.hardware_sensors', 'power') %}
+              {% if sensors -%}
+              | Device | Usage |
+              |:--- | ---:|
+              {%- for s in sensors %}
+              | <ha-icon icon="mdi:lightning-bolt"></ha-icon> **{{ s.name }}** | `{{ s.value }} {{ s.unit }}` |
+              {%- endfor %}
+              {%- else %}
+              *No power sensors detected.*
+              {%- endif %}
+
+      # ENVIRONMENTAL
+      - type: vertical-stack
+        title: 🌡 Environment & Climate
+        cards:
+          - type: markdown
+            content: |
+              ### Temperature
+              {% set sensors = state_attr('sensor.hardware_sensors', 'temperature') %}
+              {% if sensors -%}
+              {% for s in sensors -%}
+              **{{ s.name }}**: {{ s.value }}{{ s.unit }}  
+              {% endfor %}
+              {%- else -%}
+              _None_
+              {%- endif %}
+
+              ---
+              ### Humidity
+              {% set sensors = state_attr('sensor.hardware_sensors', 'humidity') %}
+              {% if sensors -%}
+              {% for s in sensors -%}
+              **{{ s.name }}**: {{ s.value }}{{ s.unit }}  
+              {% endfor %}
+              {%- else -%}
+              _None_
+              {%- endif %}
+
+      # STATUS & SENSORS
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: markdown
+            title: 💡 Light Level
+            content: |
+              {% set sensors = state_attr('sensor.hardware_sensors', 'illuminance') %}
+              {% if sensors -%}
+              {% for s in sensors -%}
+              • {{ s.name }}: **{{ s.value }} lx** {% endfor %}
+              {%- else -%}
+              _Dark_
+              {%- endif %}
+          
+          - type: markdown
+            title: 👀 Occupancy
+            content: |
+              {% set sensors = state_attr('sensor.hardware_sensors', 'occupancy') %}
+              {% if sensors -%}
+              {% for s in sensors -%}
+              **{{ s.name }}**: {{ '🔴 Occupied' if s.value == 'on' else '🟢 Clear' }}  
+              {% endfor %}
+              {%- else -%}
+              _No data_
+              {%- endif %}
 
   # ========== TAB 2: DASHBOARD (Always Visible) ==========
   - title: Dashboard

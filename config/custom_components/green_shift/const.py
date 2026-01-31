@@ -1,3 +1,6 @@
+from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass
+
 DOMAIN = "green_shift"
 
 # System phases
@@ -9,12 +12,36 @@ BASELINE_DAYS = 14
 UPDATE_INTERVAL_SECONDS = 15
 
 # Sensor categories and keywords for auto-discovery
-SENSOR_CATEGORIES = {
-    "power": ["power", "watt", "energy", "kwh"],
-    "temperature": ["temperature", "temp"],
-    "humidity": ["humidity"],
-    "illuminance": ["illuminance", "lux", "light_level"],
-    "occupancy": ["occupancy", "motion", "presence", "binary_sensor"],
+SENSOR_MAPPING = {
+    "power": {
+        "classes": [SensorDeviceClass.POWER, SensorDeviceClass.ENERGY],
+        "units": ["W", "kW", "Wh", "kWh"],
+        "keywords": ["power", "watt", "energy"]
+    },
+    "temperature": {
+        "classes": [SensorDeviceClass.TEMPERATURE],
+        "units": ["°C", "°F", "K"],
+        "keywords": ["temperature", "temp"]
+    },
+    "humidity": {
+        "classes": [SensorDeviceClass.HUMIDITY],
+        "units": ["%"],
+        "keywords": ["humidity", "hum"]
+    },
+    "illuminance": {
+        "classes": [SensorDeviceClass.ILLUMINANCE],
+        "units": ["lx", "lux"],
+        "keywords": ["illuminance", "light_level"]
+    },
+    "occupancy": {
+        "classes": [
+            BinarySensorDeviceClass.OCCUPANCY, 
+            BinarySensorDeviceClass.MOTION, 
+            BinarySensorDeviceClass.PRESENCE
+        ],
+        "units": [],
+        "keywords": ["occupancy", "motion", "presence"]
+    }
 }
 
 # RL Action Spaces
