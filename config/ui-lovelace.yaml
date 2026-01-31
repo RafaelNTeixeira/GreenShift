@@ -1,4 +1,4 @@
-title: Energy Research Platform
+title: Green Shift
 views:
   # ========== TAB 1: DEVICES (Always Visible) ==========
   - title: Devices
@@ -158,7 +158,7 @@ views:
           - entity: sensor.energy_baseline
             name: Learned Baseline
           - entity: sensor.behaviour_index
-            name: Behavior Index
+            name: Behaviour Index
 
   # ========== TAB 5: CHALLENGES (Locked until active phase) ==========
   - title: Challenges
@@ -174,29 +174,30 @@ views:
       - type: markdown
         content: |
           # Daily Challenges
-          Complete tasks to improve your energy efficiency!
+          Complete today's random tasks to improve your energy efficiency!
 
-      # Daily tasks
-      - type: entities
-        title: Today's Tasks
+      # Daily tasks from backend
+      - type: custom:auto-entities
+        card:
+          type: entities
+          title: "Today's Tasks ({{ state_attr('sensor.daily_tasks', 'tasks') | length }})"
         entities:
-          - entity: input_boolean.task_1
-            name: Turn off standby before bed
-          - entity: input_boolean.task_2
-            name: Use natural light during the day
-          - entity: input_boolean.task_3
-            name: Avoid heating above 20°C
+          - entity_id: sensor.daily_tasks
+            name: Daily Tasks
 
-      # Feedback on difficulty
-      - type: entities
-        title: How did you find the challenge?
-        entities:
-          - entity: input_select.task_difficulty
-            name: Difficulty Level
-
+      # Render tasks as markdown
       - type: markdown
         content: |
-          **Tip**: Rate the difficulty to help us improve future challenges!
+          {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+          {% if tasks %}
+            {% for task in tasks %}
+          - **{{ task.title }}**
+            *{{ task.description }}*
+            
+            {% endfor %}
+          {% else %}
+            No tasks available yet. Check available sensors.
+          {% endif %}
 
   # ========== TAB 6: COLLABORATIVE GOAL (Locked until active phase) ==========
   - title: Collaborative Goal
@@ -210,13 +211,13 @@ views:
     cards:
       - type: markdown
         content: |
-          # Collaborative Goal
-          Work with your department to achieve the reduction target!
+          # Weekly Challenge
+          Reduce your energy consumption to 85% of your baseline (15% reduction goal).
 
-      # Progress gauge
+      # Weekly challenge progress gauge
       - type: gauge
-        entity: sensor.collaborative_goal_progress
-        name: Group Consumption vs Limit
+        entity: sensor.weekly_challenge
+        name: Weekly Target Progress
         min: 0
         max: 100
         severity:
@@ -225,32 +226,26 @@ views:
           red: 100
         needle: true
 
-      # Goal details
+      # Challenge details
       - type: entities
-        title: Goal Details
+        title: Challenge Details
         entities:
-          - entity: sensor.collaborative_goal_progress
-            name: Progress
-
-      # Motivational message (below limit)
-      - type: conditional
-        conditions:
-          - entity: sensor.collaborative_goal_progress
-            state_not: "100"
-            state: "< 100"
-        card:
-          type: markdown
-          content: |
-            ### Congratulations!
-            Your group is within the target. Keep it up!
+          - entity: sensor.weekly_challenge
+            name: Progress to Target
+            format: "{{ state }}%"
       
-      # Alert message (above limit)
-      - type: conditional
-        conditions:
-          - entity: sensor.collaborative_goal_progress
-            state: "> 100"
-        card:
-          type: markdown
-          content: |
-            ### Attention
-            The group has exceeded the limit. Small individual actions make a difference!
+      - type: markdown
+        content: |
+          {% set challenge = state_attr('sensor.weekly_challenge', '__dict__') %}
+          **Current Average**: {{ state_attr('sensor.weekly_challenge', 'current_avg_w') }} W
+          
+          **Target Average**: {{ state_attr('sensor.weekly_challenge', 'target_avg_w') }} W
+          
+          **Baseline**: {{ state_attr('sensor.weekly_challenge', 'baseline_w') }} W
+          
+          **Status**: 
+          {% if state_attr('sensor.weekly_challenge', 'status') == 'completed' %}
+            **Challenge Completed!** Your consumption is below the target.
+          {% else %}
+            **In Progress** - Keep working towards the goal!
+          {% endif %}

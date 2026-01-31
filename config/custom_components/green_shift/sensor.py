@@ -1,4 +1,3 @@
-"""Entidades virtuais para Energy Research Platform."""
 import logging
 from datetime import datetime
 from homeassistant.components.sensor import SensorEntity
@@ -26,7 +25,9 @@ async def async_setup_entry(
         CurrentConsumptionSensor(agent),
         SavingsAccumulatedSensor(agent),
         CO2SavedSensor(agent),
-        TasksCompletedSensor(),
+        TasksCompletedSensor(agent),
+        DailyTasksSensor(agent),
+        WeeklyChallengeSensor(agent),
         CollaborativeGoalSensor(agent),
         BehaviourIndexSensor(agent),
         FatigueIndexSensor(agent),
@@ -61,7 +62,7 @@ class ResearchPhaseSensor(SensorEntity):
 
 
 class EnergyBaselineSensor(SensorEntity):
-    """Sensor with the learned energy baseline."""
+    """Sensor with the learned energy baseline from baseline phase."""
     
     def __init__(self, agent):
         self._agent = agent
@@ -73,6 +74,7 @@ class EnergyBaselineSensor(SensorEntity):
     
     @property
     def state(self):
+        # Show baseline_consumption (immutable baseline from intervention phase)
         return round(self._agent.baseline_consumption, 2)
 
 
@@ -115,7 +117,8 @@ class SavingsAccumulatedSensor(SensorEntity):
         saving_watts = self._agent.baseline_consumption - avg_consumption
         
         # Convert to kWh and multiply by price (€0.25/kWh estimated)
-        hours = len(self._agent.consumption_history) / 6  # 10min intervals
+        # 15-second intervals: 240 readings per hour
+        hours = len(self._agent.consumption_history) / 240
         saving_kwh = (saving_watts * hours) / 1000
         savings_eur = saving_kwh * 0.25
         
@@ -143,7 +146,8 @@ class CO2SavedSensor(SensorEntity):
         )
         saving_watts = self._agent.baseline_consumption - avg_consumption
         
-        hours = len(self._agent.consumption_history) / 6
+        # 15-second intervals: 240 readings per hour
+        hours = len(self._agent.consumption_history) / 240
         saving_kwh = (saving_watts * hours) / 1000
         co2_saved = saving_kwh * 0.5
         
@@ -151,21 +155,64 @@ class CO2SavedSensor(SensorEntity):
 
 
 class TasksCompletedSensor(SensorEntity):
-    """Sensor with the number of completed tasks (simulated)."""
+    """Sensor with the number of completed tasks."""
     
-    def __init__(self):
+    def __init__(self, agent):
+        self._agent = agent
         self._attr_name = "Tasks Completed"
         self._attr_unique_id = f"{DOMAIN}_tasks"
         self._attr_icon = "mdi:check-circle"
-        self._tasks = 0
     
     @property
     def state(self):
-        return self._tasks
+        return self._agent.tasks_completed_count
+
+
+class DailyTasksSensor(SensorEntity):
+    """Sensor with today's random daily tasks."""
     
-    def increment_task(self):
-        self._tasks += 1
-        self.async_write_ha_state()
+    def __init__(self, agent):
+        self._agent = agent
+        self._attr_name = "Daily Tasks"
+        self._attr_unique_id = f"{DOMAIN}_daily_tasks"
+        self._attr_icon = "mdi:clipboard-list"
+    
+    @property
+    def state(self):
+        return len(self._agent.daily_tasks)
+    
+    @property
+    def extra_state_attributes(self):
+        return {
+            "tasks": self._agent.daily_tasks,
+        }
+
+
+class WeeklyChallengeSensor(SensorEntity):
+    """Sensor for the weekly energy reduction challenge."""
+    
+    def __init__(self, agent):
+        self._agent = agent
+        self._attr_name = "Weekly Challenge"
+        self._attr_unique_id = f"{DOMAIN}_weekly_challenge"
+        self._attr_icon = "mdi:flag-checkered"
+        self._attr_unit_of_measurement = "%"
+    
+    @property
+    def state(self):
+        challenge = self._agent.get_weekly_challenge_status()
+        return challenge.get("progress", 0)
+    
+    @property
+    def extra_state_attributes(self):
+        challenge = self._agent.get_weekly_challenge_status()
+        return {
+            "status": challenge.get("status", "pending"),
+            "current_avg_w": challenge.get("current_avg", 0),
+            "target_avg_w": challenge.get("target_avg", 0),
+            "baseline_w": challenge.get("baseline", 0),
+            "goal": "Reduce consumption to 85% of baseline",
+        }
 
 
 class CollaborativeGoalSensor(SensorEntity):
@@ -185,7 +232,9 @@ class CollaborativeGoalSensor(SensorEntity):
             return 0
         
         current = self._agent.consumption_history[-1]
-        limit = self._agent.baseline_consumption * 0.85  # Meta: -15%
+        # Use fixed baseline for consistent comparison during active phase
+        baseline = self._agent.baseline_consumption_week or self._agent.baseline_consumption
+        limit = baseline * 0.85  # Meta: -15%
         
         if limit > 0:
             progress = (current / limit) * 100
@@ -194,9 +243,10 @@ class CollaborativeGoalSensor(SensorEntity):
     
     @property
     def extra_state_attributes(self):
+        baseline = self._agent.baseline_consumption_week or self._agent.baseline_consumption
         return {
             "status": "below_target" if self.state < 100 else "above_target",
-            "limit_watts": round(self._agent.baseline_consumption * 0.85, 2),
+            "limit_watts": round(baseline * 0.85, 2),
         }
 
 

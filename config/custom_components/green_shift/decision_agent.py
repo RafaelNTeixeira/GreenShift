@@ -1,10 +1,10 @@
-"""Decision Agent com Reinforcement Learning."""
 import logging
 import numpy as np
 from datetime import datetime, timedelta
 from collections import deque
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from .const import UPDATE_INTERVAL_SECONDS
 
 from .const import (
     ACTIONS,
@@ -34,13 +34,18 @@ class DecisionAgent:
         self.hass = hass
         self.sensors = discovered_sensors
         self.phase = PHASE_BASELINE 
-        # self.phase = PHASE_ACTIVE  # TEMP: For testing purposes, start in active phase
+        # self.phase = PHASE_ACTIVE # TEMP: For testing purposes, start in active phase
         
         # Internal state
         self.state_vector = None
         self.action_mask = None
         self.baseline_consumption = 0.0
-        self.consumption_history = deque(maxlen=2016)  # 14 days * 144 (10min)
+        self.baseline_consumption_week = None  # Fixed baseline for challenges (set after each week)
+        self.last_baseline_update_date = None  # Track weekly baseline updates
+        days_to_store = 14 # Store 14 days of consumption history
+        day_in_seconds = 86400 
+        max_readings = int(days_to_store * day_in_seconds / UPDATE_INTERVAL_SECONDS)
+        self.consumption_history = deque(maxlen=max_readings)
         
         # Engagement history
         self.engagement_history = deque(maxlen=100)
@@ -56,6 +61,12 @@ class DecisionAgent:
         self.anomaly_index = 0.0
         self.behaviour_index = 0.5
         self.fatigue_index = 0.0
+        
+        # Tasks and challenges
+        self.daily_tasks = []
+        self.weekly_challenge_target = 0.85 # 15% reduction goal # TODO: Needs to be based on variable defined in settings
+        self.last_task_generation_date = None
+        self.tasks_completed_count = 0
         
     async def update_state(self):
         """Updates state vector S_t."""
@@ -131,12 +142,8 @@ class DecisionAgent:
         
         state.extend([self.anomaly_index, self.behaviour_index, self.fatigue_index])
         _LOGGER.debug("State vector: %s", state)
-        
+
         self.state_vector = np.array(state)
-        
-        # Update baseline consumption if in baseline phase
-        if self.phase == PHASE_BASELINE and len(self.consumption_history) > 0:
-            self.baseline_consumption = np.mean(self.consumption_history)
         
         # Update action mask M_t
         self._update_action_mask()
@@ -149,7 +156,7 @@ class DecisionAgent:
         """Generates binary action mask M_t."""
         mask = np.ones(len(ACTIONS))
         
-        # noop always available
+        # noop: always available
 
         # TODO: Might need to separate smart plugs from general power sensors
         # specific: needs smart plugs
@@ -233,9 +240,9 @@ class DecisionAgent:
         
         # Calculate reward R_t
         current_consumption = (
-            self.consumption_history[-1] if self.consumption_history else 0
+            self.consumption_history[-1] if self.consumption_history else 0 
         )
-        energy_saving = self.baseline_consumption - current_consumption
+        energy_saving = self.baseline_consumption - current_consumption # based on baseline intervention
         
         avg_engagement = (
             np.mean(self.engagement_history) if self.engagement_history else 0
@@ -263,7 +270,7 @@ class DecisionAgent:
             self.anomaly_index = 0.0
             return
         
-        recent = list(self.consumption_history)[-50:]
+        recent = list(self.consumption_history)[-50:] # TODO: This returns the last recorded consumption with the value of 15 seconds * 50 = 750 seconds = 12.5 minutes. Maybe increase to last 1 hour? Should use INTERVAL constant defined previously to automatically calculate how many readings correspond to 1 hour
         mean = np.mean(recent)
         std = np.std(recent)
         current = recent[-1]
@@ -291,7 +298,7 @@ class DecisionAgent:
         """Converts continuous state vector to discrete tuple for Q-table."""
         if self.state_vector is None:
             return (0,)
-        # Simplification: use only consumption, anomalies e fatigue
+        # Simplification: use only consumption, anomalies and fatigue
         power = int(self.state_vector[0] / 100)  # Bins of 100W
         anomaly = int(self.anomaly_index * 10)
         fatigue = int(self.fatigue_index * 10)
@@ -323,3 +330,120 @@ class DecisionAgent:
         if state is None:
             return False
         return state.state.lower() in ["on", "true", "detected"]
+    
+    # TODO: Place daily tasks in separate module
+    def _generate_daily_tasks(self):
+        """Generates 3 random daily tasks based on available sensors."""
+        today = datetime.now().date()
+        
+        # Only generate once per day
+        if self.last_task_generation_date == today and len(self.daily_tasks) > 0:
+            return
+        
+        self.last_task_generation_date = today
+        
+        # Define available tasks based on sensor availability
+        available_tasks = []
+        
+        # Temperature sensor tasks
+        if self.sensors.get("temperature"):
+            print("Temperature sensor available for tasks.")
+            available_tasks.extend([
+                {"title": "Lower heating by 1°C", "description": "Small temperature adjustments save energy", "category": "temperature"},
+                {"title": "Use natural temperature control", "description": "Open windows during cool hours", "category": "temperature"},
+            ])
+        print(f"Available tasks after temperature check: {available_tasks}")
+        
+        # Occupancy sensor tasks
+        if self.sensors.get("occupancy"):
+            available_tasks.extend([
+                {"title": "Turn off lights when leaving", "description": "Ensure lights are off in empty rooms", "category": "occupancy"},
+                {"title": "Manage room occupancy efficiently", "description": "Close doors to unoccupied areas", "category": "occupancy"},
+            ])
+        
+        # Power sensor tasks
+        if self.sensors.get("power"):
+            available_tasks.extend([
+                {"title": "Unplug unused devices", "description": "Eliminate standby power consumption", "category": "power"},
+                {"title": "Use power strips for appliances", "description": "Group related devices for easier control", "category": "power"},
+            ])
+        
+        # Humidity sensor tasks
+        if self.sensors.get("humidity"):
+            available_tasks.extend([
+                {"title": "Use fan mode for cooling", "description": "Fans use less energy than AC", "category": "humidity"},
+                {"title": "Improve air circulation", "description": "Better ventilation reduces HVAC load", "category": "humidity"},
+            ])
+        
+        # Illuminance sensor tasks
+        if self.sensors.get("illuminance"):
+            available_tasks.extend([
+                {"title": "Use natural light during day", "description": "Maximize sunlight hours", "category": "illuminance"},
+                {"title": "Switch to energy-efficient lighting", "description": "Consider LED bulbs", "category": "illuminance"},
+            ])
+        
+        # Default tasks (always available)
+        available_tasks.extend([
+            {"title": "Plan energy-intensive tasks", "description": "Run dishwasher/laundry during off-peak hours", "category": "general"},
+            {"title": "Monitor energy usage", "description": "Check the dashboard for consumption patterns", "category": "general"},
+        ])
+        
+        # Select 3 random tasks
+        if len(available_tasks) >= 3:
+            self.daily_tasks = list(np.random.choice(len(available_tasks), 3, replace=False))
+            self.daily_tasks = [available_tasks[i] for i in self.daily_tasks]
+        else:
+            self.daily_tasks = available_tasks[:3]
+        
+        _LOGGER.info("Generated daily tasks: %s", [t["title"] for t in self.daily_tasks])
+    
+    def _update_weekly_baseline(self):
+        """Updates the fixed baseline once per week."""
+        today = datetime.now().date()
+        
+        # Only update once per week (Monday)
+        if self.last_baseline_update_date is None or \
+           (today - self.last_baseline_update_date).days >= 7:
+            self.last_baseline_update_date = today
+            
+            if len(self.consumption_history) > 0:
+                self.baseline_consumption_week = np.mean(self.consumption_history)
+                _LOGGER.info("Weekly baseline updated: %.2f W", self.baseline_consumption_week)
+    
+    def get_weekly_challenge_status(self) -> dict:
+        """Calculates weekly challenge status (consumption reduction goal)."""
+        # Use fixed weekly baseline for consistent comparison
+        if self.baseline_consumption_week is None or self.baseline_consumption_week == 0:
+            return {"status": "pending", "current_avg": 0, "target_avg": 0, "progress": 0}
+        
+        # Calculate readings per day based on data collection interval
+        day_in_seconds = 86400
+        readings_per_day = int(day_in_seconds / UPDATE_INTERVAL_SECONDS)
+        
+        # Need at least 1 day of data
+        if len(self.consumption_history) < readings_per_day:
+            return {"status": "pending", "current_avg": 0, "target_avg": 0, "progress": 0}
+        
+        # Get last 7 days of consumption
+        week_readings = readings_per_day * 7
+        week_data = list(self.consumption_history)[-week_readings:]
+        current_avg = np.mean(week_data) if week_data else 0
+        
+        # Calculate target average based on baseline and challenge target
+        target_avg = self.baseline_consumption_week * self.weekly_challenge_target
+        
+        # Calculate how close to target based on fixed baseline
+        if self.baseline_consumption_week > 0:
+            progress = (current_avg / self.baseline_consumption_week) * 100
+        else:
+            progress = 0
+        
+        status = "completed" if progress <= 85 else "in_progress"
+        
+        return {
+            "status": status,
+            "current_avg": round(current_avg, 2),
+            "target_avg": round(target_avg, 2),
+            "progress": round(progress, 1),
+            "baseline": round(self.baseline_consumption_week, 2),
+        }

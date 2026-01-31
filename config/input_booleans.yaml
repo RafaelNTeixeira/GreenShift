@@ -2,18 +2,3 @@ enable_notifications:
   name: "Enable Notifications"
   icon: mdi:bell
   initial: true
-
-task_1:
-  name: "Turn off standby before bed"
-  icon: mdi:power-off
-  initial: false
-
-task_2:
-  name: "Use natural light during the day"
-  icon: mdi:sun
-  initial: false
-
-task_3:
-  name: "Avoid heating above 20°C"
-  icon: mdi:thermometer
-  initial: false

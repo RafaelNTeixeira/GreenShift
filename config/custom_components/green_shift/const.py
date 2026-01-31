@@ -5,6 +5,9 @@ PHASE_BASELINE = "baseline"
 PHASE_ACTIVE = "active"
 BASELINE_DAYS = 14
 
+# Update interval for agent state
+UPDATE_INTERVAL_SECONDS = 15
+
 # Sensor categories and keywords for auto-discovery
 SENSOR_CATEGORIES = {
     "power": ["power", "watt", "energy", "kwh"],

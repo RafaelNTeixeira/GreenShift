@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta
+import numpy as np
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
@@ -12,6 +13,7 @@ from .const import (
     PHASE_BASELINE,
     PHASE_ACTIVE,
     BASELINE_DAYS,
+    UPDATE_INTERVAL_SECONDS,
 )
 from .decision_agent import DecisionAgent
 
@@ -41,15 +43,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Update agent state periodically."""
         await agent.update_state()
         
-        # Verify if the baseline phase is complete
         days_running = (datetime.now() - hass.data[DOMAIN]["start_date"]).days
+
+        # During baseline phase: continuously update baseline_consumption
+        if agent.phase == PHASE_BASELINE and len(agent.consumption_history) > 0:
+            agent.baseline_consumption = np.mean(agent.consumption_history)
+            _LOGGER.debug("Baseline consumption updated: %.2f W", agent.baseline_consumption)
+        
+        # Verify if the baseline phase is complete
         if days_running >= BASELINE_DAYS and agent.phase == PHASE_BASELINE:
             agent.phase = PHASE_ACTIVE
-            _LOGGER.info("System entered active phase after %d days", days_running)
+            # Freeze baseline_consumption and set fixed baseline for active phase
+            agent.baseline_consumption_week = agent.baseline_consumption
+            _LOGGER.info("System entered active phase after %d days with baseline: %.2f W", 
+                        days_running, agent.baseline_consumption)
     
-    # Update every 15 seconds
     hass.data[DOMAIN]["update_listener"] = async_track_time_interval(
-        hass, update_agent, timedelta(seconds=15)
+        hass, update_agent, timedelta(seconds=UPDATE_INTERVAL_SECONDS)
     )
     
     return True
@@ -87,6 +97,6 @@ async def async_discover_sensors(hass: HomeAssistant) -> dict:
     
     # Log summary of discovered sensors
     for cat, entities in discovered.items():
-        _LOGGER.info("Found %d %s sensors", len(entities), cat)
+        _LOGGER.info("Found %d %s sensors", len(entities), cat, entities)
     
     return discovered

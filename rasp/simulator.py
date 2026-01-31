@@ -132,7 +132,7 @@ try:
         client.publish(f"homeassistant/sensor/{PLUG_B_ID}/state", json.dumps({"energy": round(current_values["plug_b_e"], 4)}))
         client.publish(f"homeassistant/sensor/{PLUG_C_ID}/state", json.dumps({"energy": round(current_values["plug_c_e"], 4)}))
 
-        print(f"Update: Temp {hub_data['temp']}°C | Energy Total {hub_data['total_e']} kWh | Presence {hub_data['presence']}")
+        print(f"Update: Temp {hub_data['temp']}°C | Energy Total {hub_data['total_e']} kWh | Presence {hub_data['presence']} | Plug A {round(current_values['plug_a_e'],4)} kWh | Plug B {round(current_values['plug_b_e'],4)} kWh | Plug C {round(current_values['plug_c_e'],4)} kWh")
         
         # Every 5 seconds
         time.sleep(5) 

@@ -7,6 +7,7 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+# TODO: Need to include pop-up displaying info about the intervention
 class EnergyResearchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Green Shift integration."""
     
