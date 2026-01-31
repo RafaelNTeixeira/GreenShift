@@ -2,7 +2,7 @@
 
 ## 🌱 About Green Shift
 
-**Green Shift** is a Home Assistant custom component that uses **Reinforcement Learning** to help households and organizations optimize their energy consumption. The system learns your consumption patterns and provides personalized, behavior-changing notifications to reduce energy use while minimizing user fatigue.
+**Green Shift** is a Home Assistant custom component that uses **Reinforcement Learning** to help households and organizations optimize their energy consumption. The system learns your consumption patterns and provides personalized, behaviour-changing notifications to reduce energy use while minimizing user fatigue.
 
 ### Key Features
 
@@ -103,7 +103,7 @@ During the initial 14 days, the system is in **learning mode**:
 - Humidity (%)
 - Illuminance (lux)
 - Occupancy status (on/off)
-- Anomaly, Behavior, and Fatigue indices
+- Anomaly, behaviour, and Fatigue indices
 
 ### Phase 2: Active (Day 15+)
 
@@ -119,7 +119,7 @@ After baseline learning, the system becomes **active**:
 1. **noop**: No action
 2. **specific**: Appliance-specific tip (e.g., "Heater consuming more than normal")
 3. **anomaly**: Unusual consumption pattern detected
-4. **behavioral**: Habit-change suggestion (e.g., "Turn off standby")
+4. **behavioural**: Habit-change suggestion (e.g., "Turn off standby")
 5. **normative**: Social/department comparison ("Your group is 15% above target")
 
 ---
@@ -227,7 +227,7 @@ Green Shift implements a **Markov Decision Process** (MDP):
 
 $$\langle S, A, M, P, R, \gamma \rangle$$
 
-**S - State Vector** (12 components):
+**S - State Vector** (9 components):
 - Total power consumption + existence flag
 - Individual appliance power + existence flag
 - Temperature + existence flag
@@ -235,7 +235,7 @@ $$\langle S, A, M, P, R, \gamma \rangle$$
 - Illuminance + existence flag
 - Occupancy + existence flag
 - Anomaly index (0-1)
-- Behavior index (0-1)
+- behaviour index (0-1)
 - Fatigue index (0-1)
 
 **A - Action Space** (5 discrete actions):
@@ -244,7 +244,7 @@ ACTIONS = {
     "noop": 0,          # No action
     "specific": 1,      # Appliance-specific tip
     "anomaly": 2,       # Anomaly alert
-    "behavioural": 3,   # Behavior change suggestion
+    "behavioural": 3,   # behaviour change suggestion
     "normative": 4,     # Social/group comparison
 }
 ```
