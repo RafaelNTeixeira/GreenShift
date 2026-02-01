@@ -25,7 +25,11 @@ views:
                 graph: line
               - type: sensor
                 entity: sensor.daily_cost
-                name: Daily Cost
+                name: Current Daily Cost
+                graph: line
+              - type: sensor
+                entity: sensor.daily_co2_estimate
+                name: Current Daily CO2 (kg)
                 graph: line
 
           - type: horizontal-stack

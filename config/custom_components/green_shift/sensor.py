@@ -28,6 +28,7 @@ async def async_setup_entry(
         CurrentConsumptionSensor(collector),
         CurrentCostConsumptionSensor(hass, collector), 
         DailyCostConsumptionSensor(hass, collector),
+        DailyCO2EstimateSensor(hass, collector),
         SavingsAccumulatedSensor(agent, collector),
         CO2SavedSensor(agent, collector),
         TasksCompletedSensor(agent),
@@ -213,6 +214,36 @@ class DailyCostConsumptionSensor(SensorEntity):
             "daily_kwh_accumulated": round(self._collector.get_daily_kwh(), 3),
             "applied_price": price_state.state if price_state else "0.25",
         }
+    
+class DailyCO2EstimateSensor(SensorEntity):
+    """Sensor that estimates daily CO2 emissions based on consumption from DataCollector."""
+
+    def __init__(self, hass, collector):
+        self.hass = hass
+        self._collector = collector
+        self._attr_name = "Daily CO2 Estimate"
+        self._attr_unique_id = f"{DOMAIN}_daily_co2"
+        self._attr_unit_of_measurement = "kg"
+        self._attr_icon = "mdi:leaf-circle"
+
+    @property
+    def state(self):
+        co2_factor_portugal = 0.097 # kg/kWh as of early 2026
+
+        # Get accurate daily kWh from the Odometer logic
+        daily_kwh = self._collector.get_daily_kwh()
+        
+        # Calculate CO2 Emissions (daily_kwh * kg/kWh)
+        co2_emissions = daily_kwh * co2_factor_portugal
+        
+        return round(co2_emissions, 2)
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "daily_kwh_accumulated": round(self._collector.get_daily_kwh(), 3),
+            "co2_factor": 0.097,
+        }
 
 class SavingsAccumulatedSensor(SensorEntity):
     """Sensor with the accumulated savings in EUR."""
@@ -233,12 +264,14 @@ class SavingsAccumulatedSensor(SensorEntity):
             return 0
         
         avg_consumption = sum(consumption_history) / len(consumption_history)
-        saving_watts = self._agent.baseline_consumption - avg_consumption
+        saving_kW = self._agent.baseline_consumption - avg_consumption
         
         # Convert to kWh and multiply by price (€0.25/kWh estimated)
         # 15-second intervals: 240 readings per hour
-        hours = len(consumption_history) / 240
-        saving_kwh = (saving_watts * hours) / 1000
+        seconds_in_an_hour = 3600
+        hours = len(consumption_history) / (seconds_in_an_hour / UPDATE_INTERVAL_SECONDS)
+
+        saving_kwh = (saving_kW * hours)
         savings_eur = saving_kwh * 0.25
         
         return round(max(0, savings_eur), 2)

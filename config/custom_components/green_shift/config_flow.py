@@ -25,8 +25,7 @@ class EnergyResearchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema({
                 vol.Optional("currency", default="EUR"): str,
-                vol.Optional("electricity_price", default=0.25): vol.Coerce(float),
-                vol.Optional("co2_factor", default=0.5): vol.Coerce(float),
+                vol.Optional("electricity_price", default=0.25): vol.Coerce(float)
             }),
         )
     
