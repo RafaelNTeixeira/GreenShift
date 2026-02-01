@@ -24,52 +24,55 @@ views:
                 name: Current Hourly Cost
                 graph: line
 
-          - type: grid
-            title: ⚡ Live Power
-            columns: 1
-            square: false
+          - type: horizontal-stack
             cards:
+              # --- LEFT COLUMN: LIVE POWER ---
               - type: markdown
-                content: |
-                  {% set sensors = state_attr('sensor.hardware_sensors', 'power') %}
-                  {% if sensors -%}
-                  | Device | Usage |
-                  |:--- | ---:|
-                  {%- for s in sensors %}
-                  | <ha-icon icon="mdi:lightning-bolt" style="color:var(--energy-grid-consumption-color)"></ha-icon> **{{ s.name }}** | `{{ s.value }} {{ s.unit }}` |
-                  {%- endfor %}
-                  | **Total Current Load** | **{{ states('sensor.current_consumption') }} kW** |
-                  {%- else %}
-                  *No power sensors detected.*
-                  {%- endif %}
-
-          - type: grid
-            title: 📊 Cumulative Energy
-            columns: 1
-            square: false
-            cards:
-              - type: markdown
-                content: |
+                title: ⚡ Live Power
+                content: >
                   <table width="100%">
-                  {% set e_sensors = state_attr('sensor.hardware_sensors', 'energy') %}
-                  {% if e_sensors -%}
-                    {%- for s in e_sensors %}
+                  {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
+                  {%- if sensors %}
+                    {%- for s in sensors %}
                     <tr>
-                      <td><ha-icon icon="mdi:counter" style="color:var(--secondary-text-color)"></ha-icon> {{ s.name }}</td>
-                      <td align="right"><b>{{ s.value }}</b> <small>{{ s.unit }}</small></td>
+                      <td style="text-align: left;"><ha-icon icon="mdi:lightning-bolt" style="color:orange;"></ha-icon> {{ s.name }}</td>
+                      <td style="text-align: right; white-space: nowrap;"><b>{{ s.value }}</b>&nbsp;<small>{{ s.unit }}</small></td>
                     </tr>
                     {%- endfor %}
-                  {%- else -%}
-                    <tr><td><i>No energy meters discovered</i></td></tr>
+                    <tr style="background-color: rgba(127,127,127,0.1);">
+                      <td style="text-align: left; padding: 4px;"><b>Total Load</b></td>
+                      <td style="text-align: right; white-space: nowrap; padding: 4px;"><b>{{ states('sensor.current_consumption') }}</b>&nbsp;<small>kW</small></td>
+                    </tr>
+                  {%- else %}
+                    <tr><td>No power sensors</td></tr>
                   {%- endif %}
                   </table>
 
-          - type: vertical-stack
-            title: 🌡 Environment & Climate
+              # --- RIGHT COLUMN: CUMULATIVE ENERGY ---
+              - type: markdown
+                title: 📊 Cumulative Energy
+                content: >
+                  <table width="100%">
+                  {%- set e_sensors = state_attr('sensor.hardware_sensors', 'energy') -%}
+                  {%- if e_sensors %}
+                    {%- for s in e_sensors %}
+                    <tr>
+                      <td style="text-align: left;"><ha-icon icon="mdi:counter" style="color:var(--secondary-text-color);"></ha-icon> {{ s.name }}</td>
+                      <td style="text-align: right; white-space: nowrap;"><b>{{ s.value }}</b>&nbsp;<small>{{ s.unit }}</small></td>
+                    </tr>
+                    {%- endfor %}
+                  {%- else %}
+                    <tr><td>No energy meters</td></tr>
+                  {%- endif %}
+                  </table>
+
+          - type: grid
+            columns: 2
+            square: false
             cards:
               - type: markdown
+                title: 🌡️ Temperature
                 content: |
-                  ### Temperature
                   {% set sensors = state_attr('sensor.hardware_sensors', 'temperature') %}
                   {% if sensors -%}
                   {% for s in sensors -%}
@@ -78,8 +81,9 @@ views:
                   {%- else -%}
                   _None_
                   {%- endif %}
-                  ---
-                  ### Humidity
+              - type: markdown
+                title: 💧 Humidity
+                content: |
                   {% set sensors = state_attr('sensor.hardware_sensors', 'humidity') %}
                   {% if sensors -%}
                   {% for s in sensors -%}
