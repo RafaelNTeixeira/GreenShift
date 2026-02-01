@@ -23,6 +23,10 @@ views:
                 entity: sensor.current_hourly_cost
                 name: Current Hourly Cost
                 graph: line
+              - type: sensor
+                entity: sensor.daily_cost
+                name: Daily Cost
+                graph: line
 
           - type: horizontal-stack
             cards:

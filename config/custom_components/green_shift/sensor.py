@@ -5,7 +5,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, PHASE_BASELINE, BASELINE_DAYS
+from .const import DOMAIN, PHASE_BASELINE, BASELINE_DAYS, UPDATE_INTERVAL_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,7 +26,8 @@ async def async_setup_entry(
         ResearchPhaseSensor(agent, start_date),
         EnergyBaselineSensor(agent),
         CurrentConsumptionSensor(collector),
-        CostConsumptionSensor(hass, collector),
+        CurrentCostConsumptionSensor(hass, collector), 
+        DailyCostConsumptionSensor(hass, collector),
         SavingsAccumulatedSensor(agent, collector),
         CO2SavedSensor(agent, collector),
         TasksCompletedSensor(agent),
@@ -131,7 +132,7 @@ class CurrentConsumptionSensor(SensorEntity):
     def state(self):
         return round(self._collector.current_total_power, 3)
     
-class CostConsumptionSensor(SensorEntity):
+class CurrentCostConsumptionSensor(SensorEntity):
     """Sensor that calculates the current cost per hour based on consumption from DataCollector."""
 
     def __init__(self, hass, collector):
@@ -158,7 +159,7 @@ class CostConsumptionSensor(SensorEntity):
         except (ValueError, TypeError):
             price_per_kwh = 0.25
 
-        cost_hourly = self._collector.current_total_power * price_per_kwh
+        cost_hourly = self._collector.current_total_power * price_per_kwh 
         
         return round(cost_hourly, 3)
 
@@ -170,6 +171,48 @@ class CostConsumptionSensor(SensorEntity):
             "currency": "EUR"
         }
 
+class DailyCostConsumptionSensor(SensorEntity):
+    """Sensor that calculates the daily cost based on consumption from DataCollector."""
+
+    def __init__(self, hass, collector):
+        self.hass = hass
+        self._collector = collector
+        self._attr_name = "Daily Cost"
+        self._attr_unique_id = f"{DOMAIN}_daily_cost"
+        self._attr_unit_of_measurement = "EUR"
+        self._attr_icon = "mdi:cash-multiple"
+
+    @property
+    def unit_of_measurement(self):
+        """Dynamic unit based on input_select."""
+        currency_state = self.hass.states.get("input_select.currency")
+        
+        return f"{currency_state.state}" if currency_state else "EUR" # Default to EUR if the input_select is missing
+
+    @property
+    def state(self):
+        # Price Logic
+        price_state = self.hass.states.get("input_number.electricity_price")
+        try:
+            price_per_kwh = float(price_state.state) if price_state else 0.25
+        except (ValueError, TypeError):
+            price_per_kwh = 0.25
+
+        # Get accurate daily kWh from the Odometer logic
+        daily_kwh = self._collector.get_daily_kwh()
+        
+        # Calculate Cost
+        cost = daily_kwh * price_per_kwh
+        
+        return round(cost, 2)
+
+    @property
+    def extra_state_attributes(self):
+        price_state = self.hass.states.get("input_number.electricity_price")
+        return {
+            "daily_kwh_accumulated": round(self._collector.get_daily_kwh(), 3),
+            "applied_price": price_state.state if price_state else "0.25",
+        }
 
 class SavingsAccumulatedSensor(SensorEntity):
     """Sensor with the accumulated savings in EUR."""

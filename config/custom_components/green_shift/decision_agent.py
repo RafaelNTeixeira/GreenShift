@@ -107,7 +107,7 @@ class DecisionAgent:
         current_state = self.data_collector.get_current_state()
         
         # E_total, F_total (Total Power Consumption)
-        power_sensors = self.sensors.get("power", [])
+        power_sensors = self.sensors.get("power", []) # TODO: This might be a single sensor with total power directly.
         if power_sensors:
             total_power = current_state["power"]
             state.extend([total_power, 1.0])
