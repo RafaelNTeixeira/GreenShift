@@ -52,10 +52,6 @@ class EnergyResearchOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=vol.Schema({
                 vol.Optional(
-                    "max_notifications",
-                    default=self.config_entry.options.get("max_notifications", 10),
-                ): vol.All(int, vol.Range(min=0, max=20)),
-                vol.Optional(
                     "enable_normative",
                     default=self.config_entry.options.get("enable_normative", True),
                 ): bool,

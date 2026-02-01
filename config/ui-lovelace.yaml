@@ -238,8 +238,6 @@ views:
             name: Currency
           - entity: input_number.electricity_price
             name: Electricity Price (€/kWh)
-          - entity: input_boolean.enable_notifications
-            name: Enable Notifications
 
       - type: markdown
         content: |

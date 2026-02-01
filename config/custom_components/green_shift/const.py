@@ -66,7 +66,6 @@ REWARD_WEIGHTS = {
 }
 
 # Motification settings
-MAX_NOTIFICATIONS_PER_DAY = 10
 FATIGUE_THRESHOLD = 0.7
 
 # Discount factor for RL

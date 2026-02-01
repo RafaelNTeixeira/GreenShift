@@ -10,7 +10,6 @@ from .const import (
     REWARD_WEIGHTS,
     PHASE_BASELINE,
     PHASE_ACTIVE,
-    MAX_NOTIFICATIONS_PER_DAY,
     FATIGUE_THRESHOLD,
     GAMMA,
 )
@@ -192,14 +191,7 @@ class DecisionAgent:
         _LOGGER.debug("Action mask: %s", mask)
     
     async def _decide_action(self):
-        """Selects an action using epsilon-greedy policy."""
-        notifications_state = self.hass.states.get("input_boolean.enable_notifications")
-        notifications_enabled = notifications_state.state == "on" if notifications_state else False
-        
-        if (self.notification_count_today >= MAX_NOTIFICATIONS_PER_DAY) or not notifications_enabled:
-            _LOGGER.info("Max daily notifications reached or notifications disabled, no action taken.")
-            return
-        
+        """Selects an action using epsilon-greedy policy."""  
         available_actions = [i for i, m in enumerate(self.action_mask) if m == 1]
         if not available_actions:
             _LOGGER.warning("No available actions in current state.")
@@ -314,7 +306,7 @@ class DecisionAgent:
     
     def _update_fatigue_index(self):
         """Risk of user fatigue from too many notifications."""
-        self.fatigue_index = self.notification_count_today / MAX_NOTIFICATIONS_PER_DAY
+        # self.fatigue_index = self.notification_count_today / MAX_NOTIFICATIONS_PER_DAY # TODO: Cannot be based on a predefined max. Must be dynamic.
         _LOGGER.debug("Fatigue index updated: %.2f", self.fatigue_index)
     
     def _discretize_state(self) -> tuple:
