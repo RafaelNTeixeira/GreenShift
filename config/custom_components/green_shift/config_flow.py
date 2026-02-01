@@ -28,7 +28,6 @@ class EnergyResearchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            # No data_schema means just a text description and a 'Submit' (Next) button
             last_step=False,
         )
 
@@ -45,8 +44,8 @@ class EnergyResearchConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required("currency", default="EUR"): SelectSelector(
                 SelectSelectorConfig(
                     options=["EUR", "USD", "GBP"],
-                    mode=SelectSelectorMode.DROPDOWN, # This forces the list view
-                    translation_key="currency"       # Optional: for custom labels
+                    mode=SelectSelectorMode.DROPDOWN,
+                    translation_key="currency"
                 )
             ),
             vol.Required("electricity_price", default=0.25): vol.Coerce(float),
