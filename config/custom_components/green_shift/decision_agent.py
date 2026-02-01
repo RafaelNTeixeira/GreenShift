@@ -193,8 +193,11 @@ class DecisionAgent:
     
     async def _decide_action(self):
         """Selects an action using epsilon-greedy policy."""
-        if self.notification_count_today >= MAX_NOTIFICATIONS_PER_DAY:
-            _LOGGER.info("Max daily notifications reached, no action taken.")
+        notifications_state = self.hass.states.get("input_boolean.enable_notifications")
+        notifications_enabled = notifications_state.state == "on" if notifications_state else False
+        
+        if (self.notification_count_today >= MAX_NOTIFICATIONS_PER_DAY) or not notifications_enabled:
+            _LOGGER.info("Max daily notifications reached or notifications disabled, no action taken.")
             return
         
         available_actions = [i for i, m in enumerate(self.action_mask) if m == 1]
