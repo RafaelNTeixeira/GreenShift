@@ -1,344 +1,273 @@
 title: Green Shift
 views:
-  # ========== TAB 1: DEVICES (Always Visible) ==========
+  # ========== TAB 1: DEVICES ==========
   - title: Devices
     path: devices
     icon: mdi:power-plug
-    type: sidebar
+    type: panel
     cards:
-      - type: markdown
-        content: |
-          # Monitored Devices
-          Real-time values from automatically discovered **hardware sensors**.
-
-      # LIVE POWER & COST
-      - type: horizontal-stack
-        cards:
-          - type: sensor
-            entity: sensor.current_consumption
-            name: Total Load
-            graph: line
-          - type: sensor
-            entity: sensor.current_hourly_cost
-            name: Current Hourly Cost
-            graph: line
-
-      # POWER SECTION
-      - type: grid
-        title: ⚡ Live Power
-        columns: 1
-        square: false
-        cards:
-          - type: markdown
-            content: |
-              {% set sensors = state_attr('sensor.hardware_sensors', 'power') %}
-              {% if sensors -%}
-              | Device | Usage |
-              |:--- | ---:|
-              {%- for s in sensors %}
-              | <ha-icon icon="mdi:lightning-bolt" style="color:var(--energy-grid-consumption-color)"></ha-icon> **{{ s.name }}** | `{{ s.value }} {{ s.unit }}` |
-              {%- endfor %}
-              | **Total Current Load** | **{{ states('sensor.current_consumption') }} kW** |
-              {%- else %}
-              *No power sensors detected.*
-              {%- endif %}
-
-      # ENERGY SECTION (The "Odometer" Values)
-      - type: grid
-        title: 📊 Cumulative Energy
-        columns: 1
-        square: false
-        cards:
-          - type: markdown
-            content: |
-              <table width="100%">
-              {% set e_sensors = state_attr('sensor.hardware_sensors', 'energy') %}
-              {% if e_sensors -%}
-                {%- for s in e_sensors %}
-                <tr>
-                  <td><ha-icon icon="mdi:counter" style="color:var(--secondary-text-color)"></ha-icon> {{ s.name }}</td>
-                  <td align="right"><b>{{ s.value }}</b> <small>{{ s.unit }}</small></td>
-                </tr>
-                {%- endfor %}
-              {%- else -%}
-                <tr><td><i>No energy meters discovered</i></td></tr>
-              {%- endif %}
-              </table>
-
-      # ENVIRONMENTAL
       - type: vertical-stack
-        title: 🌡 Environment & Climate
         cards:
           - type: markdown
             content: |
-              ### Temperature
-              {% set sensors = state_attr('sensor.hardware_sensors', 'temperature') %}
-              {% if sensors -%}
-              {% for s in sensors -%}
-              **{{ s.name }}**: {{ s.value }}{{ s.unit }}  
-              {% endfor %}
-              {%- else -%}
-              _None_
-              {%- endif %}
+              # Monitored Devices
+              Real-time values from automatically discovered **hardware sensors**.
 
-              ---
-              ### Humidity
-              {% set sensors = state_attr('sensor.hardware_sensors', 'humidity') %}
-              {% if sensors -%}
-              {% for s in sensors -%}
-              **{{ s.name }}**: {{ s.value }}{{ s.unit }}  
-              {% endfor %}
-              {%- else -%}
-              _None_
-              {%- endif %}
+          - type: horizontal-stack
+            cards:
+              - type: sensor
+                entity: sensor.current_consumption
+                name: Total Load
+                graph: line
+              - type: sensor
+                entity: sensor.current_hourly_cost
+                name: Current Hourly Cost
+                graph: line
 
-      # STATUS & SENSORS
-      - type: grid
-        columns: 2
-        square: false
-        cards:
-          - type: markdown
-            title: 💡 Light Level
-            content: |
-              {% set sensors = state_attr('sensor.hardware_sensors', 'illuminance') %}
-              {% if sensors -%}
-              {% for s in sensors -%}
-              • {{ s.name }}: **{{ s.value }} lx** {% endfor %}
-              {%- else -%}
-              _Dark_
-              {%- endif %}
-          
-          - type: markdown
-            title: 👀 Occupancy
-            content: |
-              {% set sensors = state_attr('sensor.hardware_sensors', 'occupancy') %}
-              {% if sensors -%}
-              {% for s in sensors -%}
-              **{{ s.name }}**: {{ '🔴 Occupied' if s.value == 'on' else '🟢 Clear' }}  
-              {% endfor %}
-              {%- else -%}
-              _No data_
-              {%- endif %}
+          - type: grid
+            title: ⚡ Live Power
+            columns: 1
+            square: false
+            cards:
+              - type: markdown
+                content: |
+                  {% set sensors = state_attr('sensor.hardware_sensors', 'power') %}
+                  {% if sensors -%}
+                  | Device | Usage |
+                  |:--- | ---:|
+                  {%- for s in sensors %}
+                  | <ha-icon icon="mdi:lightning-bolt" style="color:var(--energy-grid-consumption-color)"></ha-icon> **{{ s.name }}** | `{{ s.value }} {{ s.unit }}` |
+                  {%- endfor %}
+                  | **Total Current Load** | **{{ states('sensor.current_consumption') }} kW** |
+                  {%- else %}
+                  *No power sensors detected.*
+                  {%- endif %}
 
-  # ========== TAB 2: DASHBOARD (Always Visible) ==========
+          - type: grid
+            title: 📊 Cumulative Energy
+            columns: 1
+            square: false
+            cards:
+              - type: markdown
+                content: |
+                  <table width="100%">
+                  {% set e_sensors = state_attr('sensor.hardware_sensors', 'energy') %}
+                  {% if e_sensors -%}
+                    {%- for s in e_sensors %}
+                    <tr>
+                      <td><ha-icon icon="mdi:counter" style="color:var(--secondary-text-color)"></ha-icon> {{ s.name }}</td>
+                      <td align="right"><b>{{ s.value }}</b> <small>{{ s.unit }}</small></td>
+                    </tr>
+                    {%- endfor %}
+                  {%- else -%}
+                    <tr><td><i>No energy meters discovered</i></td></tr>
+                  {%- endif %}
+                  </table>
+
+          - type: vertical-stack
+            title: 🌡 Environment & Climate
+            cards:
+              - type: markdown
+                content: |
+                  ### Temperature
+                  {% set sensors = state_attr('sensor.hardware_sensors', 'temperature') %}
+                  {% if sensors -%}
+                  {% for s in sensors -%}
+                  **{{ s.name }}**: {{ s.value }}{{ s.unit }}  
+                  {% endfor %}
+                  {%- else -%}
+                  _None_
+                  {%- endif %}
+                  ---
+                  ### Humidity
+                  {% set sensors = state_attr('sensor.hardware_sensors', 'humidity') %}
+                  {% if sensors -%}
+                  {% for s in sensors -%}
+                  **{{ s.name }}**: {{ s.value }}{{ s.unit }}  
+                  {% endfor %}
+                  {%- else -%}
+                  _None_
+                  {%- endif %}
+
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: markdown
+                title: 💡 Light Level
+                content: |
+                  {% set sensors = state_attr('sensor.hardware_sensors', 'illuminance') %}
+                  {% if sensors -%}
+                  {% for s in sensors -%} • {{ s.name }}: **{{ s.value }} lx** {% endfor %}
+                  {%- else -%} _Dark_ {%- endif %}
+              - type: markdown
+                title: 👀 Occupancy
+                content: |
+                  {% set sensors = state_attr('sensor.hardware_sensors', 'occupancy') %}
+                  {% if sensors -%}
+                  {% for s in sensors -%} **{{ s.name }}**: {{ '🔴 Occupied' if s.value == 'on' else '🟢 Clear' }} {% endfor %}
+                  {%- else -%} _No data_ {%- endif %}
+
+  # ========== TAB 2: DASHBOARD ==========
   - title: Dashboard
     path: dashboard
     icon: mdi:chart-line
-    badges: []
+    type: panel
     cards:
-      # Calibration banner (visible only during baseline)
-      - type: conditional
-        conditions:
-          - entity: sensor.research_phase
-            state: baseline
-        card:
-          type: markdown
-          content: |
-            ## Calibration Mode
-            The system is learning your consumption patterns.
-            **{{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining**
-            
-            During this period, you will not receive notifications or challenges.
-      
-      # Graph: Current Consumption vs Baseline
-      - type: history-graph
-        title: Consumption vs Baseline (Last Week)
-        hours_to_show: 168
-        entities:
-          - entity: sensor.current_consumption
-            name: Current Consumption
-          - entity: sensor.energy_baseline
-            name: Baseline
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: |
+              # Dashboard 
+              Analyze your energy consumption patterns and identify opportunities for savings.
+          - type: conditional
+            conditions:
+              - entity: sensor.research_phase
+                state: baseline
+            card:
+              type: markdown
+              content: |
+                ## Calibration Mode
+                The system is learning your consumption patterns.
+                **{{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining**     
 
-      # Summary statistics
-      - type: glance
-        title: Weekly Summary
-        entities:
-          - entity: sensor.current_consumption
-            name: Current Consumption
-            icon: mdi:lightning-bolt
-          - entity: sensor.energy_baseline
-            name: Baseline
-            icon: mdi:chart-line
-          - entity: sensor.savings_accumulated
-            name: Savings
-            icon: mdi:currency-eur
+          - type: history-graph
+            title: Consumption vs Baseline (Last Week)
+            hours_to_show: 168
+            entities:
+              - entity: sensor.current_consumption
+                name: Current Consumption
+              - entity: sensor.energy_baseline
+                name: Baseline
 
-  # ========== TAB 3: USER PROFILE (Always Visible) ==========
-  - title: Profile
-    path: profile
-    icon: mdi:account-circle
-    badges: []
-    cards:
-      # Calibration banner
-      - type: conditional
-        conditions:
-          - entity: sensor.research_phase
-            state: baseline
-        card:
-          type: markdown
-          content: |
-            ## Profile Under Construction
-            **Calibration Mode**: {{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining
-            
-            Your profile will be available after the initial phase.
+          - type: glance
+            title: Weekly Summary
+            entities:
+              - entity: sensor.current_consumption
+              - entity: sensor.energy_baseline
+              - entity: sensor.savings_accumulated
 
-      # Accumulated statistics
-      - type: glance
-        title: Total Impact
-        entities:
-          - entity: sensor.savings_accumulated
-            name: Savings
-            icon: mdi:currency-eur
-          - entity: sensor.co2_saved
-            name: CO2 Avoided
-            icon: mdi:leaf
-          - entity: sensor.tasks_completed
-            name: Tasks
-            icon: mdi:check-circle
-
-      # Behavior indices
-      - type: entities
-        title: Engagement Metrics
-        entities:
-          - entity: sensor.behaviour_index
-            name: Adherence Index
-            icon: mdi:thumb-up
-          - entity: sensor.fatigue_index
-            name: Fatigue Index
-            icon: mdi:alert-circle
-
-      # Weekly progress
-      - type: gauge
-        entity: sensor.collaborative_goal_progress
-        name: Weekly Target
-        min: 0
-        max: 100
-        severity:
-          green: 0
-          yellow: 85
-          red: 100
-
-  # ========== TAB 4: SETTINGS (Always Visible) ==========
-  - title: Settings
-    path: settings
-    icon: mdi:cog
-    badges: []
-    cards:
-      - type: markdown
-        content: |
-          # System Settings
-
-      - type: entities
-        title: Goals and Preferences
-        entities:
-          - entity: input_number.energy_saving_target
-            name: Savings Target (%)
-          - entity: input_select.currency
-            name: Currency
-          - entity: input_number.electricity_price
-            name: Electricity Price (€/kWh)
-
-      - type: markdown
-        content: |
-          ## System Status
-      
-      - type: entities
-        title: Status
-        entities:
-          - entity: sensor.research_phase
-            name: Operating Phase
-          - entity: sensor.energy_baseline
-            name: Learned Baseline
-          - entity: sensor.behaviour_index
-            name: Behaviour Index
-
-  # ========== TAB 5: CHALLENGES (Locked until active phase) ==========
+  # ========== TAB 3: CHALLENGES ==========
   - title: Challenges
     path: tasks
     icon: mdi:clipboard-check
-    badges: []
-    # Conditional visibility: only if phase == active
+    type: panel
     visible:
       - condition: state
         entity: sensor.research_phase
         state: active
     cards:
-      - type: markdown
-        content: |
-          # Daily Challenges
-          Complete today's random tasks to improve your energy efficiency!
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: |
+              # Daily Challenges
+              Complete today's random tasks to improve your energy efficiency!
+          - type: markdown
+            content: |
+              {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+              {% if tasks %}
+                {% for task in tasks %}
+                - **{{ task.title }}**
+                  *{{ task.description }}*
+                {% endfor %}
+              {% else %}
+                No tasks available yet.
+              {% endif %}
 
-      # Daily tasks from backend
-      - type: custom:auto-entities
-        card:
-          type: entities
-          title: "Today's Tasks ({{ state_attr('sensor.daily_tasks', 'tasks') | length }})"
-        entities:
-          - entity_id: sensor.daily_tasks
-            name: Daily Tasks
-
-      # Render tasks as markdown
-      - type: markdown
-        content: |
-          {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
-          {% if tasks %}
-            {% for task in tasks %}
-          - **{{ task.title }}**
-            *{{ task.description }}*
-            
-            {% endfor %}
-          {% else %}
-            No tasks available yet. Check available sensors.
-          {% endif %}
-
-  # ========== TAB 6: COLLABORATIVE GOAL (Locked until active phase) ==========
+  # ========== TAB 4: COLLABORATIVE GOAL ==========
   - title: Collaborative Goal
     path: collaborative
     icon: mdi:account-group
-    badges: []
+    type: panel
     visible:
       - condition: state
         entity: sensor.research_phase
         state: active
     cards:
-      - type: markdown
-        content: |
-          # Weekly Challenge
-          Reduce your energy consumption to 85% of your baseline (15% reduction goal).
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "# Weekly Challenge\nReduce consumption to 85% of your baseline."
+          - type: gauge
+            entity: sensor.weekly_challenge
+            name: Weekly Target Progress
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 85
+              red: 100
+          - type: entities
+            title: Challenge Details
+            entities:
+              - entity: sensor.weekly_challenge
+          - type: markdown
+            content: |
+              **Current Average**: {{ state_attr('sensor.weekly_challenge', 'current_avg_w') }} kW  
+              **Target Average**: {{ state_attr('sensor.weekly_challenge', 'target_avg_w') }} kW  
+              **Baseline**: {{ state_attr('sensor.weekly_challenge', 'baseline_w') }} kW
 
-      # Weekly challenge progress gauge
-      - type: gauge
-        entity: sensor.weekly_challenge
-        name: Weekly Target Progress
-        min: 0
-        max: 100
-        severity:
-          green: 0
-          yellow: 85
-          red: 100
-        needle: true
+  # ========== TAB 5: USER PROFILE ==========
+  - title: Profile
+    path: profile
+    icon: mdi:account-circle
+    type: panel
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: conditional
+            conditions:
+              - entity: sensor.research_phase
+                state: baseline
+            card:
+              type: markdown
+              content: |
+                ## Profile Under Construction
+                **Calibration Mode**: {{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining
 
-      # Challenge details
-      - type: entities
-        title: Challenge Details
-        entities:
-          - entity: sensor.weekly_challenge
-            name: Progress to Target
-            format: "{{ state }}%"
-      
-      - type: markdown
-        content: |
-          {% set challenge = state_attr('sensor.weekly_challenge', '__dict__') %}
-          **Current Average**: {{ state_attr('sensor.weekly_challenge', 'current_avg_w') }} kW
-          
-          **Target Average**: {{ state_attr('sensor.weekly_challenge', 'target_avg_w') }} kW
-          
-          **Baseline**: {{ state_attr('sensor.weekly_challenge', 'baseline_w') }} kW
-          
-          **Status**: 
-          {% if state_attr('sensor.weekly_challenge', 'status') == 'completed' %}
-            **Challenge Completed!** Your consumption is below the target.
-          {% else %}
-            **In Progress** - Keep working towards the goal!
-          {% endif %}
+          - type: glance
+            title: Total Impact
+            entities:
+              - entity: sensor.savings_accumulated
+              - entity: sensor.co2_saved
+              - entity: sensor.tasks_completed
+
+          - type: entities
+            title: Engagement Metrics
+            entities:
+              - entity: sensor.behaviour_index
+              - entity: sensor.fatigue_index
+
+          - type: gauge
+            entity: sensor.collaborative_goal_progress
+            name: Weekly Target
+            min: 0
+            max: 100
+            severity:
+              green: 0
+              yellow: 85
+              red: 100
+
+  # ========== TAB 6: SETTINGS ==========
+  - title: Settings
+    path: settings
+    icon: mdi:cog
+    type: panel
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "# System Settings"
+          - type: entities
+            title: Goals and Preferences
+            entities:
+              - entity: input_number.energy_saving_target
+              - entity: input_select.currency
+              - entity: input_number.electricity_price
+          - type: entities
+            title: Status
+            entities:
+              - entity: sensor.research_phase
+              - entity: sensor.energy_baseline
+              - entity: sensor.behaviour_index

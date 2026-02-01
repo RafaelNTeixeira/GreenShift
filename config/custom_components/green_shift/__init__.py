@@ -103,6 +103,7 @@ async def async_discover_sensors(hass: HomeAssistant) -> dict:
         
         device_class = entity.device_class or (state.attributes.get("device_class") if state else None)
         unit = entity.unit_of_measurement or (state.attributes.get("unit_of_measurement") if state else "")
+        _LOGGER.debug("Evaluating entity %s: device_class=%s, unit=%s", entity_id, device_class, unit)
         original_name = (entity.original_name or "").lower()
 
         # Direct Matching by Device Class or Unit
