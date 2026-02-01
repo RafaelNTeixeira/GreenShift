@@ -41,6 +41,7 @@ async def async_setup_entry(
     
     async_add_entities(sensors)
 
+
 class HardwareSensorsSensor(SensorEntity):
     """Aggregates hardware sensors by category with live values."""
 
@@ -133,6 +134,7 @@ class CurrentConsumptionSensor(SensorEntity):
     def state(self):
         return round(self._collector.current_total_power, 3)
     
+
 class CurrentCostConsumptionSensor(SensorEntity):
     """Sensor that calculates the current cost per hour based on consumption from DataCollector."""
 
@@ -171,6 +173,7 @@ class CurrentCostConsumptionSensor(SensorEntity):
             "applied_price_per_kwh": price_state.state if price_state else "0.25 (default)",
             "currency": "EUR"
         }
+
 
 class DailyCostConsumptionSensor(SensorEntity):
     """Sensor that calculates the daily cost based on consumption from DataCollector."""
@@ -215,6 +218,7 @@ class DailyCostConsumptionSensor(SensorEntity):
             "applied_price": price_state.state if price_state else "0.25",
         }
     
+
 class DailyCO2EstimateSensor(SensorEntity):
     """Sensor that estimates daily CO2 emissions based on consumption from DataCollector."""
 
@@ -244,6 +248,7 @@ class DailyCO2EstimateSensor(SensorEntity):
             "daily_kwh_accumulated": round(self._collector.get_daily_kwh(), 3),
             "co2_factor": 0.097,
         }
+
 
 class SavingsAccumulatedSensor(SensorEntity):
     """Sensor with the accumulated savings in EUR."""

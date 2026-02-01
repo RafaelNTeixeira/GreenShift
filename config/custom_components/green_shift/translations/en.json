@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Welcome to Green Shift",
+        "description": "Welcome to the Green Shift energy research project! This integration helps you monitor and optimize your home's energy efficiency. Click next to begin setup."
+      },
+      "settings": {
+        "title": "Energy Configuration",
+        "description": "Please provide your local currency and current electricity cost per kWh to calculate savings.",
+        "data": {
+          "currency": "Currency (e.g., EUR, USD)",
+          "electricity_price": "Price per kWh"
+        }
+      },
+      "intervention_info": {
+        "title": "Phase 1: Baseline Observation",
+        "description": "For the first 14 days, the system will only collect and display energy consumption data to establish a baseline. \n\nAfter this period, **Gamification Challenges** and **AI-driven notifications** will be automatically activated to help improve your performance."
+      }
+    }
+  }
+}
