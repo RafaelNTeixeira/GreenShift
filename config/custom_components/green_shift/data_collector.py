@@ -120,6 +120,7 @@ class DataCollector:
             try:
                 value = float(new_state.state)
                 self._energy_sensor_cache[entity_id] = value
+                _LOGGER.debug("Updated energy cache for %s: %.3f kWh", entity_id, value)
 
                 if self._energy_midnight_points.get(entity_id) is None: # Initialize midnight point (since the setup will usually happen after midnight)
                     self._energy_midnight_points[entity_id] = value
@@ -127,9 +128,8 @@ class DataCollector:
 
                 self.get_daily_kwh()
                 
-                _LOGGER.debug("Updated energy cache for %s: %.2f kWh", entity_id, value)
-                
             except (ValueError, TypeError):
+                _LOGGER.debug("Invalid energy value for %s: %s", entity_id, new_state.state)
                 pass
         
         async_track_state_change_event(self.hass, energy_sensors, handle_energy_change)
@@ -157,7 +157,6 @@ class DataCollector:
     
     async def _setup_environment_monitoring(self):
         """Setup instant monitoring for environmental sensors."""
-        
         # Temperature
         temp_sensors = self.sensors.get("temperature", [])
         if temp_sensors:
@@ -168,6 +167,7 @@ class DataCollector:
                     try:
                         self.current_temperature = float(new_state.state)
                     except (ValueError, TypeError):
+                        _LOGGER("Invalid temperature value: %s", new_state.state)
                         pass
             
             async_track_state_change_event(self.hass, temp_sensors, handle_temp_change)
@@ -183,6 +183,7 @@ class DataCollector:
                     try:
                         self.current_humidity = float(new_state.state)
                     except (ValueError, TypeError):
+                        _LOGGER("Invalid humidity value: %s", new_state.state)
                         pass
             
             async_track_state_change_event(self.hass, hum_sensors, handle_hum_change)
@@ -198,6 +199,7 @@ class DataCollector:
                     try:
                         self.current_illuminance = float(new_state.state)
                     except (ValueError, TypeError):
+                        _LOGGER.debug("Invalid illuminance value: %s", new_state.state)
                         pass
             
             async_track_state_change_event(self.hass, lux_sensors, handle_lux_change)
@@ -210,7 +212,11 @@ class DataCollector:
             def handle_occ_change(event: Event):
                 new_state = event.data.get("new_state")
                 if new_state:
-                    self.current_occupancy = new_state.state.lower() in ["on", "true", "detected"]
+                    try:
+                        self.current_occupancy = new_state.state.lower() in ["on", "true", "detected"]
+                    except (ValueError, TypeError):
+                        _LOGGER.debug("Invalid occupancy value: %s", new_state.state)
+                        pass
             
             async_track_state_change_event(self.hass, occ_sensors, handle_occ_change)
             _LOGGER.info("Real-time occupancy monitoring active for %d sensors", len(occ_sensors))
@@ -238,6 +244,7 @@ class DataCollector:
                         val = float(state.state)
                         self._energy_sensor_cache[entity_id] = val
                     except (ValueError, TypeError):
+                        _LOGGER.debug("Invalid energy value for %s during midnight reset: %s", entity_id, state.state)
                         continue
             
             if val is not None:
