@@ -25,11 +25,12 @@ class DataCollector:
         day_in_seconds = 86400
         max_readings = int(days_to_store * day_in_seconds / UPDATE_INTERVAL_SECONDS)
         
-        self.consumption_history = deque(maxlen=max_readings)
-        self.temperature_history = deque(maxlen=max_readings)
-        self.humidity_history = deque(maxlen=max_readings)
-        self.illuminance_history = deque(maxlen=max_readings)
-        self.occupancy_history = deque(maxlen=max_readings)
+        self.power_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
+        self.energy_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
+        self.temperature_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
+        self.humidity_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
+        self.illuminance_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
+        self.occupancy_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
         
         # Current readings (latest values)
         self.current_total_power = 0.0
@@ -41,7 +42,7 @@ class DataCollector:
         # Instant sensor cache
         self._power_sensor_cache = {}
         self._energy_sensor_cache = {}
-        self._energy_midnight_points = {}
+        self._energy_midnight_points = {} # TODO: Store in persistent storage JSON
         
         # Timestamp tracking
         self._last_history_update = None
@@ -76,7 +77,7 @@ class DataCollector:
             try:
                 value = float(new_state.state)
                 self._power_sensor_cache[entity_id] = value
-                self._update_total_power()
+                self._update_total_consumption()
             except (ValueError, TypeError):
                 _LOGGER.debug("Invalid power value for %s: %s", entity_id, new_state.state)
         
@@ -202,23 +203,26 @@ class DataCollector:
         
         _LOGGER.debug("Midnight snapshots updated: %s", self._energy_midnight_points)
     
-    def _update_total_power(self):
+    def _update_total_consumption(self):
         """Calculate total power from cached sensor values and update history."""
-        total = sum(self._power_sensor_cache.values()) # TODO: Might have a single sensor that measures total power directly.
-        self.current_total_power = total
+        total_energy = self.get_daily_kwh() # TODO: Might have a single sensor that measures total energy directly.
+        total_power = sum(self._power_sensor_cache.values()) # TODO: Might have a single sensor that measures total power directly.
+
+        self.current_total_power = total_power
         
         # Add to history every UPDATE_INTERVAL_SECONDS to avoid too many entries
         now = datetime.now()
         if self._last_history_update is None or \
            (now - self._last_history_update).total_seconds() >= UPDATE_INTERVAL_SECONDS:
-            self.consumption_history.append((now, total))
+            self.power_history.append((now, total_power))
+            self.energy_history.append((now, total_energy))
             self.temperature_history.append((now, self.current_temperature))
             self.humidity_history.append((now, self.current_humidity))
             self.illuminance_history.append((now, self.current_illuminance))
             self.occupancy_history.append((now, 1.0 if self.current_occupancy else 0.0))
             self._last_history_update = now
             _LOGGER.debug("Data recorded - Power: %.2f kW, Temp: %.1f°C, Hum: %.1f%%, Lux: %.0f lx, Occ: %s",
-                         total, self.current_temperature, self.current_humidity, 
+                         total_power, self.current_temperature, self.current_humidity, 
                          self.current_illuminance, self.current_occupancy)
             
     # TODO: Might have a sensor that measures total energy directly.
@@ -274,19 +278,19 @@ class DataCollector:
             "occupancy": self.current_occupancy,
         }
     
-    def get_consumption_history(self) -> list:
+    def get_power_history(self) -> list:
         """Returns only the power values (floats)."""
         # Return only the power values without timestamps
-        return [v for _, v in self.consumption_history]
+        return [v for _, v in self.power_history]
     
-    def get_consumption_history_with_timestamps(self) -> list:
+    def get_power_history_with_timestamps(self) -> list:
         """Get consumption history with timestamps."""
-        return list(self.consumption_history)
+        return list(self.power_history)
     
     def get_all_history(self) -> dict:
         """Get all historical data."""
         return {
-            "consumption": list(self.consumption_history),
+            "consumption": list(self.power_history),
             "temperature": list(self.temperature_history),
             "humidity": list(self.humidity_history),
             "illuminance": list(self.illuminance_history),

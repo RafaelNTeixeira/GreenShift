@@ -27,11 +27,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Setup of the component through config entry."""
     hass.data.setdefault(DOMAIN, {})
     
-    # Auto-discovery of the sensors
-    discovered_sensors = await async_discover_sensors(hass)
+    # Use confirmed sensors from the user configuration
+    discovered_sensors = entry.data.get("discovered_sensors")
+
+    # TODO: If no sensors were found, perform discovery again ?
+    # if not discovered_sensors:
+    #     discovered_sensors = await async_discover_sensors(hass)
     
+    main_sensor = entry.data.get("main_total_energy_sensor")
+    _LOGGER.info("Configuring Green Shift with main sensor: %s", main_sensor)
+
     # Initialize the real-time data collector
-    collector = DataCollector(hass, discovered_sensors)
+    collector = DataCollector(hass, discovered_sensors) # TODO: Might need to pass main_sensor here
     await collector.setup()
     
     # Initialize the decision agent (AI)
@@ -57,9 +64,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # During baseline phase: continuously update baseline_consumption
         if agent.phase == PHASE_BASELINE:
-            consumption_history = collector.get_consumption_history()
-            if len(consumption_history) > 0:
-                agent.baseline_consumption = np.mean(consumption_history)
+            power_history = collector.get_power_history()
+            if len(power_history) > 0:
+                agent.baseline_consumption = np.mean(power_history)
                 _LOGGER.debug("Baseline consumption updated: %.2f kW", agent.baseline_consumption)
         
         # Verify if the baseline phase is complete

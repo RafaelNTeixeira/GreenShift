@@ -264,17 +264,17 @@ class SavingsAccumulatedSensor(SensorEntity):
     @property
     def state(self):
         # Calculate savings: (baseline - avg_consumption) * kWh_price * hours
-        consumption_history = self._collector.get_consumption_history()
-        if len(consumption_history) < 10:
+        power_history = self._collector.get_power_history()
+        if len(power_history) < 10:
             return 0
         
-        avg_consumption = sum(consumption_history) / len(consumption_history)
+        avg_consumption = sum(power_history) / len(power_history)
         saving_kW = self._agent.baseline_consumption - avg_consumption
         
         # Convert to kWh and multiply by price (€0.25/kWh estimated)
         # 15-second intervals: 240 readings per hour
         seconds_in_an_hour = 3600
-        hours = len(consumption_history) / (seconds_in_an_hour / UPDATE_INTERVAL_SECONDS)
+        hours = len(power_history) / (seconds_in_an_hour / UPDATE_INTERVAL_SECONDS)
 
         saving_kwh = (saving_kW * hours)
         savings_eur = saving_kwh * 0.25
@@ -296,15 +296,15 @@ class CO2SavedSensor(SensorEntity):
     @property
     def state(self):
         # CO2: ~0.5 kg/kWh (mix energy Portugal)
-        consumption_history = self._collector.get_consumption_history()
-        if len(consumption_history) < 10:
+        power_history = self._collector.get_power_history()
+        if len(power_history) < 10:
             return 0
         
-        avg_consumption = sum(consumption_history) / len(consumption_history)
+        avg_consumption = sum(power_history) / len(power_history)
         saving_watts = self._agent.baseline_consumption - avg_consumption
         
         # 15-second intervals: 240 readings per hour
-        hours = len(consumption_history) / 240
+        hours = len(power_history) / 240
         saving_kwh = (saving_watts * hours) / 1000
         co2_saved = saving_kwh * 0.5
         

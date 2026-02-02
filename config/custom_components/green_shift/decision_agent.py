@@ -34,13 +34,13 @@ class DecisionAgent:
         self.hass = hass
         self.sensors = discovered_sensors
         self.data_collector = data_collector  # Reference to DataCollector
-        self.phase = PHASE_BASELINE 
+        self.phase = PHASE_BASELINE # TODO: Store in persistent storage JSON
         # self.phase = PHASE_ACTIVE # TEMP: For testing purposes, start in active phase
         
         # AI state
         self.state_vector = None
         self.action_mask = None
-        self.baseline_consumption = 0.0
+        self.baseline_consumption = 0.0 # TODO: Store in persistent storage JSON
         self.baseline_consumption_week = None  # Fixed baseline for challenges (set after each week)
         self.last_baseline_update_date = None  # Track weekly baseline updates
         
@@ -50,14 +50,14 @@ class DecisionAgent:
         self.last_notification_date = None
         
         # Q-table simplified (for demonstration, in production use DQN)
-        self.q_table = {}
+        self.q_table = {} # TODO: Store in persistent storage JSON
         self.learning_rate = 0.1
         self.epsilon = 0.2  # Exploration rate
         
         # Behaviour indices (calculated by AI)
-        self.anomaly_index = 0.0
-        self.behaviour_index = 0.5
-        self.fatigue_index = 0.0
+        self.anomaly_index = 0.0 # TODO: Store in persistent storage JSON
+        self.behaviour_index = 0.5 # TODO: Store in persistent storage JSON
+        self.fatigue_index = 0.0 # TODO: Store in persistent storage JSON
         
         # Tasks and challenges (AI-specific)
         self.daily_tasks = []
@@ -177,8 +177,8 @@ class DecisionAgent:
             mask[ACTIONS["specific"]] = 0
         
         # anomaly: needs enough consumption history
-        consumption_history = self.data_collector.get_consumption_history()
-        if len(consumption_history) < 100:
+        power_history = self.data_collector.get_power_history()
+        if len(power_history) < 100:
             mask[ACTIONS["anomaly"]] = 0
         
         # behavioural: always available
@@ -247,13 +247,13 @@ class DecisionAgent:
         Calculates reward R_t based on energy savings and user engagement.
         Reads consumption history from DataCollector.
         """
-        consumption_history = self.data_collector.get_consumption_history()
-        if len(consumption_history) < 10:
+        power_history = self.data_collector.get_power_history()
+        if len(power_history) < 10:
             return 0.0
         
         # Energy savings component
-        current = consumption_history[-1]
-        baseline = self.baseline_consumption if self.baseline_consumption > 0 else np.mean(consumption_history)
+        current = power_history[-1]
+        baseline = self.baseline_consumption if self.baseline_consumption > 0 else np.mean(power_history)
         energy_saving = max(0, (baseline - current) / baseline) if baseline > 0 else 0
         
         # User engagement component
@@ -276,16 +276,16 @@ class DecisionAgent:
         Detects anomalies in consumption using z-score.
         Reads consumption history from DataCollector.
         """
-        consumption_history = self.data_collector.get_consumption_history()
+        power_history = self.data_collector.get_power_history()
         
         # Calculate anomaly index based on last hour of data
         readings_per_hour = int(3600 / UPDATE_INTERVAL_SECONDS)
         
-        if len(consumption_history) < readings_per_hour:
+        if len(power_history) < readings_per_hour:
             self.anomaly_index = 0.0
             return
         
-        recent = consumption_history[-readings_per_hour:]
+        recent = power_history[-readings_per_hour:]
         mean = np.mean(recent)
         std = np.std(recent)
         current = recent[-1]
@@ -394,9 +394,9 @@ class DecisionAgent:
            (today - self.last_baseline_update_date).days >= 7:
             self.last_baseline_update_date = today
             
-            consumption_history = self.data_collector.get_consumption_history()
-            if len(consumption_history) > 0:
-                self.baseline_consumption_week = np.mean(consumption_history)
+            power_history = self.data_collector.get_power_history()
+            if len(power_history) > 0:
+                self.baseline_consumption_week = np.mean(power_history)
                 _LOGGER.info("Weekly baseline updated: %.2f kW", self.baseline_consumption_week)
     
     def get_weekly_challenge_status(self) -> dict:
@@ -408,19 +408,19 @@ class DecisionAgent:
         if self.baseline_consumption_week is None or self.baseline_consumption_week == 0:
             return {"status": "pending", "current_avg": 0, "target_avg": 0, "progress": 0}
         
-        consumption_history = self.data_collector.get_consumption_history()
+        power_history = self.data_collector.get_power_history()
         
         # Calculate readings per day based on data collection interval
         day_in_seconds = 86400
         readings_per_day = int(day_in_seconds / UPDATE_INTERVAL_SECONDS)
         
         # Need at least 1 day of data
-        if len(consumption_history) < readings_per_day:
+        if len(power_history) < readings_per_day:
             return {"status": "pending", "current_avg": 0, "target_avg": 0, "progress": 0}
         
         # Get last 7 days of consumption
         week_readings = readings_per_day * 7
-        week_data = consumption_history[-week_readings:]
+        week_data = power_history[-week_readings:]
         current_avg = np.mean(week_data) if week_data else 0
         
         # Calculate target average based on baseline and challenge target
