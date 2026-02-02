@@ -203,7 +203,7 @@ class DailyCostConsumptionSensor(SensorEntity):
             price_per_kwh = 0.25
 
         # Get accurate daily kWh from the Odometer logic
-        daily_kwh = self._collector.get_daily_kwh()
+        daily_kwh = self._collector.current_daily_energy
         
         # Calculate Cost
         cost = daily_kwh * price_per_kwh
@@ -214,7 +214,7 @@ class DailyCostConsumptionSensor(SensorEntity):
     def extra_state_attributes(self):
         price_state = self.hass.states.get("input_number.electricity_price")
         return {
-            "daily_kwh_accumulated": round(self._collector.get_daily_kwh(), 3),
+            "daily_kwh_accumulated": round(self._collector.current_daily_energy, 3),
             "applied_price": price_state.state if price_state else "0.25",
         }
     
@@ -235,7 +235,7 @@ class DailyCO2EstimateSensor(SensorEntity):
         co2_factor_portugal = 0.097 # kg/kWh as of early 2026
 
         # Get accurate daily kWh from the Odometer logic
-        daily_kwh = self._collector.get_daily_kwh()
+        daily_kwh = self._collector.current_daily_energy
         
         # Calculate CO2 Emissions (daily_kwh * kg/kWh)
         co2_emissions = daily_kwh * co2_factor_portugal
@@ -245,7 +245,7 @@ class DailyCO2EstimateSensor(SensorEntity):
     @property
     def extra_state_attributes(self):
         return {
-            "daily_kwh_accumulated": round(self._collector.get_daily_kwh(), 3),
+            "daily_kwh_accumulated": round(self._collector.current_daily_energy, 3),
             "co2_factor": 0.097,
         }
 

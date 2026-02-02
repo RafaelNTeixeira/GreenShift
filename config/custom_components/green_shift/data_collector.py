@@ -1,8 +1,8 @@
 import logging
-from datetime import datetime
 from collections import deque
+from datetime import timedelta
 from homeassistant.core import HomeAssistant, callback, Event
-from homeassistant.helpers.event import async_track_state_change_event, async_track_time_change
+from homeassistant.helpers.event import async_track_state_change_event, async_track_time_change, async_track_time_interval
 
 from .const import UPDATE_INTERVAL_SECONDS
 
@@ -34,6 +34,7 @@ class DataCollector:
         
         # Current readings (latest values)
         self.current_total_power = 0.0
+        self.current_daily_energy = 0.0
         self.current_temperature = 0.0
         self.current_humidity = 0.0
         self.current_illuminance = 0.0
@@ -54,6 +55,12 @@ class DataCollector:
         await self._setup_environment_monitoring()
 
         async_track_time_change(self.hass, self._reset_midnight_listener, hour=0, minute=0, second=0) # Schedule at midnight daily
+
+        async_track_time_interval(
+            self.hass, 
+            self._record_periodic_snapshot, 
+            timedelta(seconds=UPDATE_INTERVAL_SECONDS)
+        )
 
         _LOGGER.info("DataCollector setup complete - real-time monitoring active")
     
@@ -77,12 +84,22 @@ class DataCollector:
             try:
                 value = float(new_state.state)
                 self._power_sensor_cache[entity_id] = value
-                self._update_total_consumption()
+                _LOGGER.debug("Updated power cache for %s: %.2f W", entity_id, value)
+
+                self._recalculate_total_power()
+                _LOGGER.debug("Total power recalculated: %.2f W", self.current_total_power)
             except (ValueError, TypeError):
                 _LOGGER.debug("Invalid power value for %s: %s", entity_id, new_state.state)
+                pass
         
         async_track_state_change_event(self.hass, power_sensors, handle_power_change)
         _LOGGER.info("Real-time power monitoring active for %d sensors", len(power_sensors))
+
+    def _recalculate_total_power(self):
+        """Sum all power sensors for real-time display."""
+        # Logic to sum cache or use main sensor
+        total_power = sum(self._power_sensor_cache.values()) # TODO: Might have a sensor that measures total power directly.
+        self.current_total_power = total_power
 
     async def _setup_energy_monitoring(self):
         """Setup instant monitoring for energy sensors."""
@@ -93,25 +110,50 @@ class DataCollector:
         
         @callback
         def handle_energy_change(event: Event):
+            """Handle energy sensor state changes instantly."""
             entity_id = event.data.get("entity_id") 
             new_state = event.data.get("new_state")
             
-            if new_state and entity_id:
-                try:
-                    value = float(new_state.state)
-                    self._energy_sensor_cache[entity_id] = value
+            if new_state is None or entity_id not in energy_sensors:
+                return
+            
+            try:
+                value = float(new_state.state)
+                self._energy_sensor_cache[entity_id] = value
 
-                    if self._energy_midnight_points.get(entity_id) is None: # Initialize midnight point (since the setup will usually happen after midnight)
-                        self._energy_midnight_points[entity_id] = value
-                        _LOGGER.info("Initialized midnight baseline for %s: %.3f kWh", entity_id, value)
-                    
-                    _LOGGER.debug("Updated energy cache for %s: %.2f kWh", entity_id, value)
-                    
-                except (ValueError, TypeError):
-                    pass
+                if self._energy_midnight_points.get(entity_id) is None: # Initialize midnight point (since the setup will usually happen after midnight)
+                    self._energy_midnight_points[entity_id] = value
+                    _LOGGER.info("Initialized midnight baseline for %s: %.3f kWh", entity_id, value)
+
+                self.get_daily_kwh()
+                
+                _LOGGER.debug("Updated energy cache for %s: %.2f kWh", entity_id, value)
+                
+            except (ValueError, TypeError):
+                pass
         
         async_track_state_change_event(self.hass, energy_sensors, handle_energy_change)
         _LOGGER.info("Real-time energy monitoring active for %d sensors", len(energy_sensors))
+
+    # TODO: Might have a sensor that measures total energy directly.
+    def get_daily_kwh(self):
+        """
+        Calculates total kWh consumed today.
+        Sum up the differences based on cached values.
+        """
+        total_kwh = 0.0
+        for entity_id, current_val in self._energy_sensor_cache.items():
+            midnight_val = self._energy_midnight_points.get(entity_id, current_val)
+            
+            if current_val < midnight_val:
+                # Handle sensor reset (odometer rolled over or reset to 0)
+                total_kwh += current_val
+            else:
+                total_kwh += (current_val - midnight_val)
+                
+        _LOGGER.debug("Total daily kWh calculated: %.3f kWh", total_kwh)
+        self.current_daily_energy = total_kwh
+
     
     async def _setup_environment_monitoring(self):
         """Setup instant monitoring for environmental sensors."""
@@ -203,75 +245,24 @@ class DataCollector:
         
         _LOGGER.debug("Midnight snapshots updated: %s", self._energy_midnight_points)
     
-    def _update_total_consumption(self):
-        """Calculate total power from cached sensor values and update history."""
-        total_energy = self.get_daily_kwh() # TODO: Might have a single sensor that measures total energy directly.
-        total_power = sum(self._power_sensor_cache.values()) # TODO: Might have a single sensor that measures total power directly.
-
-        self.current_total_power = total_power
+    @callback
+    def _record_periodic_snapshot(self, now):
+        """Records a snapshot of all current readings."""
+        self.power_history.append((now, self.current_total_power))
+        self.energy_history.append((now, self.current_daily_energy))
+        self.temperature_history.append((now, self.current_temperature))
+        self.humidity_history.append((now, self.current_humidity))
+        self.illuminance_history.append((now, self.current_illuminance))
+        self.occupancy_history.append((now, 1.0 if self.current_occupancy else 0.0))
         
-        # Add to history every UPDATE_INTERVAL_SECONDS to avoid too many entries
-        now = datetime.now()
-        if self._last_history_update is None or \
-           (now - self._last_history_update).total_seconds() >= UPDATE_INTERVAL_SECONDS:
-            self.power_history.append((now, total_power))
-            self.energy_history.append((now, total_energy))
-            self.temperature_history.append((now, self.current_temperature))
-            self.humidity_history.append((now, self.current_humidity))
-            self.illuminance_history.append((now, self.current_illuminance))
-            self.occupancy_history.append((now, 1.0 if self.current_occupancy else 0.0))
-            self._last_history_update = now
-            _LOGGER.debug("Data recorded - Power: %.2f kW, Temp: %.1f°C, Hum: %.1f%%, Lux: %.0f lx, Occ: %s",
-                         total_power, self.current_temperature, self.current_humidity, 
-                         self.current_illuminance, self.current_occupancy)
-            
-    # TODO: Might have a sensor that measures total energy directly.
-    def get_daily_kwh(self) -> float:
-        """
-        Calculates total kWh consumed today.
-        Self-healing: If midnight/startup baseline is missing, captures it immediately.
-        """
-        total_daily_kwh = 0.0
-        energy_sensors = self.sensors.get("energy", [])
-        
-        for entity_id in energy_sensors:
-            midnight_val = self._energy_midnight_points.get(entity_id)
-            current_val = self._energy_sensor_cache.get(entity_id)
-            
-            # If cache is empty, read state directly
-            if current_val is None:
-                state = self.hass.states.get(entity_id)
-                if state and state.state not in ["unknown", "unavailable"]:
-                    try:
-                        current_val = float(state.state)
-                        # Update cache for next time
-                        self._energy_sensor_cache[entity_id] = current_val
-                    except ValueError:
-                        continue
-            
-            # Proceed only if we have a valid current reading
-            if current_val is not None:
-                
-                # If we missed the startup snapshot (sensor was unavailable), use the current value as the baseline.
-                if midnight_val is None:
-                    self._energy_midnight_points[entity_id] = current_val
-                    midnight_val = current_val
-                    _LOGGER.info("Late initialization: Set baseline for %s to %.3f", entity_id, midnight_val)
-
-                if current_val < midnight_val:
-                    # Sensor reset case (e.g., daily smart plug reset)
-                    total_daily_kwh += current_val
-                else:
-                    # Standard odometer case
-                    total_daily_kwh += (current_val - midnight_val)
-        
-        _LOGGER.debug("Total daily kWh calculated: %.3f kWh", total_daily_kwh)
-        return total_daily_kwh
+        _LOGGER.debug("History Snapshot Recorded: Power=%.2f kW | Energy=%.2f kWh", 
+                      self.current_total_power, self.current_daily_energy)
     
     def get_current_state(self) -> dict:
         """Get current sensor readings."""
         return {
             "power": self.current_total_power,
+            "energy": self.current_daily_energy,
             "temperature": self.current_temperature,
             "humidity": self.current_humidity,
             "illuminance": self.current_illuminance,

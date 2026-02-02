@@ -30,6 +30,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Use confirmed sensors from the user configuration
     discovered_sensors = entry.data.get("discovered_sensors")
 
+    _LOGGER.debug("Setting up Green Shift with sensors: %s", discovered_sensors)
+
     # TODO: If no sensors were found, perform discovery again ?
     # if not discovered_sensors:
     #     discovered_sensors = await async_discover_sensors(hass)
@@ -90,7 +92,7 @@ async def sync_helper_entities(hass: HomeAssistant, entry: ConfigEntry):
     chosen_currency = entry.data.get("currency", "EUR")
     chosen_price = entry.data.get("electricity_price", 0.25)
 
-    # Update Currency (input_select)
+    # Update currency (input_select)
     try:
         await hass.services.async_call(
             "input_select",
@@ -102,7 +104,7 @@ async def sync_helper_entities(hass: HomeAssistant, entry: ConfigEntry):
     except Exception as e:
         _LOGGER.warning("Could not sync input_select.currency: %s", e)
 
-    # Update Electricity Price (input_number)
+    # Update electricity price (input_number)
     try:
         await hass.services.async_call(
             "input_number",

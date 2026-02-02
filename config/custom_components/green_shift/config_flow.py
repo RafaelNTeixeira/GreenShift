@@ -29,6 +29,7 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             # Trigger discovery when the user moves past the first slide
             self.discovered_cache = await async_discover_sensors(self.hass)
+            _LOGGER.debug("Discovered sensors: %s", self.discovered_cache)
             return await self.async_step_settings()
 
         return self.async_show_form(step_id="user", last_step=False)
