@@ -35,14 +35,14 @@ ENVIRONMENTS = {
         "name": "Fraunhofer Lab Environment",
         "sensors": [
             # (dev_id, name, class, unit, dev_info, value_key, state_class, sensor_type)
-            ("hub_01", "Overall Consumption", "energy", "kWh", HUB_DEV, "total_e", "total_increasing", "sensor"),
+            ("hub_01", "Overall Energy Consumption", "energy", "kWh", HUB_DEV, "energy", "total_increasing", "sensor"),
             ("hub_01", "Ambient Temperature", "temperature", "°C", HUB_DEV, "temp", "measurement", "sensor"),
             ("hub_01", "Relative Humidity", "humidity", "%", HUB_DEV, "hum", "measurement", "sensor"),
             ("hub_01", "Luminosity", "illuminance", "lx", HUB_DEV, "lux", "measurement", "sensor"),
             ("hub_01", "Presence", "occupancy", None, HUB_DEV, "presence", None, "binary_sensor"),
             ("plug_a", "Plug Alpha Power", "power", "W", {"identifiers":["pa"], "name":"Plug Monitor Alpha"}, "power", "measurement", "sensor"),
-            ("plug_b", "Plug Beta Power", "power", "W", {"identifiers":["pa"], "name":"Plug Monitor Beta"}, "power", "measurement", "sensor"),
-            ("plug_c", "Plug Charlie Power", "power", "W", {"identifiers":["pa"], "name":"Plug Monitor Charlie"}, "power", "measurement", "sensor"),
+            ("plug_b", "Plug Beta Power", "power", "W", {"identifiers":["pb"], "name":"Plug Monitor Beta"}, "power", "measurement", "sensor"),
+            ("plug_c", "Plug Charlie Power", "power", "W", {"identifiers":["pc"], "name":"Plug Monitor Charlie"}, "power", "measurement", "sensor"),
         ]
     },
     2: {
@@ -113,7 +113,6 @@ for _, _, _, _, _, v_key, _, _ in active_env["sensors"]:
     elif "hum" in v_key: current_values[v_key] = 50.0
     elif "lux" in v_key: current_values[v_key] = 300.0
     elif "energy" in v_key: current_values[v_key] = 100.0
-    elif "total_e" in v_key: current_values[v_key] = 100.0
     elif "power" in v_key: current_values[v_key] = 50.0
     elif "presence" in v_key: current_values[v_key] = "OFF"
 
@@ -130,17 +129,15 @@ try:
             for _, _, _, _, _, v_key, _, s_type in dev_sensors:
                 # 3. Simulation Logic
                 if "temp" in v_key:
-                    current_values[v_key] = get_random_walk(current_values[v_key], 15, 30, 0.2)
+                    current_values[v_key] = round(get_random_walk(current_values[v_key], 15, 30, 0.2), 2)
                 elif "hum" in v_key:
-                    current_values[v_key] = get_random_walk(current_values[v_key], 30, 70, 0.5)
+                    current_values[v_key] = round(get_random_walk(current_values[v_key], 30, 70, 0.5), 2)
                 elif "lux" in v_key:
-                    current_values[v_key] = get_random_walk(current_values[v_key], 0, 1000, 10)
+                    current_values[v_key] = round(get_random_walk(current_values[v_key], 0, 1000, 10), 2)
                 elif "power" in v_key:
-                    current_values[v_key] = random.uniform(5, 150)
+                    current_values[v_key] = round(random.uniform(5, 150), 2)
                 elif "energy" in v_key:
-                    current_values[v_key] += random.uniform(0.001, 0.005)
-                elif "total_e" in v_key:
-                    current_values[v_key] += random.uniform(0.005, 0.02)
+                    current_values[v_key] += round(random.uniform(0.001, 0.01), 2)
                 elif "presence" in v_key:
                     if random.random() < 0.05:
                         current_values[v_key] = "ON" if current_values[v_key] == "OFF" else "OFF"

@@ -36,13 +36,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # if not discovered_sensors:
     #     discovered_sensors = await async_discover_sensors(hass)
     
-    main_sensor = entry.data.get("main_total_energy_sensor")
-    _LOGGER.info("Configuring Green Shift with main sensor: %s", main_sensor)
+    main_energy_sensor = entry.data.get("main_total_energy_sensor")
+    main_power_sensor = entry.data.get("main_total_power_sensor")
+
+    _LOGGER.info("Configuring Green Shift with main energy sensor: %s", main_energy_sensor)
+    _LOGGER.info("Configuring Green Shift with main power sensor: %s", main_power_sensor)
 
     await sync_helper_entities(hass, entry)
 
     # Initialize the real-time data collector
-    collector = DataCollector(hass, discovered_sensors) # TODO: Might need to pass main_sensor here
+    collector = DataCollector(hass, discovered_sensors, main_energy_sensor, main_power_sensor)
     await collector.setup()
     
     # Initialize the decision agent (AI)

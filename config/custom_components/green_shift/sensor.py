@@ -22,7 +22,7 @@ async def async_setup_entry(
     discovered_sensors = hass.data[DOMAIN]["discovered_sensors"]
     
     sensors = [
-        HardwareSensorsSensor(hass, discovered_sensors),
+        HardwareSensorsSensor(hass, discovered_sensors, config_entry),
         ResearchPhaseSensor(agent, start_date),
         EnergyBaselineSensor(agent),
         CurrentConsumptionSensor(collector),
@@ -45,9 +45,11 @@ async def async_setup_entry(
 class HardwareSensorsSensor(SensorEntity):
     """Aggregates hardware sensors by category with live values."""
 
-    def __init__(self, hass, discovered):
+    def __init__(self, hass, discovered, config_entry):
         self.hass = hass
         self._discovered = discovered
+        self.main_energy_sensor = config_entry.data.get("main_total_energy_sensor")
+        self.main_power_sensor = config_entry.data.get("main_total_power_sensor")
         self._attr_name = "Hardware Sensors"
         self._attr_unique_id = f"{DOMAIN}_hardware_sensors"
         self._attr_icon = "mdi:database"
@@ -59,11 +61,15 @@ class HardwareSensorsSensor(SensorEntity):
     @property
     def extra_state_attributes(self):
         data = {}
+        to_exclude = {self.main_energy_sensor, self.main_power_sensor}
 
         for category, entities in self._discovered.items():
             data[category] = []
 
             for entity_id in entities:
+                if entity_id in to_exclude:
+                    continue
+                
                 state = self.hass.states.get(entity_id)
                 if not state:
                     continue
@@ -127,7 +133,7 @@ class CurrentConsumptionSensor(SensorEntity):
         self._collector = collector
         self._attr_name = "Current Consumption"
         self._attr_unique_id = f"{DOMAIN}_current"
-        self._attr_unit_of_measurement = "kW"
+        self._attr_unit_of_measurement = "W"
         self._attr_device_class = "power"
     
     @property
@@ -162,7 +168,8 @@ class CurrentCostConsumptionSensor(SensorEntity):
         except (ValueError, TypeError):
             price_per_kwh = 0.25
 
-        cost_hourly = self._collector.current_total_power * price_per_kwh 
+        power_kw = self._collector.current_total_power / 1000.0
+        cost_hourly = power_kw * price_per_kwh
         
         return round(cost_hourly, 3)
 
@@ -170,6 +177,7 @@ class CurrentCostConsumptionSensor(SensorEntity):
     def extra_state_attributes(self):
         price_state = self.hass.states.get("input_number.electricity_price")
         return {
+            "current_load": round(self._collector.current_total_power, 3),
             "applied_price_per_kwh": price_state.state if price_state else "0.25 (default)",
             "currency": "EUR"
         }

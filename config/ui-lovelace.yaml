@@ -49,7 +49,7 @@ views:
                     {%- endfor %}
                     <tr style="background-color: rgba(127,127,127,0.1);">
                       <td style="text-align: left; padding: 4px;"><b>Total Load</b></td>
-                      <td style="text-align: right; white-space: nowrap; padding: 4px;"><b>{{ states('sensor.current_consumption') }}</b>&nbsp;<small>kW</small></td>
+                      <td style="text-align: right; white-space: nowrap; padding: 4px;"><b>{{ states('sensor.current_consumption') }}</b>&nbsp;<small>W</small></td>
                     </tr>
                   {%- else %}
                     <tr><td>No power sensors</td></tr>
@@ -110,7 +110,7 @@ views:
                 content: |
                   {% set sensors = state_attr('sensor.hardware_sensors', 'illuminance') %}
                   {% if sensors -%}
-                  {% for s in sensors -%} • {{ s.name }}: **{{ s.value }} lx** {% endfor %}
+                  {% for s in sensors -%} **{{ s.name }}:** {{ s.value }} lx {% endfor %}
                   {%- else -%} _Dark_ {%- endif %}
               - type: markdown
                 title: 👀 Occupancy

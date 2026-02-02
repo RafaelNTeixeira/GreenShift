@@ -16,9 +16,11 @@ class DataCollector:
     Completely independent from AI processing.
     """
     
-    def __init__(self, hass: HomeAssistant, discovered_sensors: dict):
+    def __init__(self, hass: HomeAssistant, discovered_sensors: dict, main_energy_sensor: str = None, main_power_sensor: str = None):
         self.hass = hass
         self.sensors = discovered_sensors
+        self.main_energy_sensor = main_energy_sensor # Sensor that reads building energy consumption (kWh)
+        self.main_power_sensor = main_power_sensor # Sensor that reads current building power consumption (kW) 
         
         # Storage for historical data (14 days)
         days_to_store = 14
@@ -93,13 +95,28 @@ class DataCollector:
         _LOGGER.info("Real-time power monitoring active for %d sensors", len(power_sensors))
 
     def _recalculate_total_power(self):
-        """Sum all power sensors for real-time display."""
-        # Logic to sum cache or use main sensor
-        total_power = sum(self._power_sensor_cache.values()) # TODO: Might have a sensor that measures total power directly.
+        """Calculates current power consumption."""
+
+        # Case 1: Use main power sensor if available
+        if self.main_power_sensor:
+            main_val = self._power_sensor_cache.get(self.main_power_sensor)
+            if main_val is not None:
+                self.current_total_power = main_val
+                _LOGGER.debug("Power updated from main sensor: %.2f W", main_val)
+                return
+        # Case 2: Fallback to summing all individual plugs
+        total_power = 0.0
+        for entity_id, val in self._power_sensor_cache.items():
+            # Avoid double-counting if main_power_sensor is in the cache but currently None
+            if self.main_power_sensor and entity_id == self.main_power_sensor:
+                continue
+            total_power += val
+            
         self.current_total_power = total_power
+        _LOGGER.debug("Power recalculated by summing: %.2f W", total_power)
 
     async def _setup_energy_monitoring(self):
-        """Setup instant monitoring for energy sensors."""
+        """Setup instant monitoring for energy sensors.""" 
         energy_sensors = self.sensors.get("energy", [])
         if not energy_sensors:
             _LOGGER.warning("No energy sensors found for monitoring")
@@ -132,25 +149,39 @@ class DataCollector:
         async_track_state_change_event(self.hass, energy_sensors, handle_energy_change)
         _LOGGER.info("Real-time energy monitoring active for %d sensors", len(energy_sensors))
 
-    # TODO: Might have a sensor that measures total energy directly.
     def get_daily_kwh(self):
-        """
-        Calculates total kWh consumed today.
-        Sum up the differences based on cached values.
-        """
+        """Calculates total kWh consumed today."""
+
+        # Case 1: Use the Main Energy Sensor specifically if provided
+        if self.main_energy_sensor:
+            current_val = self._energy_sensor_cache.get(self.main_energy_sensor)
+            midnight_val = self._energy_midnight_points.get(self.main_energy_sensor)
+
+            if current_val is not None and midnight_val is not None:
+                if current_val < midnight_val:
+                    # Handle sensor reset
+                    self.current_daily_energy = current_val
+                else:
+                    self.current_daily_energy = current_val - midnight_val
+                
+                _LOGGER.debug("Daily energy from main sensor: %.3f kWh", self.current_daily_energy)
+                return
+
+        # Case 2: Fallback to summing all individual sensors (Original logic)
         total_kwh = 0.0
         for entity_id, current_val in self._energy_sensor_cache.items():
+            if self.main_energy_sensor and entity_id == self.main_energy_sensor:
+                continue
+
             midnight_val = self._energy_midnight_points.get(entity_id, current_val)
             
             if current_val < midnight_val:
-                # Handle sensor reset (odometer rolled over or reset to 0)
-                total_kwh += current_val
+                total_kwh += current_val # Handle sensor reset (odometer rolled over or reset to 0)
             else:
                 total_kwh += (current_val - midnight_val)
                 
-        _LOGGER.debug("Total daily kWh calculated: %.3f kWh", total_kwh)
         self.current_daily_energy = total_kwh
-
+        _LOGGER.debug("Total daily kWh calculated: %.3f kWh", total_kwh)
     
     async def _setup_environment_monitoring(self):
         """Setup instant monitoring for environmental sensors."""
