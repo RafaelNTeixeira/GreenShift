@@ -176,10 +176,11 @@ class CurrentCostConsumptionSensor(SensorEntity):
     @property
     def extra_state_attributes(self):
         price_state = self.hass.states.get("input_number.electricity_price")
+        currency_state = self.hass.states.get("input_select.currency")
         return {
             "current_load": round(self._collector.current_total_power, 3),
             "applied_price_per_kwh": price_state.state if price_state else "0.25 (default)",
-            "currency": "EUR"
+            "currency": currency_state.state if currency_state else "EUR"
         }
 
 
@@ -221,9 +222,11 @@ class DailyCostConsumptionSensor(SensorEntity):
     @property
     def extra_state_attributes(self):
         price_state = self.hass.states.get("input_number.electricity_price")
+        currency_state = self.hass.states.get("input_select.currency")
         return {
             "daily_kwh_accumulated": round(self._collector.current_daily_energy, 3),
             "applied_price": price_state.state if price_state else "0.25",
+            "currency": currency_state.state if currency_state else "EUR"
         }
     
 
