@@ -84,10 +84,7 @@ class DataCollector:
             try:
                 value = float(new_state.state)
                 self._power_sensor_cache[entity_id] = value
-                _LOGGER.debug("Updated power cache for %s: %.2f W", entity_id, value)
-
                 self._recalculate_total_power()
-                _LOGGER.debug("Total power recalculated: %.2f W", self.current_total_power)
             except (ValueError, TypeError):
                 _LOGGER.debug("Invalid power value for %s: %s", entity_id, new_state.state)
                 pass
