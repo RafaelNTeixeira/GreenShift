@@ -3,143 +3,163 @@ import json
 import time
 import random
 
+# --- SELECTION VARIABLE ---
+# Change this to 1, 2, 3, or 4 to switch environments
+ENVIRONMENT_SELECTION = 1
+
 # --- CONFIGURATION ---
 BROKER_IP = "127.0.0.1"
 PORT = 1883
 
-HUB_ID = "environment_monitor_hub"
-PLUG_A_ID = "smart_plug_alpha"
-PLUG_B_ID = "smart_plug_beta"
-PLUG_C_ID = "smart_plug_charlie"
-
-# Initial sensor values
-current_values = {
-    "temp": 21.5,      # Range: 18-26°C
-    "hum": 45.0,       # Range: 35-65%
-    "lux": 300.0,      # Range: 0-1000 lx
-    "total_e": 120.0,  # Total House Energy (kWh)
-    "plug_a_e": 15.0,  # Plug A Energy (kWh)
-    "plug_b_e": 8.0,   # Plug B Energy (kWh)
-    "plug_c_w": 45.0,  # Plug C Power (W)
-    "presence": "OFF"
+# Device Metadata Templates
+HUB_DEV = {
+    "identifiers": ["hub_01"], 
+    "name": "Environment Hub", 
+    "manufacturer": "Custom-Labs", 
+    "model": "Multi-Sensor-v1"
 }
+PLUG_FRIDGE = {
+    "identifiers": ["plug_fridge"], 
+    "name": "Fridge Smart Plug", 
+    "model": "Power-Meter-v1"
+}
+PLUG_COFFEE = {
+    "identifiers": ["plug_coffee"], 
+    "name": "Coffee Machine Smart Plug", 
+    "model": "Power-Meter-v1"
+}
+
+# Definition of Environments
+ENVIRONMENTS = {
+    1: {
+        "name": "Fraunhofer Lab Environment",
+        "sensors": [
+            # (dev_id, name, class, unit, dev_info, value_key, state_class, sensor_type)
+            ("hub_01", "Overall Consumption", "energy", "kWh", HUB_DEV, "total_e", "total_increasing", "sensor"),
+            ("hub_01", "Ambient Temperature", "temperature", "°C", HUB_DEV, "temp", "measurement", "sensor"),
+            ("hub_01", "Relative Humidity", "humidity", "%", HUB_DEV, "hum", "measurement", "sensor"),
+            ("hub_01", "Luminosity", "illuminance", "lx", HUB_DEV, "lux", "measurement", "sensor"),
+            ("hub_01", "Presence", "occupancy", None, HUB_DEV, "presence", None, "binary_sensor"),
+            ("plug_a", "Plug Alpha Power", "power", "W", {"identifiers":["pa"], "name":"Plug Monitor Alpha"}, "power", "measurement", "sensor"),
+            ("plug_b", "Plug Beta Power", "power", "W", {"identifiers":["pa"], "name":"Plug Monitor Beta"}, "power", "measurement", "sensor"),
+            ("plug_c", "Plug Charlie Power", "power", "W", {"identifiers":["pa"], "name":"Plug Monitor Charlie"}, "power", "measurement", "sensor"),
+        ]
+    },
+    2: {
+        "name": "FEUP Lab Environment",
+        "sensors": [
+            ("hub_01", "Ambient Temperature", "temperature", "°C", HUB_DEV, "temp", "measurement", "sensor"),
+            ("hub_01", "Presence", "occupancy", None, HUB_DEV, "presence", None, "binary_sensor"),
+            ("plug_fridge", "Fridge Energy", "energy", "kWh", PLUG_FRIDGE, "energy", "total_increasing", "sensor"),
+            ("plug_coffee", "Coffee Machine Energy", "energy", "kWh", PLUG_COFFEE, "energy", "total_increasing", "sensor")
+        ]
+    },
+    3: {
+        "name": "Smart Home F",
+        "sensors": [
+            # Add sensors
+        ]
+    },
+    4: {
+        "name": "Smart Home B",
+        "sensors": [
+            # Add sensors
+        ]
+    }
+}
+
+active_env = ENVIRONMENTS.get(ENVIRONMENT_SELECTION, ENVIRONMENTS[1])
+current_values = {}
 
 # --- MQTT SETUP ---
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
 
+def publish_discovery():
+    print(f"Announcing discovery for: {active_env['name']}")
+
+    for dev_id, name, d_class, unit, dev_info, v_key, s_class, s_type in active_env["sensors"]:
+        config_topic = f"homeassistant/{s_type}/{dev_id}/{v_key}/config"
+
+        payload = {
+            "name": name,
+            "unique_id": f"{dev_id}_{v_key}",
+            "state_topic": f"homeassistant/{s_type}/{dev_id}/state",
+            "value_template": f"{{{{ value_json.{v_key} }}}}",
+            "device": dev_info
+        }
+        if d_class: payload["device_class"] = d_class
+        if unit: payload["unit_of_measurement"] = unit
+        if s_class: payload["state_class"] = s_class
+        
+        client.publish(config_topic, json.dumps(payload), retain=True)
+
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        print("Connected to MQTT Broker successfully.")
+        print("Connected to MQTT Broker.")
         publish_discovery()
-    else:
-        print(f"Connection failed with code {rc}")
 
 client.on_connect = on_connect
 
-def publish_discovery():
-    """Announces devices to Home Assistant."""
-    
-    # 1. MAIN HUB DEVICE INFO
-    hub_device = {
-        "identifiers": [HUB_ID],
-        "name": "Environmental Data Hub",
-        "manufacturer": "Custom-Labs",
-        "model": "Multi-Sensor-v1"
-    }
-
-    # 2. PLUG DEVICE INFOS
-    plug_a_device = {"identifiers": [PLUG_A_ID], "name": "Smart Plug Alpha", "model": "Power-Meter-v1"}
-    plug_b_device = {"identifiers": [PLUG_B_ID], "name": "Smart Plug Beta", "model": "Power-Meter-v1"}
-    plug_c_device = {"identifiers": [PLUG_C_ID], "name": "Smart Plug Charlie", "model": "Power-Meter-v1"}
-
-    # --- SENSOR CONFIGURATIONS ---
-    # format: (id, name, class, unit, parent_device, value_key, state_class)
-    sensor_configs = [
-        (HUB_ID, "Ambient Temperature", "temperature", "°C", hub_device, "temp", "measurement"),
-        (HUB_ID, "Relative Humidity", "humidity", "%", hub_device, "hum", "measurement"),
-        (HUB_ID, "Luminosity", "illuminance", "lx", hub_device, "lux", "measurement"),
-        (HUB_ID, "Overall Consumption", "energy", "kWh", hub_device, "total_e", "total_increasing"),
-        (PLUG_A_ID, "Plug Alpha Consumption", "energy", "kWh", plug_a_device, "energy", "total_increasing"),
-        (PLUG_B_ID, "Plug Beta Consumption", "energy", "kWh", plug_b_device, "energy", "total_increasing"),
-        (PLUG_C_ID, "Plug Charlie Power", "power", "W", plug_c_device, "power", "measurement")
-    ]
-
-    for dev_id, name, d_class, unit, dev_info, v_key, s_class in sensor_configs:
-        config_payload = {
-            "name": name,
-            "unique_id": f"{dev_id}_{v_key}",
-            "device_class": d_class,
-            "state_topic": f"homeassistant/sensor/{dev_id}/state",
-            "unit_of_measurement": unit,
-            "value_template": f"{{{{ value_json.{v_key} }}}}",
-            "device": dev_info,
-            "state_class": s_class
-        }
-        client.publish(f"homeassistant/sensor/{dev_id}/{v_key}/config", json.dumps(config_payload), retain=True)
-
-    # 3. BINARY SENSOR (Presence)
-    presence_config = {
-        "name": "Presence Detection",
-        "unique_id": f"{HUB_ID}_presence",
-        "device_class": "occupancy",
-        "state_topic": f"homeassistant/binary_sensor/{HUB_ID}/state",
-        "value_template": "{{ value_json.presence }}",
-        "device": hub_device
-    }
-    client.publish(f"homeassistant/binary_sensor/{HUB_ID}/presence/config", json.dumps(presence_config), retain=True)
-
-    print("Discovery payloads sent to Home Assistant.")
-
 def get_random_walk(current, min_val, max_val, step):
-    """Nudges value within a considerate threshold."""
-    new_val = current + random.uniform(-step, step)
-    return max(min(new_val, max_val), min_val)
+    return max(min(current + random.uniform(-step, step), max_val), min_val)
 
 # --- EXECUTION ---
 client.connect(BROKER_IP, PORT, 60)
 client.loop_start()
 
+# Initialize random values for active sensors
+for _, _, _, _, _, v_key, _, _ in active_env["sensors"]:
+    if "temp" in v_key: current_values[v_key] = 22.0
+    elif "hum" in v_key: current_values[v_key] = 50.0
+    elif "lux" in v_key: current_values[v_key] = 300.0
+    elif "energy" in v_key: current_values[v_key] = 100.0
+    elif "total_e" in v_key: current_values[v_key] = 100.0
+    elif "power" in v_key: current_values[v_key] = 50.0
+    elif "presence" in v_key: current_values[v_key] = "OFF"
+
 try:
     while True:
-        # Update values using random walk (real-world simulation)
-        current_values["temp"] = get_random_walk(current_values["temp"], 18.0, 26.0, 0.2)
-        current_values["hum"] = get_random_walk(current_values["hum"], 35.0, 65.0, 0.5)
-        current_values["lux"] = get_random_walk(current_values["lux"], 0.0, 1000.0, 15.0)
+        # Get unique device IDs
+        devices_to_update = list(set([s[0] for s in active_env["sensors"]]))
         
-        # Energy values (must always increase)
-        current_values["total_e"] += random.uniform(0.005, 0.02)
-        current_values["plug_a_e"] += random.uniform(0.001, 0.005)
-        current_values["plug_b_e"] += random.uniform(0.001, 0.003)
+        for dev_id in devices_to_update:
+            payload = {}
+            # Get all sensors belonging to THIS specific device
+            dev_sensors = [s for s in active_env["sensors"] if s[0] == dev_id]
+            
+            for _, _, _, _, _, v_key, _, s_type in dev_sensors:
+                # 3. Simulation Logic
+                if "temp" in v_key:
+                    current_values[v_key] = get_random_walk(current_values[v_key], 15, 30, 0.2)
+                elif "hum" in v_key:
+                    current_values[v_key] = get_random_walk(current_values[v_key], 30, 70, 0.5)
+                elif "lux" in v_key:
+                    current_values[v_key] = get_random_walk(current_values[v_key], 0, 1000, 10)
+                elif "power" in v_key:
+                    current_values[v_key] = random.uniform(5, 150)
+                elif "energy" in v_key:
+                    current_values[v_key] += random.uniform(0.001, 0.005)
+                elif "total_e" in v_key:
+                    current_values[v_key] += random.uniform(0.005, 0.02)
+                elif "presence" in v_key:
+                    if random.random() < 0.05:
+                        current_values[v_key] = "ON" if current_values[v_key] == "OFF" else "OFF"
+                
+                # Assign to payload
+                if isinstance(current_values[v_key], float):
+                    payload[v_key] = round(current_values[v_key], 4)
+                else:
+                    payload[v_key] = current_values[v_key]
 
-        # Randomly walk the wattage between 5W and 150W
-        current_values["plug_c_w"] = get_random_walk(current_values["plug_c_w"], 5.0, 150.0, 10.0)
-        
-        # Presence (5% chance to flip state)
-        if random.random() < 0.05:
-            current_values["presence"] = "ON" if current_values["presence"] == "OFF" else "OFF"
+            # Publish the payload for this device
+            s_type_topic = dev_sensors[0][7]
+            client.publish(f"homeassistant/{s_type_topic}/{dev_id}/state", json.dumps(payload))
 
-        # Prepare Payloads
-        hub_data = {
-            "temp": round(current_values["temp"], 1),
-            "hum": round(current_values["hum"], 1),
-            "lux": round(current_values["lux"], 0),
-            "total_e": round(current_values["total_e"], 4),
-            "presence": current_values["presence"]
-        }
-        
-        # Publish Data
-        client.publish(f"homeassistant/sensor/{HUB_ID}/state", json.dumps(hub_data))
-        client.publish(f"homeassistant/binary_sensor/{HUB_ID}/state", json.dumps(hub_data))
-        client.publish(f"homeassistant/sensor/{PLUG_A_ID}/state", json.dumps({"energy": round(current_values["plug_a_e"], 4)}))
-        client.publish(f"homeassistant/sensor/{PLUG_B_ID}/state", json.dumps({"energy": round(current_values["plug_b_e"], 4)}))
-        client.publish(f"homeassistant/sensor/{PLUG_C_ID}/state", json.dumps({"power": round(current_values["plug_c_w"], 1)}))
-
-        print(f"Update: Temp {hub_data['temp']}°C | Energy Total {hub_data['total_e']} kWh | Presence {hub_data['presence']} | Plug A {round(current_values['plug_a_e'],4)} kWh | Plug B {round(current_values['plug_b_e'],4)} kWh | Plug C {round(current_values['plug_c_w'],1)} W")
-        
-        # Every 5 seconds
-        time.sleep(5) 
+            print(f"[{active_env['name']}] Sent for {dev_id}: {payload}")
+            
+        time.sleep(5)
 
 except KeyboardInterrupt:
-    print("Stopping simulator...")
+    print("Exiting...")
     client.loop_stop()
     client.disconnect()
