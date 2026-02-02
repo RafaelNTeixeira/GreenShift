@@ -37,6 +37,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     main_sensor = entry.data.get("main_total_energy_sensor")
     _LOGGER.info("Configuring Green Shift with main sensor: %s", main_sensor)
 
+    await sync_helper_entities(hass, entry)
+
     # Initialize the real-time data collector
     collector = DataCollector(hass, discovered_sensors) # TODO: Might need to pass main_sensor here
     await collector.setup()
@@ -83,6 +85,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     return True
 
+async def sync_helper_entities(hass: HomeAssistant, entry: ConfigEntry):
+    """Syncs the options chosen in the Config Flow to the corresponding helper entities in Home Assistant."""
+    chosen_currency = entry.data.get("currency", "EUR")
+    chosen_price = entry.data.get("electricity_price", 0.25)
+
+    # Update Currency (input_select)
+    try:
+        await hass.services.async_call(
+            "input_select",
+            "select_option",
+            {"entity_id": "input_select.currency", "option": chosen_currency},
+            blocking=False,
+        )
+        _LOGGER.debug("Synced currency helper to %s", chosen_currency)
+    except Exception as e:
+        _LOGGER.warning("Could not sync input_select.currency: %s", e)
+
+    # Update Electricity Price (input_number)
+    try:
+        await hass.services.async_call(
+            "input_number",
+            "set_value",
+            {"entity_id": "input_number.electricity_price", "value": chosen_price},
+            blocking=False,
+        )
+        _LOGGER.debug("Synced electricity_price helper to %.2f", chosen_price)
+    except Exception as e:
+        _LOGGER.warning("Could not sync input_number.electricity_price: %s", e)
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload of the config entry."""
