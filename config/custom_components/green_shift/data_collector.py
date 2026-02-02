@@ -163,11 +163,15 @@ class DataCollector:
             @callback
             def handle_temp_change(event: Event):
                 new_state = event.data.get("new_state")
+
+                if new_state is None or new_state.state in ["unavailable", "unknown"]:
+                    return
+
                 if new_state:
                     try:
                         self.current_temperature = float(new_state.state)
                     except (ValueError, TypeError):
-                        _LOGGER("Invalid temperature value: %s", new_state.state)
+                        _LOGGER.error("Invalid temperature value: %s", new_state.state)
                         pass
             
             async_track_state_change_event(self.hass, temp_sensors, handle_temp_change)
@@ -179,11 +183,15 @@ class DataCollector:
             @callback
             def handle_hum_change(event: Event):
                 new_state = event.data.get("new_state")
+
+                if new_state is None or new_state.state in ["unavailable", "unknown"]:
+                    return
+
                 if new_state:
                     try:
                         self.current_humidity = float(new_state.state)
                     except (ValueError, TypeError):
-                        _LOGGER("Invalid humidity value: %s", new_state.state)
+                        _LOGGER.error("Invalid humidity value: %s", new_state.state)
                         pass
             
             async_track_state_change_event(self.hass, hum_sensors, handle_hum_change)
@@ -195,11 +203,15 @@ class DataCollector:
             @callback
             def handle_lux_change(event: Event):
                 new_state = event.data.get("new_state")
+
+                if new_state is None or new_state.state in ["unavailable", "unknown"]:
+                    return
+                
                 if new_state:
                     try:
-                        self.current_illuminance = float(new_state.state)
+                        self.current_illuminance = float(new_state.state)                  
                     except (ValueError, TypeError):
-                        _LOGGER.debug("Invalid illuminance value: %s", new_state.state)
+                        _LOGGER.error("Invalid illuminance value: %s", new_state.state)
                         pass
             
             async_track_state_change_event(self.hass, lux_sensors, handle_lux_change)
@@ -211,11 +223,15 @@ class DataCollector:
             @callback
             def handle_occ_change(event: Event):
                 new_state = event.data.get("new_state")
+
+                if new_state is None or new_state.state in ["unavailable", "unknown"]:
+                    return
+                
                 if new_state:
                     try:
                         self.current_occupancy = new_state.state.lower() in ["on", "true", "detected"]
                     except (ValueError, TypeError):
-                        _LOGGER.debug("Invalid occupancy value: %s", new_state.state)
+                        _LOGGER.error("Invalid occupancy value: %s", new_state.state)
                         pass
             
             async_track_state_change_event(self.hass, occ_sensors, handle_occ_change)
