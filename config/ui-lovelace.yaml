@@ -122,7 +122,14 @@ views:
                   {% set sensors = state_attr('sensor.hardware_sensors', 'occupancy') %}
                   {% if sensors -%}
                   {% for s in sensors -%} 
-                  **{{ s.name }}**: {{ '🔴 Occupied' if s.value == 'on' else '🟢 Clear' }} 
+                  **{{ s.name }}**:
+                  {%- if s.value == 'on' -%} 
+                  🔴 Occupied 
+                  {%- elif s.value == 'off' -%} 
+                  🟢 Clear 
+                  {%- else -%} 
+                  ⚪ Unknown/Offline 
+                  {%- endif %} 
                   {% endfor %}
                   {%- else -%} 
                   _No data_ 

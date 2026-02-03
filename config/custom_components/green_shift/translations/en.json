@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Welcome to Green Shift",
-        "description": "Welcome to the Green Shift energy research project! This integration helps you monitor and optimize your home's energy efficiency. Click next to begin setup."
+        "description": "This integration helps you monitor and optimize your home's energy efficiency. \nClick **Next** to begin setup."
       },
       "settings": {
         "title": "Energy Configuration",
@@ -13,9 +13,33 @@
           "electricity_price": "Price per kWh"
         }
       },
+      "sensor_confirmation": {
+        "title": "Sensor Validation",
+        "description": "We found **{discovered_count}** compatible sensors. Please review the classification below to ensure calculation accuracy.",
+        "data": {
+          "main_total_energy_sensor": "Main Energy Meter (Total kWh)",
+          "main_total_power_sensor": "Main Power Meter (Total Watts)",
+          "confirmed_energy": "Appliances & Plugs (Energy)",
+          "confirmed_power": "Appliances & Plugs (Power)",
+          "confirmed_temp": "Temperature Sensors",
+          "confirmed_hum": "Humidity Sensors",
+          "confirmed_lux": "Illuminance Sensors",
+          "confirmed_occ": "Occupancy Sensors"
+        },
+        "data_description": {
+          "main_total_energy_sensor": "If available, select the sensor that measures the TOTAL accumulated energy for the whole building. If not, leave this field empty.",
+          "main_total_power_sensor": "If available, select the sensor measuring the TOTAL instantaneous power draw (Watts). If not, leave this field empty.",
+          "confirmed_energy": "Select all sub-devices measuring kWh (e.g., washing machine, smart plugs).",
+          "confirmed_power": "Select all sub-devices measuring instantaneous Watts.",
+          "confirmed_temp": "Select sensors used to monitor indoor ambient temperature.",
+          "confirmed_hum": "Select sensors used to monitor indoor relative humidity.",
+          "confirmed_lux": "Select sensors used to measure light levels (Lux).",
+          "confirmed_occ": "Binary sensors used to determine if a room is currently occupied."
+        }
+      },
       "intervention_info": {
-        "title": "Phase 1: Baseline Observation",
-        "description": "For the first 14 days, the system will only collect and display energy consumption data to establish a baseline. \n\nAfter this period, **Gamification Challenges** and **AI-driven notifications** will be automatically activated to help improve your performance."
+        "title": "Setup Complete",
+        "description": "Green Shift is now configured! The system will start collecting data immediately. You can now add the Dashboard card to your Lovelace view."
       }
     }
   }

@@ -110,12 +110,12 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             
             # Map the confirmed sensors back to our internal data structure
             confirmed_sensors = {
-                "energy": confirmed_energy,
-                "power": confirmed_power,
-                "temperature": user_input.get("confirmed_temp", []),
-                "humidity": user_input.get("confirmed_hum", []),
-                "illuminance": user_input.get("confirmed_lux", []),
-                "occupancy": user_input.get("confirmed_occ", []),
+                "energy": confirmed_energy,                            # All energy measuring sensors
+                "power": confirmed_power,                              # All power measuring sensors
+                "temperature": user_input.get("confirmed_temp", []),   # All temperature measuring sensors
+                "humidity": user_input.get("confirmed_hum", []),       # All humidity measuring sensors
+                "illuminance": user_input.get("confirmed_lux", []),    # All illuminance measuring sensors
+                "occupancy": user_input.get("confirmed_occ", []),      # All occupancy detection sensors
             }
             
             self.data["discovered_sensors"] = confirmed_sensors
@@ -124,13 +124,6 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Prepare lists from cache for defaults
         sorted_energy = self._get_sorted_entities("energy")
         sorted_power = self._get_sorted_entities("power")
-
-        _LOGGER.debug(
-            "Sorted energy entities: %s, Sorted power entities: %s", 
-            sorted_energy, 
-            sorted_power
-        )
-        
         temp_list = self.discovered_cache.get("temperature", [])
         hum_list = self.discovered_cache.get("humidity", [])
         lux_list = self.discovered_cache.get("illuminance", [])

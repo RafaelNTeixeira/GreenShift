@@ -126,12 +126,11 @@ try:
         devices_to_update = list(set([s[0] for s in active_env["sensors"]]))
         
         for dev_id in devices_to_update:
-            payload = {}
             # Get all sensors belonging to THIS specific device
             dev_sensors = [s for s in active_env["sensors"] if s[0] == dev_id]
-            
+
+            # Simulate all values for this device first
             for _, _, _, _, _, v_key, _, s_type in dev_sensors:
-                # 3. Simulation Logic
                 if "temp" in v_key:
                     current_values[v_key] = round(get_random_walk(current_values[v_key], 15, 30, 0.2), 2)
                 elif "hum" in v_key:
@@ -145,18 +144,20 @@ try:
                 elif "presence" in v_key:
                     if random.random() < 0.05:
                         current_values[v_key] = "ON" if current_values[v_key] == "OFF" else "OFF"
-                
-                # Assign to payload
-                if isinstance(current_values[v_key], float):
-                    payload[v_key] = round(current_values[v_key], 4)
-                else:
-                    payload[v_key] = current_values[v_key]
 
-            # Publish the payload for this device
-            s_type_topic = dev_sensors[0][7]
-            client.publish(f"homeassistant/{s_type_topic}/{dev_id}/state", json.dumps(payload))
+            # Group sensors by s_type (sensor vs binary_sensor).
+            type_groups = {}
+            for _, _, _, _, _, v_key, _, s_type in dev_sensors:
+                type_groups.setdefault(s_type, {})[v_key] = (
+                    round(current_values[v_key], 4)
+                    if isinstance(current_values[v_key], float)
+                    else current_values[v_key]
+                )
 
-            print(f"[{active_env['name']}] Sent for {dev_id}: {payload}")
+            # Publish one payload per s_type so every topic receives its data
+            for s_type, payload in type_groups.items():
+                client.publish(f"homeassistant/{s_type}/{dev_id}/state", json.dumps(payload))
+                print(f"[{active_env['name']}] Sent for {dev_id} ({s_type}): {payload}")
             
         time.sleep(5)
 
