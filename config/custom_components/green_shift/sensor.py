@@ -6,6 +6,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, PHASE_BASELINE, BASELINE_DAYS, UPDATE_INTERVAL_SECONDS
+from .helpers import get_normalized_value
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,11 +75,15 @@ class HardwareSensorsSensor(SensorEntity):
                 if not state:
                     continue
 
+                normalized_value, normalized_unit = get_normalized_value(state, category)
+                if normalized_value is None:
+                    continue
+
                 data[category].append({
                     "entity_id": entity_id,
                     "name": state.attributes.get("friendly_name", entity_id),
-                    "value": state.state,
-                    "unit": state.attributes.get("unit_of_measurement", ""),
+                    "value": normalized_value,
+                    "unit": normalized_unit,
                 })
 
         return data

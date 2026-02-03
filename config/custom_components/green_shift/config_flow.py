@@ -11,6 +11,7 @@ from homeassistant.helpers.selector import (
 )
 
 from . import async_discover_sensors
+from .helpers import get_normalized_value
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -71,11 +72,14 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entity_values = []
         for entity_id in entities:
             state = self.hass.states.get(entity_id)
-            try:
-                # Convert state to float, default to 0.0 if unavailable/unknown
-                val = float(state.state) if state and state.state not in ("unknown", "unavailable") else -1.0
-            except (ValueError, TypeError):
+            
+            # Use the helper to get a clean, normalized float (or None)
+            val, _ = get_normalized_value(state, category)
+            
+            # Handle None if the helper returns it (e.g., unavailable sensor)
+            if val is None:
                 val = -1.0
+                
             entity_values.append((entity_id, val))
 
         # Sort by value descending (highest first)
@@ -120,6 +124,13 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Prepare lists from cache for defaults
         sorted_energy = self._get_sorted_entities("energy")
         sorted_power = self._get_sorted_entities("power")
+
+        _LOGGER.debug(
+            "Sorted energy entities: %s, Sorted power entities: %s", 
+            sorted_energy, 
+            sorted_power
+        )
+        
         temp_list = self.discovered_cache.get("temperature", [])
         hum_list = self.discovered_cache.get("humidity", [])
         lux_list = self.discovered_cache.get("illuminance", [])

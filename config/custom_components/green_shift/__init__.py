@@ -27,14 +27,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Setup of the component through config entry."""
     hass.data.setdefault(DOMAIN, {})
     
-    # Use confirmed sensors from the user configuration
+    # Use sensors selected from the user configuration
     discovered_sensors = entry.data.get("discovered_sensors")
 
     _LOGGER.debug("Setting up Green Shift with sensors: %s", discovered_sensors)
-
-    # TODO: If no sensors were found, perform discovery again ?
-    # if not discovered_sensors:
-    #     discovered_sensors = await async_discover_sensors(hass)
     
     main_energy_sensor = entry.data.get("main_total_energy_sensor")
     main_power_sensor = entry.data.get("main_total_power_sensor")
@@ -80,7 +76,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if days_running >= BASELINE_DAYS and agent.phase == PHASE_BASELINE:
             agent.phase = PHASE_ACTIVE
             # Freeze baseline_consumption and set fixed baseline for active phase
-            agent.baseline_consumption_week = agent.baseline_consumption
+            agent.baseline_consumption_week = agent.baseline_consumption # Initialize week baseline to biweekly intervention baseline
             _LOGGER.info("System entered active phase after %d days with baseline: %.2f kW", 
                         days_running, agent.baseline_consumption)
     

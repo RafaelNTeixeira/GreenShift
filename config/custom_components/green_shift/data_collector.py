@@ -5,6 +5,7 @@ from homeassistant.core import HomeAssistant, callback, Event
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_change, async_track_time_interval
 
 from .const import UPDATE_INTERVAL_SECONDS
+from .helpers import get_normalized_value
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,8 +28,9 @@ class DataCollector:
         day_in_seconds = 86400
         max_readings = int(days_to_store * day_in_seconds / UPDATE_INTERVAL_SECONDS)
         
-        self.power_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
-        self.energy_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
+        # Storage of consumption based on UPDATE_INTERVAL_SECONDS
+        self.power_history = deque(maxlen=max_readings) # Stores the current total power consumption readings # TODO: Store in SQLite database
+        self.energy_history = deque(maxlen=max_readings) # Stores the current total energy consumption readings # TODO: Store in SQLite database
         self.temperature_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
         self.humidity_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
         self.illuminance_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
@@ -43,8 +45,10 @@ class DataCollector:
         self.current_occupancy = False
         
         # Instant sensor cache
-        self._power_sensor_cache = {}
-        self._energy_sensor_cache = {}
+        self._power_sensor_cache = {} # Stores the readings of each power sensor (including the main one)
+        self._energy_sensor_cache = {} # Stores the readings of each energy sensor (including the main one)
+        # TODO: Might need sensor caches for other sensors
+        
         self._energy_midnight_points = {} # TODO: Store in persistent storage JSON
         
         # Timestamp tracking
@@ -64,7 +68,7 @@ class DataCollector:
             timedelta(seconds=UPDATE_INTERVAL_SECONDS)
         )
 
-        _LOGGER.info("DataCollector setup complete - real-time monitoring active")
+        # _LOGGER.info("DataCollector setup complete - real-time monitoring active")
     
     async def _setup_power_monitoring(self):
         """Setup instant monitoring for power sensors."""
@@ -84,7 +88,11 @@ class DataCollector:
             
             # Update cache instantly
             try:
-                value = float(new_state.state)
+                value, _ = get_normalized_value(new_state, "power")
+
+                if value is None:
+                    return
+                
                 self._power_sensor_cache[entity_id] = value
                 self._recalculate_total_power()
             except (ValueError, TypeError):
@@ -132,7 +140,11 @@ class DataCollector:
                 return
             
             try:
-                value = float(new_state.state)
+                value, _ = get_normalized_value(new_state, "energy")
+
+                if value is None:
+                    return
+
                 self._energy_sensor_cache[entity_id] = value
                 _LOGGER.debug("Updated energy cache for %s: %.3f kWh", entity_id, value)
 
@@ -285,7 +297,9 @@ class DataCollector:
                 state = self.hass.states.get(entity_id)
                 if state and state.state not in ["unknown", "unavailable"]:
                     try:
-                        val = float(state.state)
+                        val, _ = get_normalized_value(state, "energy")
+                        if val is None:
+                            continue # To process next sensors inside for loop
                         self._energy_sensor_cache[entity_id] = val
                     except (ValueError, TypeError):
                         _LOGGER.debug("Invalid energy value for %s during midnight reset: %s", entity_id, state.state)
