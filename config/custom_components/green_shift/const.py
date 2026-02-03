@@ -2,14 +2,15 @@ from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 
 DOMAIN = "green_shift"
+GS_UPDATE_SIGNAL = "green_shift_update"
 
 # System phases
 PHASE_BASELINE = "baseline"
 PHASE_ACTIVE = "active"
 BASELINE_DAYS = 14
 
-# Update interval for agent state
-UPDATE_INTERVAL_SECONDS = 15
+UPDATE_INTERVAL_SECONDS = 5 # Frequency to store data
+AI_FREQUENCY_SECONDS = 15 # Update interval for agent state
 
 # Sensor categories and keywords for auto-discovery
 SENSOR_MAPPING = {

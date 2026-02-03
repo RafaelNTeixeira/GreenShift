@@ -3,8 +3,9 @@ from collections import deque
 from datetime import timedelta
 from homeassistant.core import HomeAssistant, callback, Event
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_change, async_track_time_interval
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import UPDATE_INTERVAL_SECONDS
+from .const import UPDATE_INTERVAL_SECONDS, GS_UPDATE_SIGNAL
 from .helpers import get_normalized_value
 
 _LOGGER = logging.getLogger(__name__)
@@ -98,6 +99,8 @@ class DataCollector:
                 
                 self._power_sensor_cache[entity_id] = value
                 self._recalculate_total_power()
+
+                async_dispatcher_send(self.hass, GS_UPDATE_SIGNAL)
             except (ValueError, TypeError):
                 _LOGGER.debug("Invalid power value for %s: %s", entity_id, new_state.state)
                 pass
@@ -262,6 +265,7 @@ class DataCollector:
                 
                 if new_state is None or new_state.state in ["unavailable", "unknown"]:
                     return
+                    
                 
                 try:
                     val = float(new_state.state)
@@ -298,6 +302,8 @@ class DataCollector:
                     
                     # If ANY sensor in the cache is True, the building is occupied
                     self.current_occupancy = any(self._occupancy_sensor_cache.values())
+
+                    async_dispatcher_send(self.hass, GS_UPDATE_SIGNAL)
                 except (ValueError, TypeError):
                     pass
             

@@ -100,6 +100,11 @@ def publish_discovery():
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print("Connected to MQTT Broker.")
+
+        # Send empty payload to clean
+        # client.publish("homeassistant/sensor/hub_01/presence1/config", "", retain=True)
+        # client.publish("homeassistant/sensor/hub_01/presence2/config", "", retain=True)
+
         publish_discovery()
 
 client.on_connect = on_connect

@@ -2,18 +2,20 @@ import logging
 from datetime import datetime, timedelta
 import numpy as np
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
     DOMAIN,
+    GS_UPDATE_SIGNAL,
     SENSOR_MAPPING,
     PHASE_BASELINE,
     PHASE_ACTIVE,
     BASELINE_DAYS,
-    UPDATE_INTERVAL_SECONDS,
+    AI_FREQUENCY_SECONDS,
 )
 from .data_collector import DataCollector
 from .decision_agent import DecisionAgent
@@ -55,9 +57,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Platform setup
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     
-    # Periodic AI model update task (runs every UPDATE_INTERVAL_SECONDS)
+    # Periodic AI model update task (runs every AI_FREQUENCY_SECONDS)
     async def update_agent_ai_model(now):
-        """Update agent AI model periodically - processes data collected by DataCollector."""
+        """Update agent AI model periodically."""
         _LOGGER.debug("Running AI model update cycle")
         
         # Run AI model processing
@@ -79,9 +81,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             agent.baseline_consumption_week = agent.baseline_consumption # Initialize week baseline to biweekly intervention baseline
             _LOGGER.info("System entered active phase after %d days with baseline: %.2f kW", 
                         days_running, agent.baseline_consumption)
+            
+        async_dispatcher_send(hass, GS_UPDATE_SIGNAL)
     
     hass.data[DOMAIN]["update_listener"] = async_track_time_interval(
-        hass, update_agent_ai_model, timedelta(seconds=UPDATE_INTERVAL_SECONDS)
+        hass, update_agent_ai_model, timedelta(seconds=AI_FREQUENCY_SECONDS)
     )
     
     return True

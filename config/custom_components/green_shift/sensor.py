@@ -4,8 +4,9 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import DOMAIN, PHASE_BASELINE, BASELINE_DAYS, UPDATE_INTERVAL_SECONDS
+from .const import DOMAIN, GS_UPDATE_SIGNAL, BASELINE_DAYS, UPDATE_INTERVAL_SECONDS
 from .helpers import get_normalized_value
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,11 +40,31 @@ async def async_setup_entry(
         BehaviourIndexSensor(agent),
         FatigueIndexSensor(agent),
     ]
-    
+
     async_add_entities(sensors)
 
 
-class HardwareSensorsSensor(SensorEntity):
+class GreenShiftBaseSensor(SensorEntity): # TODO: Maybe create one for the AI virtual sensors
+    """Base class to handle updates."""
+    _attr_should_poll = False 
+
+    async def async_added_to_hass(self):
+        """Register the listener when the entity is added to HA."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, 
+                GS_UPDATE_SIGNAL,
+                self._update_callback
+            )
+        )
+
+    @callback
+    def _update_callback(self):
+        """Force the dashboard to update when the signal is received."""
+        self.async_write_ha_state()
+
+class HardwareSensorsSensor(GreenShiftBaseSensor):
     """Aggregates hardware sensors by category with live values."""
 
     def __init__(self, hass, discovered, config_entry):
@@ -96,7 +117,7 @@ class HardwareSensorsSensor(SensorEntity):
         return data
     
 
-class ResearchPhaseSensor(SensorEntity):
+class ResearchPhaseSensor(GreenShiftBaseSensor):
     """Sensor that indicates the current research phase."""
     
     def __init__(self, agent, start_date):
@@ -121,7 +142,7 @@ class ResearchPhaseSensor(SensorEntity):
         }
 
 
-class EnergyBaselineSensor(SensorEntity):
+class EnergyBaselineSensor(GreenShiftBaseSensor):
     """Sensor with the learned energy baseline from baseline phase."""
     
     def __init__(self, agent):
@@ -138,7 +159,7 @@ class EnergyBaselineSensor(SensorEntity):
         return round(self._agent.baseline_consumption, 2)
 
 
-class CurrentConsumptionSensor(SensorEntity):
+class CurrentConsumptionSensor(GreenShiftBaseSensor):
     """Sensor with the current consumption from DataCollector."""
     
     def __init__(self, collector):
@@ -153,7 +174,7 @@ class CurrentConsumptionSensor(SensorEntity):
         return round(self._collector.current_total_power, 3)
     
 
-class CurrentCostConsumptionSensor(SensorEntity):
+class CurrentCostConsumptionSensor(GreenShiftBaseSensor):
     """Sensor that calculates the current cost per hour based on consumption from DataCollector."""
 
     def __init__(self, hass, collector):
@@ -196,7 +217,7 @@ class CurrentCostConsumptionSensor(SensorEntity):
         }
 
 
-class DailyCostConsumptionSensor(SensorEntity):
+class DailyCostConsumptionSensor(GreenShiftBaseSensor):
     """Sensor that calculates the daily cost based on consumption from DataCollector."""
 
     def __init__(self, hass, collector):
@@ -242,7 +263,7 @@ class DailyCostConsumptionSensor(SensorEntity):
         }
     
 
-class DailyCO2EstimateSensor(SensorEntity):
+class DailyCO2EstimateSensor(GreenShiftBaseSensor):
     """Sensor that estimates daily CO2 emissions based on consumption from DataCollector."""
 
     def __init__(self, hass, collector):
@@ -273,7 +294,7 @@ class DailyCO2EstimateSensor(SensorEntity):
         }
 
 
-class SavingsAccumulatedSensor(SensorEntity):
+class SavingsAccumulatedSensor(GreenShiftBaseSensor):
     """Sensor with the accumulated savings in EUR."""
     
     def __init__(self, agent, collector):
@@ -305,7 +326,7 @@ class SavingsAccumulatedSensor(SensorEntity):
         return round(max(0, savings_eur), 2)
 
 
-class CO2SavedSensor(SensorEntity):
+class CO2SavedSensor(GreenShiftBaseSensor):
     """Sensor with the saved CO2 (kg)."""
     
     def __init__(self, agent, collector):
@@ -327,14 +348,15 @@ class CO2SavedSensor(SensorEntity):
         saving_watts = self._agent.baseline_consumption - avg_consumption
         
         # 15-second intervals: 240 readings per hour
-        hours = len(power_history) / 240
+        readings_per_hour = 3600 / UPDATE_INTERVAL_SECONDS
+        hours = len(power_history) / readings_per_hour
         saving_kwh = (saving_watts * hours) / 1000
         co2_saved = saving_kwh * 0.5
         
         return round(max(0, co2_saved), 2)
 
 
-class TasksCompletedSensor(SensorEntity):
+class TasksCompletedSensor(GreenShiftBaseSensor):
     """Sensor with the number of completed tasks."""
     
     def __init__(self, agent):
@@ -348,7 +370,7 @@ class TasksCompletedSensor(SensorEntity):
         return self._agent.tasks_completed_count
 
 
-class DailyTasksSensor(SensorEntity):
+class DailyTasksSensor(GreenShiftBaseSensor):
     """Sensor with today's random daily tasks."""
     
     def __init__(self, agent):
@@ -368,7 +390,7 @@ class DailyTasksSensor(SensorEntity):
         }
 
 
-class WeeklyChallengeSensor(SensorEntity):
+class WeeklyChallengeSensor(GreenShiftBaseSensor):
     """Sensor for the weekly energy reduction challenge."""
     
     def __init__(self, agent):
@@ -395,7 +417,7 @@ class WeeklyChallengeSensor(SensorEntity):
         }
 
 
-class CollaborativeGoalSensor(SensorEntity):
+class CollaborativeGoalSensor(GreenShiftBaseSensor):
     """Sensor with the collaborative goal progress (% of limit)."""
     
     def __init__(self, agent, collector):
@@ -431,7 +453,7 @@ class CollaborativeGoalSensor(SensorEntity):
         }
 
 
-class BehaviourIndexSensor(SensorEntity):
+class BehaviourIndexSensor(GreenShiftBaseSensor):
     """Sensor with the agent's behaviour index."""
     
     def __init__(self, agent):
@@ -445,7 +467,7 @@ class BehaviourIndexSensor(SensorEntity):
         return round(self._agent.behaviour_index, 2)
 
 
-class FatigueIndexSensor(SensorEntity):
+class FatigueIndexSensor(GreenShiftBaseSensor):
     """Sensor with the agent's fatigue index."""
     
     def __init__(self, agent):
