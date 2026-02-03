@@ -75,15 +75,22 @@ class HardwareSensorsSensor(SensorEntity):
                 if not state:
                     continue
 
-                normalized_value, normalized_unit = get_normalized_value(state, category)
-                if normalized_value is None:
+                if category == "occupancy":
+                    # Binary sensors don't have units and don't need float conversion
+                    val = state.state
+                    unit = None
+                else:
+                    # Numeric sensors (Power, Energy, Temp, Hum, Lux)
+                    val, unit = get_normalized_value(state, category)
+
+                if val is None:
                     continue
 
                 data[category].append({
                     "entity_id": entity_id,
                     "name": state.attributes.get("friendly_name", entity_id),
-                    "value": normalized_value,
-                    "unit": normalized_unit,
+                    "value": val,
+                    "unit": unit,
                 })
 
         return data

@@ -36,10 +36,14 @@ ENVIRONMENTS = {
         "sensors": [
             # (dev_id, name, class, unit, dev_info, value_key, state_class, sensor_type)
             ("hub_01", "Overall Energy Consumption", "energy", "kWh", HUB_DEV, "energy", "total_increasing", "sensor"),
-            ("hub_01", "Ambient Temperature", "temperature", "°C", HUB_DEV, "temp", "measurement", "sensor"),
-            ("hub_01", "Relative Humidity", "humidity", "%", HUB_DEV, "hum", "measurement", "sensor"),
-            ("hub_01", "Luminosity", "illuminance", "lx", HUB_DEV, "lux", "measurement", "sensor"),
-            ("hub_01", "Presence", "occupancy", None, HUB_DEV, "presence", None, "binary_sensor"),
+            ("hub_01", "Ambient Temperature", "temperature", "°C", HUB_DEV, "temp1", "measurement", "sensor"),
+            ("hub_01", "Ambient Temperature 1", "temperature", "°C", HUB_DEV, "temp2", "measurement", "sensor"),
+            ("hub_01", "Relative Humidity", "humidity", "%", HUB_DEV, "hum1", "measurement", "sensor"),
+            ("hub_01", "Relative Humidity 1", "humidity", "%", HUB_DEV, "hum2", "measurement", "sensor"),
+            ("hub_01", "Luminosity", "illuminance", "lx", HUB_DEV, "lux1", "measurement", "sensor"),
+            ("hub_01", "Luminosity 1", "illuminance", "lx", HUB_DEV, "lux2", "measurement", "sensor"),
+            ("hub_01", "Presence", "occupancy", None, HUB_DEV, "presence1", None, "binary_sensor"),
+            ("hub_01", "Presence 1", "occupancy", None, HUB_DEV, "presence2", None, "binary_sensor"),
             ("plug_a", "Plug Alpha Power", "power", "W", {"identifiers":["pa"], "name":"Plug Monitor Alpha"}, "power", "measurement", "sensor"),
             ("plug_b", "Plug Beta Power", "power", "W", {"identifiers":["pb"], "name":"Plug Monitor Beta"}, "power", "measurement", "sensor"),
             ("plug_c", "Plug Charlie Power", "power", "W", {"identifiers":["pc"], "name":"Plug Monitor Charlie"}, "power", "measurement", "sensor"),

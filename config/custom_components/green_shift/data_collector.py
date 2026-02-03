@@ -47,7 +47,10 @@ class DataCollector:
         # Instant sensor cache
         self._power_sensor_cache = {} # Stores the readings of each power sensor (including the main one)
         self._energy_sensor_cache = {} # Stores the readings of each energy sensor (including the main one)
-        # TODO: Might need sensor caches for other sensors
+        self._temperature_sensor_cache = {} # Stores the readings of each temperature sensor
+        self._humidity_sensor_cache = {} # Stores the readings of each humidity sensor
+        self._illuminance_sensor_cache = {} # Stores the readings of each illuminance sensor
+        self._occupancy_sensor_cache = {} # Stores the readings of each occupancy sensor
         
         self._energy_midnight_points = {} # TODO: Store in persistent storage JSON
         
@@ -202,17 +205,23 @@ class DataCollector:
         if temp_sensors:
             @callback
             def handle_temp_change(event: Event):
+                entity_id = event.data.get("entity_id")
                 new_state = event.data.get("new_state")
 
                 if new_state is None or new_state.state in ["unavailable", "unknown"]:
                     return
 
-                if new_state:
-                    try:
-                        self.current_temperature = float(new_state.state)
-                    except (ValueError, TypeError):
-                        _LOGGER.error("Invalid temperature value: %s", new_state.state)
-                        pass
+                try:
+                    val = float(new_state.state)
+                    self._temperature_sensor_cache[entity_id] = val
+                    _LOGGER.debug("Temperature value: %.2f", val)
+                    
+                    # Calculate Average of all valid cache entries
+                    if self._temperature_sensor_cache:
+                        avg = sum(self._temperature_sensor_cache.values()) / len(self._temperature_sensor_cache) # TODO: Using an average for now. Might need to separate by areas
+                        self.current_temperature = round(avg, 1)
+                except (ValueError, TypeError):
+                    _LOGGER.debug("Invalid temperature value for %s: %s", entity_id, new_state.state)
             
             async_track_state_change_event(self.hass, temp_sensors, handle_temp_change)
             _LOGGER.info("Real-time temperature monitoring active for %d sensors", len(temp_sensors))
@@ -222,17 +231,23 @@ class DataCollector:
         if hum_sensors:
             @callback
             def handle_hum_change(event: Event):
+                entity_id = event.data.get("entity_id")
                 new_state = event.data.get("new_state")
-
+                
                 if new_state is None or new_state.state in ["unavailable", "unknown"]:
                     return
+                
+                try:
+                    val = float(new_state.state)
+                    self._humidity_sensor_cache[entity_id] = val
 
-                if new_state:
-                    try:
-                        self.current_humidity = float(new_state.state)
-                    except (ValueError, TypeError):
-                        _LOGGER.error("Invalid humidity value: %s", new_state.state)
-                        pass
+                    _LOGGER.debug("Hum value: %.2f", val)
+                    
+                    if self._humidity_sensor_cache:
+                        avg = sum(self._humidity_sensor_cache.values()) / len(self._humidity_sensor_cache) # TODO: Using an average for now. Might need to separate by areas
+                        self.current_humidity = round(avg, 1)
+                except (ValueError, TypeError):
+                    pass
             
             async_track_state_change_event(self.hass, hum_sensors, handle_hum_change)
             _LOGGER.info("Real-time humidity monitoring active for %d sensors", len(hum_sensors))
@@ -242,17 +257,23 @@ class DataCollector:
         if lux_sensors:
             @callback
             def handle_lux_change(event: Event):
+                entity_id = event.data.get("entity_id")
                 new_state = event.data.get("new_state")
-
+                
                 if new_state is None or new_state.state in ["unavailable", "unknown"]:
                     return
                 
-                if new_state:
-                    try:
-                        self.current_illuminance = float(new_state.state)                  
-                    except (ValueError, TypeError):
-                        _LOGGER.error("Invalid illuminance value: %s", new_state.state)
-                        pass
+                try:
+                    val = float(new_state.state)
+                    self._illuminance_sensor_cache[entity_id] = val
+
+                    _LOGGER.debug("Illum value: %.2f", val)
+                    
+                    if self._illuminance_sensor_cache:
+                        avg = sum(self._illuminance_sensor_cache.values()) / len(self._illuminance_sensor_cache) # TODO: Using an average for now. Might need to separate by areas
+                        self.current_illuminance = round(avg, 1)
+                except (ValueError, TypeError):
+                    pass
             
             async_track_state_change_event(self.hass, lux_sensors, handle_lux_change)
             _LOGGER.info("Real-time illuminance monitoring active for %d sensors", len(lux_sensors))
@@ -262,17 +283,23 @@ class DataCollector:
         if occ_sensors:
             @callback
             def handle_occ_change(event: Event):
+                entity_id = event.data.get("entity_id")
                 new_state = event.data.get("new_state")
-
+                
                 if new_state is None or new_state.state in ["unavailable", "unknown"]:
                     return
                 
-                if new_state:
-                    try:
-                        self.current_occupancy = new_state.state.lower() in ["on", "true", "detected"]
-                    except (ValueError, TypeError):
-                        _LOGGER.error("Invalid occupancy value: %s", new_state.state)
-                        pass
+                try:
+                    # Determine boolean state
+                    is_on = new_state.state.lower() in ["on", "true", "detected"]
+                    self._occupancy_sensor_cache[entity_id] = is_on
+
+                    _LOGGER.debug("Occupancy value: %s", is_on)
+                    
+                    # If ANY sensor in the cache is True, the building is occupied
+                    self.current_occupancy = any(self._occupancy_sensor_cache.values())
+                except (ValueError, TypeError):
+                    pass
             
             async_track_state_change_event(self.hass, occ_sensors, handle_occ_change)
             _LOGGER.info("Real-time occupancy monitoring active for %d sensors", len(occ_sensors))

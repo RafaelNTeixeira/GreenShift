@@ -110,15 +110,23 @@ views:
                 content: |
                   {% set sensors = state_attr('sensor.hardware_sensors', 'illuminance') %}
                   {% if sensors -%}
-                  {% for s in sensors -%} **{{ s.name }}:** {{ s.value }} lx {% endfor %}
-                  {%- else -%} _Dark_ {%- endif %}
+                  {% for s in sensors -%} 
+                  **{{ s.name }}:** {{ s.value }} {{ s.unit }}  
+                  {% endfor %}
+                  {%- else -%} 
+                  _Dark_ 
+                  {%- endif %}
               - type: markdown
                 title: 👀 Occupancy
                 content: |
                   {% set sensors = state_attr('sensor.hardware_sensors', 'occupancy') %}
                   {% if sensors -%}
-                  {% for s in sensors -%} **{{ s.name }}**: {{ '🔴 Occupied' if s.value == 'on' else '🟢 Clear' }} {% endfor %}
-                  {%- else -%} _No data_ {%- endif %}
+                  {% for s in sensors -%} 
+                  **{{ s.name }}**: {{ '🔴 Occupied' if s.value == 'on' else '🟢 Clear' }} 
+                  {% endfor %}
+                  {%- else -%} 
+                  _No data_ 
+                  {%- endif %}
 
   # ========== TAB 2: DASHBOARD ==========
   - title: Dashboard
