@@ -30,8 +30,8 @@ class DataCollector:
         max_readings = int(days_to_store * day_in_seconds / UPDATE_INTERVAL_SECONDS)
         
         # Storage of consumption based on UPDATE_INTERVAL_SECONDS
-        self.power_history = deque(maxlen=max_readings) # Stores the current total power consumption readings # TODO: Store in SQLite database
-        self.energy_history = deque(maxlen=max_readings) # Stores the current total energy consumption readings # TODO: Store in SQLite database
+        self.power_history = deque(maxlen=max_readings) # Stores the total power consumption readings over time # TODO: Store in SQLite database
+        self.energy_history = deque(maxlen=max_readings) # Stores the total energy consumption readings over time # TODO: Store in SQLite database
         self.temperature_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
         self.humidity_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
         self.illuminance_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
@@ -46,12 +46,12 @@ class DataCollector:
         self.current_occupancy = False
         
         # Instant sensor cache
-        self._power_sensor_cache = {} # Stores the readings of each power sensor (including the main one)
-        self._energy_sensor_cache = {} # Stores the readings of each energy sensor (including the main one)
-        self._temperature_sensor_cache = {} # Stores the readings of each temperature sensor
-        self._humidity_sensor_cache = {} # Stores the readings of each humidity sensor
-        self._illuminance_sensor_cache = {} # Stores the readings of each illuminance sensor
-        self._occupancy_sensor_cache = {} # Stores the readings of each occupancy sensor
+        self._power_sensor_cache = {} # Stores the current readings of each power sensor (including the main one)
+        self._energy_sensor_cache = {} # Stores the current readings of each energy sensor (including the main one)
+        self._temperature_sensor_cache = {} # Stores the current readings of each temperature sensor
+        self._humidity_sensor_cache = {} # Stores the current readings of each humidity sensor
+        self._illuminance_sensor_cache = {} # Stores the current readings of each illuminance sensor
+        self._occupancy_sensor_cache = {} # Stores the current readings of each occupancy sensor
         
         self._energy_midnight_points = {} # TODO: Store in persistent storage JSON
         
@@ -353,8 +353,7 @@ class DataCollector:
         self.illuminance_history.append((now, self.current_illuminance))
         self.occupancy_history.append((now, 1.0 if self.current_occupancy else 0.0))
         
-        _LOGGER.debug("History Snapshot Recorded: Power=%.2f kW | Energy=%.2f kWh", 
-                      self.current_total_power, self.current_daily_energy)
+        _LOGGER.debug("History Snapshot Recorded: Power=%.2f kW | Energy=%.2f kWh", self.current_total_power, self.current_daily_energy)
     
     def get_current_state(self) -> dict:
         """Get current sensor readings."""
