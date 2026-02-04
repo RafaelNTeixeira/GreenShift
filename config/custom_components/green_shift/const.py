@@ -3,6 +3,7 @@ from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 
 DOMAIN = "green_shift"
 GS_UPDATE_SIGNAL = "green_shift_update"
+GS_AI_UPDATE_SIGNAL = "green_shift_ai_update"
 
 # System phases
 PHASE_BASELINE = "baseline"

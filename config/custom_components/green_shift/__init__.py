@@ -10,7 +10,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
     DOMAIN,
-    GS_UPDATE_SIGNAL,
+    GS_AI_UPDATE_SIGNAL,
     SENSOR_MAPPING,
     PHASE_BASELINE,
     PHASE_ACTIVE,
@@ -82,7 +82,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.info("System entered active phase after %d days with baseline: %.2f kW", 
                         days_running, agent.baseline_consumption)
             
-        async_dispatcher_send(hass, GS_UPDATE_SIGNAL)
+        async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
     
     hass.data[DOMAIN]["update_listener"] = async_track_time_interval(
         hass, update_agent_ai_model, timedelta(seconds=AI_FREQUENCY_SECONDS)
