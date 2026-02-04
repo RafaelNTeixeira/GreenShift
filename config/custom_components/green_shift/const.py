@@ -12,6 +12,7 @@ BASELINE_DAYS = 14
 
 UPDATE_INTERVAL_SECONDS = 5 # Frequency to store data
 AI_FREQUENCY_SECONDS = 15 # Update interval for agent state
+SAVE_STATE_INTERVAL_SECONDS = 600 # Frequency to save AI state to avoid many writes (600 seconds = 10 minutes)
 
 # Sensor categories and keywords for auto-discovery
 SENSOR_MAPPING = {

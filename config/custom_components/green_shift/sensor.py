@@ -20,6 +20,7 @@ async def async_setup_entry(
     """Setup of virtual sensors."""
     agent = hass.data[DOMAIN]["agent"]
     collector = hass.data[DOMAIN]["collector"]
+    storage = hass.data[DOMAIN]["storage"]
     start_date = hass.data[DOMAIN]["start_date"]
     discovered_sensors = hass.data[DOMAIN]["discovered_sensors"]
     
@@ -59,9 +60,22 @@ class GreenShiftBaseSensor(SensorEntity):
             )
         )
 
+        # Perform an initial update if the sensor has an async update method
+        self._update_callback()
+
     @callback
     def _update_callback(self):
         """Force the dashboard to update when the signal is received."""
+        if hasattr(self, "_async_update_state"):
+            # If the sensor defines an async update method (e.g., database call), run it in the background
+            self.hass.async_create_task(self._async_update_and_write())
+        else:
+            # Standard synchronous update
+            self.async_write_ha_state()
+
+    async def _async_update_and_write(self):
+        """Helper to await the update and then write state."""
+        await self._async_update_state()
         self.async_write_ha_state()
 
 class GreenShiftAISensor(SensorEntity):
@@ -79,9 +93,22 @@ class GreenShiftAISensor(SensorEntity):
             )
         )
 
+        # Perform an initial update if the sensor has an async update method
+        self._update_callback()
+
     @callback
     def _update_callback(self):
         """Force the dashboard to update when the signal is received."""
+        if hasattr(self, "_async_update_state"):
+            # If the sensor defines an async update method (e.g., database call), run it in the background
+            self.hass.async_create_task(self._async_update_and_write())
+        else:
+            # Standard synchronous update
+            self.async_write_ha_state()
+
+    async def _async_update_and_write(self):
+        """Helper to await the update and then write state."""
+        await self._async_update_state()
         self.async_write_ha_state()
 
 class HardwareSensorsSensor(GreenShiftBaseSensor):
@@ -324,26 +351,29 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
         self._attr_unique_id = f"{DOMAIN}_savings"
         self._attr_unit_of_measurement = "EUR"
         self._attr_icon = "mdi:currency-eur"
+        self._attr_native_value = 0
     
-    @property
-    def state(self):
-        # Calculate savings: (baseline - avg_consumption) * kWh_price * hours
-        power_history = self._collector.get_power_history()
+    async def _async_update_state(self):
+        """Fetch data asynchronously and calculate state."""
+        # Await the async database call
+        power_history_data = await self._collector.get_power_history()
+
+        power_history = [power for timestamp, power in power_history_data]
+        
         if len(power_history) < 10:
-            return 0
+            self._attr_native_value = 0
+            return
         
         avg_consumption = sum(power_history) / len(power_history)
         saving_kW = self._agent.baseline_consumption - avg_consumption
         
-        # Convert to kWh and multiply by price (€0.25/kWh estimated)
-        # 15-second intervals: 240 readings per hour
         seconds_in_an_hour = 3600
         hours = len(power_history) / (seconds_in_an_hour / UPDATE_INTERVAL_SECONDS)
 
         saving_kwh = (saving_kW * hours)
         savings_eur = saving_kwh * 0.25
         
-        return round(max(0, savings_eur), 2)
+        self._attr_native_value = round(max(0, savings_eur), 2)
 
 
 class CO2SavedSensor(GreenShiftAISensor):
@@ -356,24 +386,26 @@ class CO2SavedSensor(GreenShiftAISensor):
         self._attr_unique_id = f"{DOMAIN}_co2"
         self._attr_unit_of_measurement = "kg"
         self._attr_icon = "mdi:leaf"
+        self._attr_native_value = 0
     
-    @property
-    def state(self):
-        # CO2: ~0.5 kg/kWh (mix energy Portugal)
-        power_history = self._collector.get_power_history()
+    async def _async_update_state(self):
+        power_history_data = await self._collector.get_power_history()
+
+        power_history = [power for timestamp, power in power_history_data]
+        
         if len(power_history) < 10:
-            return 0
+            self._attr_native_value = 0
+            return
         
         avg_consumption = sum(power_history) / len(power_history)
         saving_watts = self._agent.baseline_consumption - avg_consumption
         
-        # 15-second intervals: 240 readings per hour
         readings_per_hour = 3600 / UPDATE_INTERVAL_SECONDS
         hours = len(power_history) / readings_per_hour
         saving_kwh = (saving_watts * hours) / 1000
         co2_saved = saving_kwh * 0.5
         
-        return round(max(0, co2_saved), 2)
+        self._attr_native_value = round(max(0, co2_saved), 2)
 
 
 class TasksCompletedSensor(GreenShiftAISensor):
@@ -419,16 +451,16 @@ class WeeklyChallengeSensor(GreenShiftAISensor):
         self._attr_unique_id = f"{DOMAIN}_weekly_challenge"
         self._attr_icon = "mdi:flag-checkered"
         self._attr_unit_of_measurement = "%"
+        self._attr_native_value = 0
+        self._attr_extra_state_attributes = {}
     
-    @property
-    def state(self):
-        challenge = self._agent.get_weekly_challenge_status()
-        return challenge.get("progress", 0)
-    
-    @property
-    def extra_state_attributes(self):
-        challenge = self._agent.get_weekly_challenge_status()
-        return {
+    async def _async_update_state(self):
+        # We need to await this because it reads from the DB
+        challenge = await self._agent.get_weekly_challenge_status()
+        
+        self._attr_native_value = challenge.get("progress", 0)
+        
+        self._attr_extra_state_attributes = {
             "status": challenge.get("status", "pending"),
             "current_avg_w": challenge.get("current_avg", 0),
             "target_avg_w": challenge.get("target_avg", 0),

@@ -3,9 +3,12 @@ import numpy as np
 from datetime import datetime, timedelta
 from collections import deque
 from homeassistant.core import HomeAssistant
-from .const import UPDATE_INTERVAL_SECONDS
 
+from .storage import StorageManager
 from .const import (
+    UPDATE_INTERVAL_SECONDS,
+    SAVE_STATE_INTERVAL_SECONDS,
+    AI_FREQUENCY_SECONDS,
     ACTIONS,
     REWARD_WEIGHTS,
     PHASE_BASELINE,
@@ -30,40 +33,105 @@ class DecisionAgent:
     Note: This agent does NOT store sensor data. It reads data from DataCollector.
     """
     
-    def __init__(self, hass: HomeAssistant, discovered_sensors: dict, data_collector):
+    def __init__(self, hass: HomeAssistant, discovered_sensors: dict, data_collector, storage_manager: StorageManager = None):
         self.hass = hass
         self.sensors = discovered_sensors
         self.data_collector = data_collector  # Reference to DataCollector
-        self.phase = PHASE_BASELINE # TODO: Store in persistent storage JSON
+        self.storage = storage_manager
+        self.phase = PHASE_BASELINE 
         # self.phase = PHASE_ACTIVE # TEMP: For testing purposes, start in active phase
         
         # AI state
         self.state_vector = None
         self.action_mask = None
-        self.baseline_consumption = 0.0 # TODO: Store in persistent storage JSON
+        self.baseline_consumption = 0.0 
         self.baseline_consumption_week = None  # Fixed baseline for challenges (set after each week)
         self.last_baseline_update_date = None  # Track weekly baseline updates
         
-        # Engagement history (AI-specific)
+        # Engagement history
         self.engagement_history = deque(maxlen=100)
         self.notification_count_today = 0
         self.last_notification_date = None
         
-        # Q-table simplified (for demonstration, in production use DQN)
-        self.q_table = {} # TODO: Store in persistent storage JSON
+        # Q-table simplified 
+        self.q_table = {} # TODO: Update? Maybe to DQN
         self.learning_rate = 0.1
         self.epsilon = 0.2  # Exploration rate
         
-        # Behaviour indices (calculated by AI)
-        self.anomaly_index = 0.0 # TODO: Store in persistent storage JSON
-        self.behaviour_index = 0.5 # TODO: Store in persistent storage JSON
-        self.fatigue_index = 0.0 # TODO: Store in persistent storage JSON
+        # Behaviour indices
+        self.anomaly_index = 0.0 
+        self.behaviour_index = 0.5 
+        self.fatigue_index = 0.0 
         
-        # Tasks and challenges (AI-specific)
+        # Tasks and challenges
         self.daily_tasks = []
-        self.weekly_challenge_target = 0.85 # 15% reduction goal
+        self.weekly_challenge_target = 0.85 # 15% reduction goal # TODO: Needs to be updated based on percentage reduction target picked by the user
         self.last_task_generation_date = None
         self.tasks_completed_count = 0
+
+    async def setup(self):
+        """Initialize agent and load persistent state."""
+        if self.storage:
+            await self._load_persistent_state()
+        _LOGGER.info("DecisionAgent initialized - phase: %s", self.phase)
+
+    async def _load_persistent_state(self):
+        """Load AI state from JSON storage."""
+        if not self.storage:
+            return
+        
+        state = await self.storage.load_state()
+        
+        # Load AI configuration
+        if "phase" in state:
+            self.phase = state["phase"]
+            _LOGGER.info("Loaded phase: %s", self.phase)
+        
+        if "baseline_consumption" in state:
+            self.baseline_consumption = state["baseline_consumption"]
+            _LOGGER.info("Loaded baseline consumption: %.2f kW", self.baseline_consumption)
+        
+        if "baseline_consumption_week" in state:
+            self.baseline_consumption_week = state["baseline_consumption_week"]
+        
+        # Load indices
+        if "anomaly_index" in state:
+            self.anomaly_index = state["anomaly_index"]
+        
+        if "behaviour_index" in state:
+            self.behaviour_index = state["behaviour_index"]
+        
+        if "fatigue_index" in state:
+            self.fatigue_index = state["fatigue_index"]
+        
+        # Load Q-table
+        if "q_table" in state:
+            # Convert string keys back to tuples if needed
+            self.q_table = {eval(k) if isinstance(k, str) else k: v 
+                           for k, v in state["q_table"].items()}
+            _LOGGER.info("Loaded Q-table with %d entries", len(self.q_table))
+        
+        _LOGGER.info("Persistent AI state loaded successfully")
+
+    async def _save_persistent_state(self):
+        """Save AI state to JSON storage."""
+        if not self.storage:
+            return
+        
+        # Convert Q-table keys to strings for JSON serialization
+        serializable_q_table = {str(k): v for k, v in self.q_table.items()}
+        
+        state = {
+            "phase": self.phase,
+            "baseline_consumption": float(self.baseline_consumption),
+            "baseline_consumption_week": float(self.baseline_consumption_week) if self.baseline_consumption_week else None,
+            "anomaly_index": float(self.anomaly_index),
+            "behaviour_index": float(self.behaviour_index),
+            "fatigue_index": float(self.fatigue_index),
+            "q_table": serializable_q_table,
+        }
+        
+        await self.storage.save_state(state)
         
     async def process_ai_model(self):
         """
@@ -83,16 +151,28 @@ class DecisionAgent:
         self._build_state_vector()
         
         # Calculate indices (anomaly, behaviour, fatigue)
-        self._update_anomaly_index()
+        await self._update_anomaly_index()
         self._update_behaviour_index()
         self._update_fatigue_index()
         
         # Update action mask M_t
-        self._update_action_mask()
+        await self._update_action_mask()
         
         # Decide action A_t if in active phase
         if self.phase == PHASE_ACTIVE:
             await self._decide_action()
+
+        # Periodically save state (every ~10 minutes to avoid too many writes)
+        # Save on every 40th call (40 * 15s = 600s = 10 min)
+        calls_per_save = SAVE_STATE_INTERVAL_SECONDS // AI_FREQUENCY_SECONDS
+
+        if not hasattr(self, '_process_count'):
+            self._process_count = 0
+
+        self._process_count += 1
+        
+        if self._process_count % calls_per_save == 0 and self.storage:
+            await self._save_persistent_state()
         
         _LOGGER.debug("AI model processing complete")
     
@@ -166,7 +246,7 @@ class DecisionAgent:
 
         self.state_vector = np.array(state)
     
-    def _update_action_mask(self):
+    async def _update_action_mask(self):
         """Generates binary action mask M_t."""
         mask = np.ones(len(ACTIONS))
         
@@ -177,13 +257,16 @@ class DecisionAgent:
             mask[ACTIONS["specific"]] = 0
         
         # anomaly: needs enough consumption history
-        power_history = self.data_collector.get_power_history()
-        if len(power_history) < 100:
+        power_history_data = await self.data_collector.get_power_history(hours=1)
+
+        power_values = [power for timestamp, power in power_history_data]
+
+        if len(power_values) < 100:
             mask[ACTIONS["anomaly"]] = 0
         
         # behavioural: always available
 
-        # normative: requires group data
+        # normative: requires consumption data
         if self.baseline_consumption == 0.0:
             mask[ACTIONS["normative"]] = 0
         
@@ -242,18 +325,20 @@ class DecisionAgent:
             self.notification_count_today += 1
             _LOGGER.info("Action executed: %s", action_name)
     
-    def _calculate_reward(self) -> float:
+    async def _calculate_reward(self) -> float:
         """
         Calculates reward R_t based on energy savings and user engagement.
         Reads consumption history from DataCollector.
         """
-        power_history = self.data_collector.get_power_history()
-        if len(power_history) < 10:
+        power_history_data = await self.data_collector.get_power_history(hours=1) # Last hour
+        power_values = [power for timestamp, power in power_history_data]
+
+        if len(power_values) < 10:
             return 0.0
         
         # Energy savings component
-        current = power_history[-1]
-        baseline = self.baseline_consumption if self.baseline_consumption > 0 else np.mean(power_history)
+        current = power_values[-1]
+        baseline = self.baseline_consumption if self.baseline_consumption > 0 else np.mean(power_values)
         energy_saving = max(0, (baseline - current) / baseline) if baseline > 0 else 0
         
         # User engagement component
@@ -271,21 +356,22 @@ class DecisionAgent:
         
         return reward
     
-    def _update_anomaly_index(self):
+    async def _update_anomaly_index(self):
         """
         Detects anomalies in consumption using z-score.
         Reads consumption history from DataCollector.
         """
-        power_history = self.data_collector.get_power_history()
+        power_history_data = await self.data_collector.get_power_history(hours=1)  # Last hour
+        power_values = [power for timestamp, power in power_history_data]
         
         # Calculate anomaly index based on last hour of data
         readings_per_hour = int(3600 / UPDATE_INTERVAL_SECONDS)
         
-        if len(power_history) < readings_per_hour:
+        if len(power_values) < readings_per_hour:
             self.anomaly_index = 0.0
             return
         
-        recent = power_history[-readings_per_hour:]
+        recent = power_values[-readings_per_hour:]
         mean = np.mean(recent)
         std = np.std(recent)
         current = recent[-1]
@@ -314,7 +400,7 @@ class DecisionAgent:
         if self.state_vector is None:
             return (0,)
         # Simplification: use only consumption, anomalies and fatigue
-        power = int(self.state_vector[0] / 100)  # Bins of 100W
+        power = int(self.state_vector[0] / 100) # Bins of 100W # TODO: Confirm this
         anomaly = int(self.anomaly_index * 10)
         fatigue = int(self.fatigue_index * 10)
 
@@ -385,7 +471,7 @@ class DecisionAgent:
         
         _LOGGER.info("Generated daily tasks: %s", [t["title"] for t in self.daily_tasks])
     
-    def _update_weekly_baseline(self):
+    async def _update_weekly_baseline(self):
         """Updates the fixed baseline once per week."""
         today = datetime.now().date()
         
@@ -394,12 +480,14 @@ class DecisionAgent:
            (today - self.last_baseline_update_date).days >= 7:
             self.last_baseline_update_date = today
             
-            power_history = self.data_collector.get_power_history()
-            if len(power_history) > 0:
-                self.baseline_consumption_week = np.mean(power_history)
+            power_history_data = await self.data_collector.get_power_history(days=7) # Last week
+            power_values = [power for timestamp, power in power_history_data] 
+
+            if len(power_values) > 0:
+                self.baseline_consumption_week = np.mean(power_values)
                 _LOGGER.info("Weekly baseline updated: %.2f kW", self.baseline_consumption_week)
     
-    def get_weekly_challenge_status(self) -> dict:
+    async def get_weekly_challenge_status(self) -> dict:
         """
         Calculates weekly challenge status (consumption reduction goal).
         Reads consumption history from DataCollector.
@@ -408,20 +496,19 @@ class DecisionAgent:
         if self.baseline_consumption_week is None or self.baseline_consumption_week == 0:
             return {"status": "pending", "current_avg": 0, "target_avg": 0, "progress": 0}
         
-        power_history = self.data_collector.get_power_history()
+        power_history_data = await self.data_collector.get_power_history(days=7) # Last week
+        power_values = [power for timestamp, power in power_history_data]
         
         # Calculate readings per day based on data collection interval
         day_in_seconds = 86400
         readings_per_day = int(day_in_seconds / UPDATE_INTERVAL_SECONDS)
         
         # Need at least 1 day of data
-        if len(power_history) < readings_per_day:
+        if len(power_values) < readings_per_day:
             return {"status": "pending", "current_avg": 0, "target_avg": 0, "progress": 0}
         
         # Get last 7 days of consumption
-        week_readings = readings_per_day * 7
-        week_data = power_history[-week_readings:]
-        current_avg = np.mean(week_data) if week_data else 0
+        current_avg = np.mean(power_values) if power_values else 0
         
         # Calculate target average based on baseline and challenge target
         target_avg = self.baseline_consumption_week * self.weekly_challenge_target

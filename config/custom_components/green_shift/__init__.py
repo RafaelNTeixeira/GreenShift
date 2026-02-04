@@ -19,9 +19,9 @@ from .const import (
 )
 from .data_collector import DataCollector
 from .decision_agent import DecisionAgent
+from .storage import StorageManager
 
 _LOGGER = logging.getLogger(__name__)
-
 PLATFORMS = ["sensor"]
 
 
@@ -42,13 +42,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await sync_helper_entities(hass, entry)
 
+    # Initialize storage manager (SQLite + JSON)
+    storage = StorageManager(hass)
+    await storage.setup()
+
     # Initialize the real-time data collector
-    collector = DataCollector(hass, discovered_sensors, main_energy_sensor, main_power_sensor)
+    collector = DataCollector(hass, discovered_sensors, main_energy_sensor, main_power_sensor, storage)
     await collector.setup()
     
     # Initialize the decision agent (AI)
-    agent = DecisionAgent(hass, discovered_sensors, collector)
+    agent = DecisionAgent(hass, discovered_sensors, collector, storage)
+    await agent.setup()
     
+    hass.data[DOMAIN]["storage"] = storage
     hass.data[DOMAIN]["collector"] = collector
     hass.data[DOMAIN]["agent"] = agent
     hass.data[DOMAIN]["discovered_sensors"] = discovered_sensors
@@ -69,9 +75,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # During baseline phase: continuously update baseline_consumption
         if agent.phase == PHASE_BASELINE:
-            power_history = collector.get_power_history()
-            if len(power_history) > 0:
-                agent.baseline_consumption = np.mean(power_history)
+            power_history_data = await collector.get_power_history(days=days_running if days_running > 0 else None)
+            power_values = [power for timestamp, power in power_history_data]
+
+            if len(power_values) > 0:
+                agent.baseline_consumption = np.mean(power_values)
                 _LOGGER.debug("Baseline consumption updated: %.2f kW", agent.baseline_consumption)
         
         # Verify if the baseline phase is complete
@@ -79,8 +87,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             agent.phase = PHASE_ACTIVE
             # Freeze baseline_consumption and set fixed baseline for active phase
             agent.baseline_consumption_week = agent.baseline_consumption # Initialize week baseline to biweekly intervention baseline
-            _LOGGER.info("System entered active phase after %d days with baseline: %.2f kW", 
-                        days_running, agent.baseline_consumption)
+            _LOGGER.info("System entered active phase after %d days with baseline: %.2f kW", days_running, agent.baseline_consumption)
+
+            # Save phase transition to persistent storage
+            if agent.storage:
+                await agent._save_persistent_state()
             
         async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
     
@@ -123,6 +134,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload of the config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN]["update_listener"]()
+
+        # Close storage connections
+        storage = hass.data[DOMAIN].get("storage")
+        if storage:
+            await storage.close()
+            
         hass.data.pop(DOMAIN)
     return unload_ok
 

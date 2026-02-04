@@ -7,6 +7,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import UPDATE_INTERVAL_SECONDS, GS_UPDATE_SIGNAL
 from .helpers import get_normalized_value
+from .storage import StorageManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,24 +19,12 @@ class DataCollector:
     Completely independent from AI processing.
     """
     
-    def __init__(self, hass: HomeAssistant, discovered_sensors: dict, main_energy_sensor: str = None, main_power_sensor: str = None):
+    def __init__(self, hass: HomeAssistant, discovered_sensors: dict, main_energy_sensor: str = None, main_power_sensor: str = None, storage_manager: StorageManager = None):
         self.hass = hass
         self.sensors = discovered_sensors
         self.main_energy_sensor = main_energy_sensor # Sensor that reads building energy consumption (kWh)
         self.main_power_sensor = main_power_sensor # Sensor that reads current building power consumption (kW) 
-        
-        # Storage for historical data (14 days)
-        days_to_store = 14
-        day_in_seconds = 86400
-        max_readings = int(days_to_store * day_in_seconds / UPDATE_INTERVAL_SECONDS)
-        
-        # Storage of consumption based on UPDATE_INTERVAL_SECONDS
-        self.power_history = deque(maxlen=max_readings) # Stores the total power consumption readings over time # TODO: Store in SQLite database
-        self.energy_history = deque(maxlen=max_readings) # Stores the total energy consumption readings over time # TODO: Store in SQLite database
-        self.temperature_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
-        self.humidity_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
-        self.illuminance_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
-        self.occupancy_history = deque(maxlen=max_readings) # TODO: Store in SQLite database
+        self.storage = storage_manager
         
         # Current readings (latest values)
         self.current_total_power = 0.0
@@ -53,13 +42,31 @@ class DataCollector:
         self._illuminance_sensor_cache = {} # Stores the current readings of each illuminance sensor
         self._occupancy_sensor_cache = {} # Stores the current readings of each occupancy sensor
         
-        self._energy_midnight_points = {} # TODO: Store in persistent storage JSON
+        self._energy_midnight_points = {} 
         
         # Timestamp tracking
-        self._last_history_update = None
+        self._last_history_update = None # TODO: Is this used?
+
+    async def _load_persistent_data(self):
+        """Load persistent data from JSON storage."""
+        if not self.storage:
+            return
+        
+        state = await self.storage.load_state()
+        
+        # Load energy midnight points
+        if "energy_midnight_points" in state:
+            self._energy_midnight_points = state["energy_midnight_points"]
+            _LOGGER.info("Loaded %d midnight energy points from storage", len(self._energy_midnight_points))
+        
+        _LOGGER.info("Persistent data loaded successfully")
         
     async def setup(self):
         """Setup real-time monitoring of all sensors."""
+
+        if self.storage:
+            await self._load_persistent_data()
+
         await self._setup_power_monitoring()
         await self._setup_energy_monitoring()
         await self._setup_environment_monitoring()
@@ -316,7 +323,6 @@ class DataCollector:
     def _reset_midnight_listener(self, now):
         """Callback to reset the daily counter at midnight."""
         self.update_midnight_points()
-        _LOGGER.info("Daily Cost Reset: Midnight snapshots taken.")
 
     @callback
     def update_midnight_points(self):
@@ -340,20 +346,33 @@ class DataCollector:
             
             if val is not None:
                 self._energy_midnight_points[entity_id] = val
+            
+        # Save to persistent storage
+        if self.storage:
+            self.hass.async_create_task(
+                self.storage.update_state_field("energy_midnight_points", self._energy_midnight_points)
+            )
         
         _LOGGER.debug("Midnight snapshots updated: %s", self._energy_midnight_points)
     
     @callback
     def _record_periodic_snapshot(self, now):
-        """Records a snapshot of all current readings."""
-        self.power_history.append((now, self.current_total_power))
-        self.energy_history.append((now, self.current_daily_energy))
-        self.temperature_history.append((now, self.current_temperature))
-        self.humidity_history.append((now, self.current_humidity))
-        self.illuminance_history.append((now, self.current_illuminance))
-        self.occupancy_history.append((now, 1.0 if self.current_occupancy else 0.0))
-        
-        _LOGGER.debug("History Snapshot Recorded: Power=%.2f kW | Energy=%.2f kWh", self.current_total_power, self.current_daily_energy)
+        """Records a snapshot of all current readings to SQLite."""
+        if self.storage:
+            self.hass.async_create_task(
+                self.storage.store_sensor_snapshot(
+                    timestamp=now,
+                    power=self.current_total_power,
+                    energy=self.current_daily_energy,
+                    temperature=self.current_temperature,
+                    humidity=self.current_humidity,
+                    illuminance=self.current_illuminance,
+                    occupancy=self.current_occupancy
+                )
+            )
+            _LOGGER.debug("Snapshot stored to SQLite: Power=%.2f W | Energy=%.2f kWh", self.current_total_power, self.current_daily_energy)
+        else:
+            _LOGGER.warning("Storage not available - snapshot not saved")
     
     def get_current_state(self) -> dict:
         """Get current sensor readings."""
@@ -366,21 +385,46 @@ class DataCollector:
             "occupancy": self.current_occupancy,
         }
     
-    def get_power_history(self) -> list:
-        """Returns only the power values (floats)."""
-        # Return only the power values without timestamps
-        return [v for _, v in self.power_history]
+    async def get_power_history(self, hours: int = None, days: int = None) -> list:
+        """
+        Get power history with timestamps from SQLite.
+        
+        Returns:
+            List of (datetime, value) tuples
+        """
+        if not self.storage:
+            return []
+        
+        # Returns [(2026-02-04 10:00:00, 150.5), (2026-02-04 10:00:15, 152.0), ...]
+        return await self.storage.get_history("power", hours=hours, days=days)
     
-    def get_power_history_with_timestamps(self) -> list:
-        """Get consumption history with timestamps."""
-        return list(self.power_history)
-    
-    def get_all_history(self) -> dict:
-        """Get all historical data."""
+    async def get_all_history(self, hours: int = None, days: int = None) -> dict:
+        """
+        Get all historical data from SQLite.
+        
+        Args:
+            hours: Number of hours to retrieve (optional)
+            days: Number of days to retrieve (optional)
+        
+        Returns:
+            Dictionary with all sensor histories
+        """
+        if not self.storage:
+            _LOGGER.warning("Storage not available - returning empty histories")
+            return {
+                "power": [],
+                "energy": [],
+                "temperature": [],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            }
+        
         return {
-            "consumption": list(self.power_history),
-            "temperature": list(self.temperature_history),
-            "humidity": list(self.humidity_history),
-            "illuminance": list(self.illuminance_history),
-            "occupancy": list(self.occupancy_history),
+            "power": await self.storage.get_history("power", hours=hours, days=days),
+            "energy": await self.storage.get_history("energy", hours=hours, days=days),
+            "temperature": await self.storage.get_history("temperature", hours=hours, days=days),
+            "humidity": await self.storage.get_history("humidity", hours=hours, days=days),
+            "illuminance": await self.storage.get_history("illuminance", hours=hours, days=days),
+            "occupancy": await self.storage.get_history("occupancy", hours=hours, days=days),
         }
