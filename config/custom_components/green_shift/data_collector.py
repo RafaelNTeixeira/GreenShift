@@ -43,9 +43,6 @@ class DataCollector:
         self._occupancy_sensor_cache = {} # Stores the current readings of each occupancy sensor
         
         self._energy_midnight_points = {} 
-        
-        # Timestamp tracking
-        self._last_history_update = None # TODO: Is this used?
 
     async def _load_persistent_data(self):
         """Load persistent data from JSON storage."""
@@ -395,8 +392,73 @@ class DataCollector:
         if not self.storage:
             return []
         
-        # Returns [(2026-02-04 10:00:00, 150.5), (2026-02-04 10:00:15, 152.0), ...]
+        # Returns [(2026-02-04 10:00:00, power), ...]
         return await self.storage.get_history("power", hours=hours, days=days)
+    
+    async def get_energy_history(self, hours: int = None, days: int = None) -> list:
+        """
+        Get energy history with timestamps from SQLite.
+        
+        Returns:
+            List of (datetime, value) tuples
+        """
+        if not self.storage:
+            return []
+        
+        # Returns [(2026-02-04 10:00:00, energy), ...]
+        return await self.storage.get_history("energy", hours=hours, days=days)
+    
+    async def get_temperature_history(self, hours: int = None, days: int = None) -> list:
+        """
+        Get temperature history with timestamps from SQLite.
+        
+        Returns:
+            List of (datetime, value) tuples
+        """
+        if not self.storage:
+            return []
+        
+        # Returns [(2026-02-04 10:00:00, temperature), ...]
+        return await self.storage.get_history("temperature", hours=hours, days=days)
+    
+    async def get_humidity_history(self, hours: int = None, days: int = None) -> list:
+        """
+        Get humidity history with timestamps from SQLite.
+        
+        Returns:
+            List of (datetime, value) tuples
+        """
+        if not self.storage:
+            return []
+        
+        # Returns [(2026-02-04 10:00:00, humidity), ...]
+        return await self.storage.get_history("humidity", hours=hours, days=days)
+    
+    async def get_illuminance_history(self, hours: int = None, days: int = None) -> list:
+        """
+        Get illuminance history with timestamps from SQLite.
+        
+        Returns:
+            List of (datetime, value) tuples
+        """
+        if not self.storage:
+            return []
+        
+        # Returns [(2026-02-04 10:00:00, illuminance), ...]
+        return await self.storage.get_history("illuminance", hours=hours, days=days)
+    
+    async def get_occupancy_history(self, hours: int = None, days: int = None) -> list:
+        """
+        Get occupancy history with timestamps from SQLite.
+        
+        Returns:
+            List of (datetime, value) tuples
+        """
+        if not self.storage:
+            return []
+        
+        # Returns [(2026-02-04 10:00:00, occupancy), ...]
+        return await self.storage.get_history("occupancy", hours=hours, days=days)
     
     async def get_all_history(self, hours: int = None, days: int = None) -> dict:
         """
