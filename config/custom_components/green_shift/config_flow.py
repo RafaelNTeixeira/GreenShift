@@ -2,16 +2,19 @@ import logging
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
     EntitySelector,
     EntitySelectorConfig,
+    AreaSelector,       
+    AreaSelectorConfig
 )
 
 from . import async_discover_sensors
-from .helpers import get_normalized_value
+from .helpers import get_normalized_value, get_entity_area_id
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -119,7 +122,7 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
             
             self.data["discovered_sensors"] = confirmed_sensors
-            return await self.async_step_intervention_info()
+            return await self.async_step_area_assignment()
 
         # Prepare lists from cache for defaults
         sorted_energy = self._get_sorted_entities("energy")
@@ -178,16 +181,66 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
             last_step=False
         )
+    
+    async def async_step_area_assignment(self, user_input=None):
+        """Step 4: Assign areas to selected sensors."""
+        
+        # Flatten the list of all selected sensors
+        all_sensors = []
+        for category, entities in self.data["discovered_sensors"].items():
+            all_sensors.extend(entities)
+        
+        # Remove duplicates
+        all_sensors = list(set(all_sensors))
 
-    async def async_step_intervention_info(self, user_input=None):
-        """Step 4: Final informational slide."""
+        # Main sensors don't have an area assigned. They measure the whole building
+        main_energy = self.data.get("main_total_energy_sensor")
+        main_power = self.data.get("main_total_power_sensor")
+
+        if main_energy in all_sensors:
+            all_sensors.remove(main_energy)
+        if main_power in all_sensors:
+            all_sensors.remove(main_power)
+
         if user_input is not None:
-            return self.async_create_entry(
-                title="Green Shift",
-                data=self.data,
-            )
+            ent_reg = er.async_get(self.hass)
+            
+            for entity_id, area_id in user_input.items():
+                if area_id: # Only update if user selected something
+                    try:
+                        ent_reg.async_update_entity(entity_id, area_id=area_id)
+                        _LOGGER.debug("Assigned %s to area %s", entity_id, area_id)
+                    except Exception as e:
+                        _LOGGER.warning("Failed to assign area for %s: %s", entity_id, e)
+
+            return await self.async_step_intervention_info()
+
+        schema = {}
+        
+        for entity_id in all_sensors:
+            try:
+                current_area_id = get_entity_area_id(self.hass, entity_id)
+                
+                selector = AreaSelector(AreaSelectorConfig(multiple=False))
+                
+                if current_area_id:
+                    schema[vol.Optional(entity_id, default=current_area_id)] = selector
+                else:
+                    schema[vol.Optional(entity_id)] = selector
+
+            except Exception as ex:
+                _LOGGER.error("Skipping entity %s in area assignment due to error: %s", entity_id, ex)
 
         return self.async_show_form(
-            step_id="intervention_info",
-            last_step=True,
+            step_id="area_assignment",
+            data_schema=vol.Schema(schema),
+            description_placeholders={"count": str(len(all_sensors))},
+            last_step=False
         )
+
+    async def async_step_intervention_info(self, user_input=None):
+        """Step 5: Final informational slide."""
+        if user_input is not None:
+            return self.async_create_entry(title="Green Shift", data=self.data)
+
+        return self.async_show_form(step_id="intervention_info", last_step=True)

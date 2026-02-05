@@ -37,6 +37,10 @@
           "confirmed_occ": "Binary sensors used to determine if a room is currently occupied."
         }
       },
+      "area_assignment": {
+        "title": "Area Assignment",
+        "description": "We are tracking **{count}** sensors. Please assign each sensor to the specific room where it is installed.\n\nThis is **critical** for accurate analysis (e.g., separating the Kitchen from the Living Room)."
+      },
       "intervention_info": {
         "title": "Setup Complete",
         "description": "Green Shift is now configured! The system will start collecting data immediately. You can now add the Dashboard card to your Lovelace view."

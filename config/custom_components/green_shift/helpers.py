@@ -58,6 +58,25 @@ def get_entity_area(hass: HomeAssistant, entity_id: str) -> Optional[str]:
     
     return None
 
+def get_entity_area_id(hass: HomeAssistant, entity_id: str) -> Optional[str]:
+    entity_reg = er.async_get(hass)
+    area_reg = ar.async_get(hass)
+
+    entity = entity_reg.async_get(entity_id)
+    if not entity:
+        return None
+
+    if entity.area_id:
+        return entity.area_id
+
+    if entity.device_id:
+        device_reg = dr.async_get(hass)
+        device = device_reg.async_get(entity.device_id)
+        if device and device.area_id:
+            return device.area_id
+
+    return None
+
 
 def group_sensors_by_area(hass: HomeAssistant, entity_ids: List[str]) -> Dict[str, List[str]]:
     """

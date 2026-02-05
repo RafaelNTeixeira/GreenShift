@@ -86,7 +86,11 @@ class DataCollector:
     async def _setup_area_grouping(self):
         """Group environmental sensors by Home Assistant areas."""
         for sensor_type in AREA_BASED_SENSORS:
-            entity_ids = self.sensors.get(sensor_type, [])
+            eids = self.sensors.get(sensor_type, [])
+
+            to_exclude = {self.main_energy_sensor, self.main_power_sensor}
+            entity_ids = [e for e in eids if e not in to_exclude]
+
             if not entity_ids:
                 continue
             
