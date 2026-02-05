@@ -143,8 +143,8 @@ class DataCollector:
                 self._power_sensor_cache[entity_id] = value
 
                 # Update area-specific data
-                area = get_entity_area(self.hass, entity_id)
-                if area and area in self.area_data:
+                area = get_entity_area(self.hass, entity_id) or "No Area"
+                if area in self.area_data:
                     # Sum all power sensors in this area
                     area_sensors = self.area_sensors.get("power", {}).get(area, [])
                     area_total = sum(
@@ -215,8 +215,8 @@ class DataCollector:
                     _LOGGER.info("Initialized midnight baseline for %s: %.3f kWh", entity_id, value)
 
                 # Update area-specific data
-                area = get_entity_area(self.hass, entity_id)
-                if area and area in self.area_data:
+                area = get_entity_area(self.hass, entity_id) or "No Area"
+                if area in self.area_data:
                     # Calculate daily energy for sensors in this area
                     area_sensors = self.area_sensors.get("energy", {}).get(area, [])
                     area_daily = 0.0
@@ -296,8 +296,8 @@ class DataCollector:
                     _LOGGER.debug("Temperature value: %.2f", val)
 
                     # Update area-specific data
-                    area = get_entity_area(self.hass, entity_id)
-                    if area and area in self.area_data:
+                    area = get_entity_area(self.hass, entity_id) or "No Area"
+                    if area in self.area_data:
                         # Average all temperature sensors in this area
                         area_sensors = self.area_sensors.get("temperature", {}).get(area, [])
                         area_values = [self._temperature_sensor_cache[eid] for eid in area_sensors if eid in self._temperature_sensor_cache]
@@ -334,8 +334,8 @@ class DataCollector:
                     _LOGGER.debug("Hum value: %.2f", val)
 
                     # Update area-specific data
-                    area = get_entity_area(self.hass, entity_id)
-                    if area and area in self.area_data:
+                    area = get_entity_area(self.hass, entity_id) or "No Area"
+                    if area in self.area_data:
                         area_sensors = self.area_sensors.get("humidity", {}).get(area, [])
                         area_values = [self._humidity_sensor_cache[eid] for eid in area_sensors if eid in self._humidity_sensor_cache]
                         if area_values:
@@ -370,8 +370,8 @@ class DataCollector:
                     _LOGGER.debug("Illum value: %.2f", val)
                     
                     # Update area-specific data
-                    area = get_entity_area(self.hass, entity_id)
-                    if area and area in self.area_data:
+                    area = get_entity_area(self.hass, entity_id) or "No Area"
+                    if area in self.area_data:
                         area_sensors = self.area_sensors.get("illuminance", {}).get(area, [])
                         area_values = [self._illuminance_sensor_cache[eid] for eid in area_sensors if eid in self._illuminance_sensor_cache]
                         if area_values:
@@ -407,8 +407,8 @@ class DataCollector:
                     _LOGGER.debug("Occupancy value: %s", is_on)
 
                     # Update area-specific data
-                    area = get_entity_area(self.hass, entity_id)
-                    if area and area in self.area_data:
+                    area = get_entity_area(self.hass, entity_id) or "No Area"
+                    if area in self.area_data:
                         area_sensors = self.area_sensors.get("occupancy", {}).get(area, [])
                         # Area is occupied if ANY sensor in the area is True
                         area_occupied = any(self._occupancy_sensor_cache.get(eid, False) for eid in area_sensors)
