@@ -118,10 +118,12 @@ class DecisionAgent:
         if not self.storage:
             return
         
+        current_state = await self.storage.load_state()
+        
         # Convert Q-table keys to strings for JSON serialization
         serializable_q_table = {str(k): v for k, v in self.q_table.items()}
         
-        state = {
+        ai_state = {
             "phase": self.phase,
             "baseline_consumption": float(self.baseline_consumption),
             "baseline_consumption_week": float(self.baseline_consumption_week) if self.baseline_consumption_week else None,
@@ -130,8 +132,10 @@ class DecisionAgent:
             "fatigue_index": float(self.fatigue_index),
             "q_table": serializable_q_table,
         }
+
+        current_state.update(ai_state)
         
-        await self.storage.save_state(state)
+        await self.storage.save_state(current_state)
         
     async def process_ai_model(self):
         """

@@ -68,7 +68,6 @@ class DataCollector:
             await self._load_persistent_data()
 
         await self._setup_area_grouping()
-
         await self._setup_power_monitoring()
         await self._setup_energy_monitoring()
         await self._setup_environment_monitoring()
