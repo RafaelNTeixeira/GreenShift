@@ -88,7 +88,7 @@ class DataCollector:
         for sensor_type in AREA_BASED_SENSORS:
             eids = self.sensors.get(sensor_type, [])
 
-            to_exclude = {self.main_energy_sensor, self.main_power_sensor}
+            to_exclude = {self.main_energy_sensor, self.main_power_sensor} # Exclude main consumption sensor readings from classification by area
             entity_ids = [e for e in eids if e not in to_exclude]
 
             if not entity_ids:
