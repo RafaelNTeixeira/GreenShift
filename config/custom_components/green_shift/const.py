@@ -52,6 +52,9 @@ SENSOR_MAPPING = {
     }
 }
 
+# Environmental sensor types that benefit from area-based tracking
+AREA_BASED_SENSORS = ["power", "energy", "temperature", "humidity", "illuminance", "occupancy"]
+
 # RL Action Spaces
 ACTIONS = {
     "noop": 0,

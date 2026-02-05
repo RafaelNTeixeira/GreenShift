@@ -1,6 +1,6 @@
 """
 Storage management for Green Shift integration.
-- SQLite: Temporal sensor data (14 days rolling window)
+- SQLite: Temporal sensor data (14 days rolling window) with area-based tracking
 - JSON: Persistent state (AI configuration, indices, Q-table)
 """
 import logging
@@ -10,6 +10,7 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional, Any
+import numpy as np
 import asyncio
 from homeassistant.core import HomeAssistant
 
@@ -64,10 +65,32 @@ class StorageManager:
                 )
             """)
             
+            # Area-specific sensor data table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS area_sensor_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp REAL NOT NULL,
+                    area_name TEXT NOT NULL,
+                    power REAL,
+                    energy REAL,
+                    temperature REAL,
+                    humidity REAL,
+                    illuminance REAL,
+                    occupancy INTEGER,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
             # Index for faster queries by timestamp
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_timestamp 
                 ON sensor_history(timestamp)
+            """)
+            
+            # Index for faster area-based queries
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_area_timestamp 
+                ON area_sensor_history(area_name, timestamp)
             """)
             
             conn.commit()
@@ -85,17 +108,25 @@ class StorageManager:
             # Calculate cutoff (14 days ago)
             cutoff = (datetime.now() - timedelta(days=14)).timestamp()
             
+            # Clean global history
             cursor.execute(
                 "DELETE FROM sensor_history WHERE timestamp < ?",
                 (cutoff,)
             )
-            
-            deleted = cursor.rowcount
+            deleted_global = cursor.rowcount
+
+            # Clean area history
+            cursor.execute(
+                "DELETE FROM area_sensor_history WHERE timestamp < ?",
+                (cutoff,)
+            )
+            deleted_area = cursor.rowcount
+
             conn.commit()
             conn.close()
             
-            if deleted > 0:
-                _LOGGER.info("Cleaned up %d old records", deleted)
+            if deleted_global > 0 or deleted_area > 0:
+                _LOGGER.info("Cleaned up %d global and %d area records", deleted_global, deleted_area)
         
         await self.hass.async_add_executor_job(_cleanup)
     
@@ -122,6 +153,42 @@ class StorageManager:
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 timestamp.timestamp(),
+                power,
+                energy,
+                temperature,
+                humidity,
+                illuminance,
+                1 if occupancy else 0 if occupancy is not None else None
+            ))
+            
+            conn.commit()
+            conn.close()
+        
+        await self.hass.async_add_executor_job(_insert)
+
+    async def store_area_snapshot(
+        self,
+        timestamp: datetime,
+        area_name: str,
+        power: float = None,
+        energy: float = None,
+        temperature: float = None,
+        humidity: float = None,
+        illuminance: float = None,
+        occupancy: bool = None
+    ):
+        """Store a sensor snapshot for a specific area."""
+        def _insert():
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT INTO area_sensor_history 
+                (timestamp, area_name, power, energy, temperature, humidity, illuminance, occupancy)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                timestamp.timestamp(),
+                area_name,
                 power,
                 energy,
                 temperature,
@@ -175,6 +242,103 @@ class StorageManager:
             return [(datetime.fromtimestamp(ts), val) for ts, val in rows]
         
         return await self.hass.async_add_executor_job(_query)
+    
+    async def get_area_history(
+        self,
+        area_name: str,
+        metric: str,
+        hours: int = None,
+        days: int = None
+    ) -> List[Tuple[datetime, float]]:
+        """
+        Get historical data for a specific metric in a specific area.
+        
+        Args:
+            area_name: Name of the area
+            metric: One of 'temperature', 'humidity', 'illuminance', 'occupancy'
+            hours: Number of hours to retrieve (optional)
+            days: Number of days to retrieve (optional)
+        
+        Returns:
+            List of (timestamp, value) tuples
+        """
+        def _query():
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            
+            query = f"""
+                SELECT timestamp, {metric} 
+                FROM area_sensor_history 
+                WHERE area_name = ? AND {metric} IS NOT NULL
+            """
+            
+            params = [area_name]
+            
+            if hours:
+                cutoff = (datetime.now() - timedelta(hours=hours)).timestamp()
+                query += " AND timestamp >= ?"
+                params.append(cutoff)
+            elif days:
+                cutoff = (datetime.now() - timedelta(days=days)).timestamp()
+                query += " AND timestamp >= ?"
+                params.append(cutoff)
+            
+            query += " ORDER BY timestamp ASC"
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            conn.close()
+            
+            # Convert to (datetime, value) tuples
+            return [(datetime.fromtimestamp(ts), val) for ts, val in rows]
+        
+        return await self.hass.async_add_executor_job(_query)
+    
+    async def get_all_areas(self) -> List[str]:
+        """Get list of all areas that have data."""
+        def _query():
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT DISTINCT area_name 
+                FROM area_sensor_history 
+                ORDER BY area_name
+            """)
+            
+            rows = cursor.fetchall()
+            conn.close()
+            
+            return [row[0] for row in rows]
+        
+        return await self.hass.async_add_executor_job(_query)
+    
+    async def get_area_stats(
+        self,
+        area_name: str,
+        metric: str,
+        hours: int = None,
+        days: int = None
+    ) -> Dict[str, float]:
+        """
+        Get statistical summary for an area's metric.
+        
+        Returns:
+            Dictionary with 'mean', 'min', 'max', 'std' keys
+        """
+        history = await self.get_area_history(area_name, metric, hours, days)
+        
+        if not history:
+            return {"mean": 0, "min": 0, "max": 0, "std": 0}
+        
+        values = [val for _, val in history]
+        
+        return {
+            "mean": float(np.mean(values)),
+            "min": float(np.min(values)),
+            "max": float(np.max(values)),
+            "std": float(np.std(values))
+        }
     
     async def get_recent_values(
         self,
@@ -281,6 +445,7 @@ class StorageManager:
                 conn = sqlite3.connect(str(self.db_path))
                 cursor = conn.cursor()  
                 cursor.execute("DELETE FROM sensor_history")
+                cursor.execute("DELETE FROM area_sensor_history")
                 conn.commit()
                 conn.close()
             

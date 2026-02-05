@@ -5,8 +5,8 @@ from homeassistant.core import HomeAssistant, callback, Event
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_change, async_track_time_interval
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import UPDATE_INTERVAL_SECONDS, GS_UPDATE_SIGNAL
-from .helpers import get_normalized_value
+from .const import UPDATE_INTERVAL_SECONDS, GS_UPDATE_SIGNAL, AREA_BASED_SENSORS
+from .helpers import get_normalized_value, get_entity_area, group_sensors_by_area
 from .storage import StorageManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,13 +26,13 @@ class DataCollector:
         self.main_power_sensor = main_power_sensor # Sensor that reads current building power consumption (kW) 
         self.storage = storage_manager
         
-        # Current readings (latest values)
+        # Current readings (latest values - global aggregates)
         self.current_total_power = 0.0
         self.current_daily_energy = 0.0
-        self.current_temperature = 0.0
-        self.current_humidity = 0.0
-        self.current_illuminance = 0.0
-        self.current_occupancy = False
+        self.current_temperature = 0.0 # Global average
+        self.current_humidity = 0.0 # Global average
+        self.current_illuminance = 0.0 # Global average
+        self.current_occupancy = False # Any area occupied
         
         # Instant sensor cache
         self._power_sensor_cache = {} # Stores the current readings of each power sensor (including the main one)
@@ -43,6 +43,9 @@ class DataCollector:
         self._occupancy_sensor_cache = {} # Stores the current readings of each occupancy sensor
         
         self._energy_midnight_points = {} 
+
+        self.area_sensors = {}  # Maps sensor_type -> area_name -> [entity_ids]
+        self.area_data = {}  # Maps area_name -> {temperature, humidity, illuminance, occupancy}
 
     async def _load_persistent_data(self):
         """Load persistent data from JSON storage."""
@@ -64,6 +67,8 @@ class DataCollector:
         if self.storage:
             await self._load_persistent_data()
 
+        await self._setup_area_grouping()
+
         await self._setup_power_monitoring()
         await self._setup_energy_monitoring()
         await self._setup_environment_monitoring()
@@ -77,6 +82,37 @@ class DataCollector:
         )
 
         # _LOGGER.info("DataCollector setup complete - real-time monitoring active")
+
+    async def _setup_area_grouping(self):
+        """Group environmental sensors by Home Assistant areas."""
+        for sensor_type in AREA_BASED_SENSORS:
+            entity_ids = self.sensors.get(sensor_type, [])
+            if not entity_ids:
+                continue
+            
+            grouped = group_sensors_by_area(self.hass, entity_ids)
+            self.area_sensors[sensor_type] = grouped
+            
+            _LOGGER.info(
+                "Grouped %d %s sensors into %d areas: %s",
+                len(entity_ids),
+                sensor_type,
+                len(grouped),
+                list(grouped.keys())
+            )
+        
+        # Initialize area data structure
+        all_areas = set()
+        for grouped in self.area_sensors.values():
+            all_areas.update(grouped.keys())
+        
+        for area in all_areas:
+            self.area_data[area] = {
+                "temperature": None,
+                "humidity": None,
+                "illuminance": None,
+                "occupancy": False
+            }
     
     async def _setup_power_monitoring(self):
         """Setup instant monitoring for power sensors."""
@@ -102,6 +138,19 @@ class DataCollector:
                     return
                 
                 self._power_sensor_cache[entity_id] = value
+
+                # Update area-specific data
+                area = get_entity_area(self.hass, entity_id)
+                if area and area in self.area_data:
+                    # Sum all power sensors in this area
+                    area_sensors = self.area_sensors.get("power", {}).get(area, [])
+                    area_total = sum(
+                        self._power_sensor_cache.get(eid, 0)
+                        for eid in area_sensors
+                    )
+                    self.area_data[area]["power"] = round(area_total, 2)
+                    _LOGGER.debug("Area '%s' power: %.2f W", area, self.area_data[area]["power"])
+
                 self._recalculate_total_power()
 
                 async_dispatcher_send(self.hass, GS_UPDATE_SIGNAL)
@@ -161,6 +210,26 @@ class DataCollector:
                 if self._energy_midnight_points.get(entity_id) is None: # Initialize midnight point (since the setup will usually happen after midnight)
                     self._energy_midnight_points[entity_id] = value
                     _LOGGER.info("Initialized midnight baseline for %s: %.3f kWh", entity_id, value)
+
+                # Update area-specific data
+                area = get_entity_area(self.hass, entity_id)
+                if area and area in self.area_data:
+                    # Calculate daily energy for sensors in this area
+                    area_sensors = self.area_sensors.get("energy", {}).get(area, [])
+                    area_daily = 0.0
+                    
+                    for eid in area_sensors:
+                        current_val = self._energy_sensor_cache.get(eid)
+                        midnight_val = self._energy_midnight_points.get(eid)
+                        
+                        if current_val is not None and midnight_val is not None:
+                            if current_val < midnight_val:
+                                area_daily += current_val  # Handle reset
+                            else:
+                                area_daily += (current_val - midnight_val)
+                    
+                    self.area_data[area]["energy"] = round(area_daily, 3)
+                    _LOGGER.debug("Area '%s' daily energy: %.3f kWh", area, self.area_data[area]["energy"])
 
                 self.get_daily_kwh()
                 
@@ -222,11 +291,22 @@ class DataCollector:
                     val = float(new_state.state)
                     self._temperature_sensor_cache[entity_id] = val
                     _LOGGER.debug("Temperature value: %.2f", val)
+
+                    # Update area-specific data
+                    area = get_entity_area(self.hass, entity_id)
+                    if area and area in self.area_data:
+                        # Average all temperature sensors in this area
+                        area_sensors = self.area_sensors.get("temperature", {}).get(area, [])
+                        area_values = [self._temperature_sensor_cache[eid] for eid in area_sensors if eid in self._temperature_sensor_cache]
+                        if area_values:
+                            self.area_data[area]["temperature"] = round(sum(area_values) / len(area_values), 1)
+                            _LOGGER.debug("Area '%s' temperature: %.1f°C", area, self.area_data[area]["temperature"])
                     
                     # Calculate Average of all valid cache entries
                     if self._temperature_sensor_cache:
-                        avg = sum(self._temperature_sensor_cache.values()) / len(self._temperature_sensor_cache) # TODO: Using an average for now. Might need to separate by areas
+                        avg = sum(self._temperature_sensor_cache.values()) / len(self._temperature_sensor_cache)
                         self.current_temperature = round(avg, 1)
+
                 except (ValueError, TypeError):
                     _LOGGER.debug("Invalid temperature value for %s: %s", entity_id, new_state.state)
             
@@ -249,10 +329,20 @@ class DataCollector:
                     self._humidity_sensor_cache[entity_id] = val
 
                     _LOGGER.debug("Hum value: %.2f", val)
+
+                    # Update area-specific data
+                    area = get_entity_area(self.hass, entity_id)
+                    if area and area in self.area_data:
+                        area_sensors = self.area_sensors.get("humidity", {}).get(area, [])
+                        area_values = [self._humidity_sensor_cache[eid] for eid in area_sensors if eid in self._humidity_sensor_cache]
+                        if area_values:
+                            self.area_data[area]["humidity"] = round(sum(area_values) / len(area_values), 1)
+                            _LOGGER.debug("Area '%s' humidity: %.1f%%", area, self.area_data[area]["humidity"])
                     
                     if self._humidity_sensor_cache:
-                        avg = sum(self._humidity_sensor_cache.values()) / len(self._humidity_sensor_cache) # TODO: Using an average for now. Might need to separate by areas
+                        avg = sum(self._humidity_sensor_cache.values()) / len(self._humidity_sensor_cache)
                         self.current_humidity = round(avg, 1)
+
                 except (ValueError, TypeError):
                     pass
             
@@ -270,16 +360,25 @@ class DataCollector:
                 if new_state is None or new_state.state in ["unavailable", "unknown"]:
                     return
                     
-                
                 try:
                     val = float(new_state.state)
                     self._illuminance_sensor_cache[entity_id] = val
 
                     _LOGGER.debug("Illum value: %.2f", val)
                     
+                    # Update area-specific data
+                    area = get_entity_area(self.hass, entity_id)
+                    if area and area in self.area_data:
+                        area_sensors = self.area_sensors.get("illuminance", {}).get(area, [])
+                        area_values = [self._illuminance_sensor_cache[eid] for eid in area_sensors if eid in self._illuminance_sensor_cache]
+                        if area_values:
+                            self.area_data[area]["illuminance"] = round(sum(area_values) / len(area_values), 1)
+                            _LOGGER.debug("Area '%s' illuminance: %.1f lx", area, self.area_data[area]["illuminance"])
+                    
                     if self._illuminance_sensor_cache:
-                        avg = sum(self._illuminance_sensor_cache.values()) / len(self._illuminance_sensor_cache) # TODO: Using an average for now. Might need to separate by areas
+                        avg = sum(self._illuminance_sensor_cache.values()) / len(self._illuminance_sensor_cache)
                         self.current_illuminance = round(avg, 1)
+
                 except (ValueError, TypeError):
                     pass
             
@@ -303,11 +402,21 @@ class DataCollector:
                     self._occupancy_sensor_cache[entity_id] = is_on
 
                     _LOGGER.debug("Occupancy value: %s", is_on)
+
+                    # Update area-specific data
+                    area = get_entity_area(self.hass, entity_id)
+                    if area and area in self.area_data:
+                        area_sensors = self.area_sensors.get("occupancy", {}).get(area, [])
+                        # Area is occupied if ANY sensor in the area is True
+                        area_occupied = any(self._occupancy_sensor_cache.get(eid, False) for eid in area_sensors)
+                        self.area_data[area]["occupancy"] = area_occupied
+                        _LOGGER.debug("Area '%s' occupancy: %s", area, area_occupied)
                     
                     # If ANY sensor in the cache is True, the building is occupied
                     self.current_occupancy = any(self._occupancy_sensor_cache.values())
 
                     async_dispatcher_send(self.hass, GS_UPDATE_SIGNAL)
+
                 except (ValueError, TypeError):
                     pass
             
@@ -354,22 +463,45 @@ class DataCollector:
     
     @callback
     def _record_periodic_snapshot(self, now):
-        """Records a snapshot of all current readings to SQLite."""
-        if self.storage:
+        """Records snapshots of all current readings to SQLite."""
+        if not self.storage:
+            _LOGGER.warning("Storage not available - snapshot not saved")
+            return
+        
+        # Store global aggregate snapshot
+        self.hass.async_create_task(
+            self.storage.store_sensor_snapshot(
+                timestamp=now,
+                power=self.current_total_power,
+                energy=self.current_daily_energy,
+                temperature=self.current_temperature,
+                humidity=self.current_humidity,
+                illuminance=self.current_illuminance,
+                occupancy=self.current_occupancy
+            )
+        )
+        
+       # Store area-specific snapshots
+        for area_name, data in self.area_data.items():
             self.hass.async_create_task(
-                self.storage.store_sensor_snapshot(
+                self.storage.store_area_snapshot(
                     timestamp=now,
-                    power=self.current_total_power,
-                    energy=self.current_daily_energy,
-                    temperature=self.current_temperature,
-                    humidity=self.current_humidity,
-                    illuminance=self.current_illuminance,
-                    occupancy=self.current_occupancy
+                    area_name=area_name,
+                    power=data.get("power"),
+                    energy=data.get("energy"),
+                    temperature=data.get("temperature"),
+                    humidity=data.get("humidity"),
+                    illuminance=data.get("illuminance"),
+                    occupancy=data.get("occupancy")
                 )
             )
-            _LOGGER.debug("Snapshot stored to SQLite: Power=%.2f W | Energy=%.2f kWh", self.current_total_power, self.current_daily_energy)
-        else:
-            _LOGGER.warning("Storage not available - snapshot not saved")
+        
+        _LOGGER.debug(
+            "Snapshot stored: Power=%.2f W | Energy=%.2f kWh | %d areas",
+            self.current_total_power,
+            self.current_daily_energy,
+            len(self.area_data)
+        )
     
     def get_current_state(self) -> dict:
         """Get current sensor readings."""
@@ -381,6 +513,19 @@ class DataCollector:
             "illuminance": self.current_illuminance,
             "occupancy": self.current_occupancy,
         }
+    
+    def get_area_state(self, area_name: str) -> dict:
+        """Get current sensor readings for a specific area."""
+        return self.area_data.get(area_name, {
+            "temperature": None,
+            "humidity": None,
+            "illuminance": None,
+            "occupancy": False
+        })
+    
+    def get_all_areas(self) -> list:
+        """Get list of all tracked areas."""
+        return list(self.area_data.keys())
     
     async def get_power_history(self, hours: int = None, days: int = None) -> list:
         """

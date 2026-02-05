@@ -1,4 +1,6 @@
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, List
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar, entity_registry as er, device_registry as dr
 
 def get_normalized_value(state, sensor_type: str) -> Tuple[Optional[float], Optional[str]]:
         """
@@ -25,3 +27,79 @@ def get_normalized_value(state, sensor_type: str) -> Tuple[Optional[float], Opti
             return value, unit
         except (ValueError, TypeError):
             return None, None
+        
+def get_entity_area(hass: HomeAssistant, entity_id: str) -> Optional[str]:
+    """
+    Get the area name for a given entity.
+    
+    Returns:
+        Area name or None if not assigned to an area
+    """
+    entity_reg = er.async_get(hass)
+    area_reg = ar.async_get(hass)
+    
+    entity = entity_reg.async_get(entity_id)
+    if not entity:
+        return None
+    
+    # Try to get area from entity first
+    if entity.area_id:
+        area = area_reg.async_get_area(entity.area_id)
+        return area.name if area else None
+    
+    # If entity doesn't have area, try to get it from device
+    if entity.device_id:
+        device_reg = dr.async_get(hass)
+        device = device_reg.async_get(entity.device_id)
+        
+        if device and device.area_id:
+            area = area_reg.async_get_area(device.area_id)
+            return area.name if area else None
+    
+    return None
+
+
+def group_sensors_by_area(hass: HomeAssistant, entity_ids: List[str]) -> Dict[str, List[str]]:
+    """
+    Group a list of entity IDs by their Home Assistant area.
+    
+    Args:
+        hass: Home Assistant instance
+        entity_ids: List of entity IDs to group
+    
+    Returns:
+        Dictionary mapping area names to lists of entity IDs
+        Entities without an area are grouped under "No Area"
+    """
+    grouped = {}
+    
+    for entity_id in entity_ids:
+        area = get_entity_area(hass, entity_id)
+        area_key = area if area else "No Area"
+        
+        if area_key not in grouped:
+            grouped[area_key] = []
+        
+        grouped[area_key].append(entity_id)
+    
+    return grouped
+
+
+def get_friendly_name(hass: HomeAssistant, entity_id: str) -> str:
+    """
+    Get the friendly name of an entity.
+    
+    Returns:
+        Friendly name or the entity_id if not found
+    """
+    state = hass.states.get(entity_id)
+    if state and state.attributes.get("friendly_name"):
+        return state.attributes["friendly_name"]
+    
+    entity_reg = er.async_get(hass)
+    entity = entity_reg.async_get(entity_id)
+    
+    if entity and entity.original_name:
+        return entity.original_name
+    
+    return entity_id
