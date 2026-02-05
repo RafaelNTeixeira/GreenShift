@@ -1,4 +1,5 @@
 import logging
+import numpy as np
 from collections import deque
 from datetime import timedelta
 from homeassistant.core import HomeAssistant, callback, Event
@@ -6,7 +7,7 @@ from homeassistant.helpers.event import async_track_state_change_event, async_tr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import UPDATE_INTERVAL_SECONDS, GS_UPDATE_SIGNAL, AREA_BASED_SENSORS
-from .helpers import get_normalized_value, get_entity_area, group_sensors_by_area
+from .helpers import get_normalized_value, get_entity_area, group_sensors_by_area, get_environmental_impact
 from .storage import StorageManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -646,4 +647,55 @@ class DataCollector:
             "humidity": await self.storage.get_history("humidity", hours=hours, days=days),
             "illuminance": await self.storage.get_history("illuminance", hours=hours, days=days),
             "occupancy": await self.storage.get_history("occupancy", hours=hours, days=days),
+        }
+
+    async def calculate_baseline_summary(self) -> dict:
+        """Calculates summary stats for the baseline phase."""
+        if not self.storage:
+            return {}
+
+        # Avg Daily Usage (kWh)
+        # Query the total energy history for the last 14 days
+        energy_history = await self.get_energy_history(days=14)
+        energy_values = [val for ts, val in energy_history]
+        avg_daily = np.mean(energy_values) if energy_values else 0.0
+
+        # Peak Time Interval
+        # Analyze power history to find which hour of the day has the highest average load
+        power_history = await self.get_power_history(days=14)
+        peak_time = "Unknown"
+        if power_history:
+            hourly_buckets = {}
+            for ts, val in power_history:
+                hour = ts.hour
+                hourly_buckets.setdefault(hour, []).append(val)
+            
+            if hourly_buckets:
+                peak_hour = max(hourly_buckets, key=lambda k: np.mean(hourly_buckets[k]))
+                peak_time = f"{peak_hour:02d}:00 - {peak_hour+1:02d}:00"
+
+        # Top Area
+        all_areas = await self.storage.get_all_areas()
+        top_area = None
+        max_area_avg = -1.0
+        for area in all_areas:
+            if area == "No Area":
+                continue
+            # Use the existing area history method from StorageManager
+            area_stats = await self.storage.get_area_stats(area, "power", days=14)
+            if area_stats["mean"] > max_area_avg:
+                max_area_avg = area_stats["mean"]
+                top_area = area
+
+        # Impact Calculation (hitting the 15% target)
+        target_percent = 15
+        yearly_savings_kwh = (avg_daily * (target_percent / 100)) * 365
+        impact = get_environmental_impact(yearly_savings_kwh)
+
+        return {
+            "avg_daily_kwh": round(avg_daily, 2),
+            "peak_time": peak_time,
+            "top_area": top_area,
+            "target": target_percent,
+            "impact": impact
         }

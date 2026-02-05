@@ -2,12 +2,11 @@
 
 Checklist to track remaining features, fixes and tests before completion.
 
-- [ ] Decide if will divide sensors by areas or just consider an overall one
-
 ### 🧠 UX / Frontend
-- [ ] Show a pop-up when the intervention phase ends
+- [x] Show a pop-up when the intervention phase ends
 - [ ] Display charts with energy consumption data
   - [ ] Per appliance
+  - [ ] Per area
 - [ ] Add a UI input for "Weekly Reduction Target" to replace the hardcoded 0.85 (15%) value currently in the agent.
 
 ### 🎮 Gamification
@@ -19,7 +18,7 @@ Checklist to track remaining features, fixes and tests before completion.
 
 ### 🤖 AI
 - [ ] Correct state vector gathered data.
-- [ ] Fix state vector with 0º de temperature, etc.
+- [ ] Fix state vector with 0º of temperature, etc.
 - [ ] Improve anomaly index.
 - [ ] Develop behaviour index.
 - [ ] Develop fatigue index.

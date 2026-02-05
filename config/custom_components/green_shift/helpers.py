@@ -28,6 +28,23 @@ def get_normalized_value(state, sensor_type: str) -> Tuple[Optional[float], Opti
         except (ValueError, TypeError):
             return None, None
         
+def get_environmental_impact(kwh_saved: float) -> dict:
+    """
+    Converts kWh savings into understandable environmental metrics.
+    - ~0.35 kg CO2 per kWh (Average European Mix)
+    - ~22 kg CO2 absorbed by one mature tree per year
+    - ~150 kg CO2 per passenger for a short-haul flight
+    """
+    co2_saved = kwh_saved * 0.35
+    trees_equivalent = co2_saved / 22.0
+    flights_equivalent = co2_saved / 150.0
+
+    return {
+        "co2_kg": round(co2_saved, 2),
+        "trees": round(trees_equivalent, 2),
+        "flights": round(flights_equivalent, 3)
+    }
+        
 def get_entity_area(hass: HomeAssistant, entity_id: str) -> Optional[str]:
     """
     Get the area name for a given entity.

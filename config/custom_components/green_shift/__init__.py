@@ -85,9 +85,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Verify if the baseline phase is complete
         if days_running >= BASELINE_DAYS and agent.phase == PHASE_BASELINE:
             agent.phase = PHASE_ACTIVE
-            # Freeze baseline_consumption and set fixed baseline for active phase
-            agent.baseline_consumption_week = agent.baseline_consumption # Initialize week baseline to biweekly intervention baseline
             _LOGGER.info("System entered active phase after %d days with baseline: %.2f kW", days_running, agent.baseline_consumption)
+            
+            # Freeze baseline_consumption and set fixed baseline for active phase
+            agent.baseline_consumption_week = agent.baseline_consumption
+
+            # Trigger the new notification function
+            await trigger_phase_transition_notification(hass, agent, collector)
 
             # Save phase transition to persistent storage
             if agent.storage:
@@ -100,6 +104,43 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     
     return True
+
+async def trigger_phase_transition_notification(hass, agent, collector):
+    """Calculates baseline summary and sends the transition notification."""
+    # Fetch data from collector
+    summary = await collector.calculate_baseline_summary()
+    impact = summary.get("impact", {})
+    target = summary.get("target", 15)
+
+    # Build the message
+    notification_msg = (
+        f"### Baseline Phase Complete! 🎉\n\n"
+        f"**Daily Average:** {summary['avg_daily_kwh']} kWh\n"
+        f"**Peak Usage:** {summary['peak_time']}\n"
+    )
+
+    if summary.get('top_area'):
+        notification_msg += f"**Main Area:** {summary['top_area']}\n"
+
+    notification_msg += (
+        f"\n**Target:** We've set a **{target}%** reduction goal for you.\n"
+        f"\n---\n"
+        f"### Your Potential Impact 🌍\n"
+        f"By hitting your **{summary['target']}% target**, in one year you would save:\n"
+        f"* **{impact.get('co2_kg', 0)} kg** of CO₂\n"
+        f"* The equivalent of planting **{impact.get('trees', 0)}** mature trees\n"
+        f"* The carbon offset of **{impact.get('flights', 0)}** short-haul flights\n"
+    )
+
+    # Send the notification 
+    await hass.services.async_call(
+        "persistent_notification", "create",
+        {
+            "title": "Green Shift: Action Phase Started",
+            "message": notification_msg,
+            "notification_id": "gs_phase_transition"
+        }
+    )
 
 async def sync_helper_entities(hass: HomeAssistant, entry: ConfigEntry):
     """Syncs the options chosen in the Config Flow to the corresponding helper entities in Home Assistant."""
