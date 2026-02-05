@@ -527,6 +527,15 @@ class DataCollector:
         """Get list of all tracked areas."""
         return list(self.area_data.keys())
     
+    async def get_area_history(self, area_name: str, metric: str, hours: int = None, days: int = None) -> list:
+        """
+        Get historical data for a specific area.
+        Metric options: 'temperature', 'humidity', 'illuminance', 'occupancy', 'power', 'energy'
+        """
+        if not self.storage:
+            return []
+        return await self.storage.get_area_history(area_name, metric, hours=hours, days=days)
+    
     async def get_power_history(self, hours: int = None, days: int = None) -> list:
         """
         Get power history with timestamps from SQLite.
