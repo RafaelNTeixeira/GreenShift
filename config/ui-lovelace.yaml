@@ -13,6 +13,7 @@ views:
               # Monitored Devices
               Real-time values from automatically discovered **hardware sensors**.
 
+          # --- GLOBAL OVERVIEW ---
           - type: horizontal-stack
             cards:
               - type: sensor
@@ -32,108 +33,72 @@ views:
                 name: Current Daily CO2 (kg)
                 graph: line
 
-          - type: horizontal-stack
+          # --- DYNAMIC AREA DASHBOARD (CLEAN VERSION) ---
+          - type: vertical-stack
             cards:
-              # --- LEFT COLUMN: LIVE POWER ---
               - type: markdown
-                title: ⚡ Live Power
+                content: "### 🏠 Area Snapshot"
+              
+              # The Dropdown Menu
+              - type: entities
+                entities:
+                  - entity: select.dashboard_area_filter
+                    name: Filter by Room
+                style: |
+                  ha-card {
+                    box-shadow: none;
+                    background: none;
+                    margin-bottom: -20px; /* Pulls the table up closer */
+                  }
+
+              # The filtered table
+              - type: markdown
                 content: >
-                  <table width="100%">
-                  {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
-                  {%- if sensors %}
-                    {%- for s in sensors %}
-                    <tr>
-                      <td style="text-align: left;"><ha-icon icon="mdi:lightning-bolt" style="color:orange;"></ha-icon> {{ s.name }}</td>
-                      <td style="text-align: right; white-space: nowrap;"><b>{{ s.value }}</b>&nbsp;<small>{{ s.unit }}</small></td>
-                    </tr>
-                    {%- endfor %}
-                    <tr style="background-color: rgba(127,127,127,0.1);">
-                      <td style="text-align: left; padding: 4px;"><b>Total Load</b></td>
-                      <td style="text-align: right; white-space: nowrap; padding: 4px;"><b>{{ states('sensor.current_consumption') }}</b>&nbsp;<small>W</small></td>
-                    </tr>
-                  {%- else %}
-                    <tr><td>No power sensors</td></tr>
-                  {%- endif %}
-                  </table>
-
-              # --- RIGHT COLUMN: CUMULATIVE ENERGY ---
-              - type: markdown
-                title: 📊 Cumulative Energy
-                content: >
-                  <table width="100%">
-                  {%- set e_sensors = state_attr('sensor.hardware_sensors', 'energy') -%}
-                  {%- if e_sensors %}
-                    {%- for s in e_sensors %}
-                    <tr>
-                      <td style="text-align: left;"><ha-icon icon="mdi:counter" style="color:var(--secondary-text-color);"></ha-icon> {{ s.name }}</td>
-                      <td style="text-align: right; white-space: nowrap;"><b>{{ s.value }}</b>&nbsp;<small>{{ s.unit }}</small></td>
-                    </tr>
-                    {%- endfor %}
-                  {%- else %}
-                    <tr><td>No energy meters</td></tr>
-                  {%- endif %}
-                  </table>
-
-          - type: grid
-            columns: 2
-            square: false
-            cards:
-              - type: markdown
-                title: 🌡️ Temperature
-                content: |
-                  {% set sensors = state_attr('sensor.hardware_sensors', 'temperature') %}
-                  {% if sensors -%}
-                  {% for s in sensors -%}
-                  **{{ s.name }}**: {{ s.value }}{{ s.unit }}  
-                  {% endfor %}
-                  {%- else -%}
-                  _None_
-                  {%- endif %}
-              - type: markdown
-                title: 💧 Humidity
-                content: |
-                  {% set sensors = state_attr('sensor.hardware_sensors', 'humidity') %}
-                  {% if sensors -%}
-                  {% for s in sensors -%}
-                  **{{ s.name }}**: {{ s.value }}{{ s.unit }}  
-                  {% endfor %}
-                  {%- else -%}
-                  _None_
-                  {%- endif %}
-
-          - type: grid
-            columns: 2
-            square: false
-            cards:
-              - type: markdown
-                title: 💡 Light Level
-                content: |
-                  {% set sensors = state_attr('sensor.hardware_sensors', 'illuminance') %}
-                  {% if sensors -%}
-                  {% for s in sensors -%} 
-                  **{{ s.name }}:** {{ s.value }} {{ s.unit }}  
-                  {% endfor %}
-                  {%- else -%} 
-                  _Dark_ 
-                  {%- endif %}
-              - type: markdown
-                title: 👀 Occupancy
-                content: |
-                  {% set sensors = state_attr('sensor.hardware_sensors', 'occupancy') %}
-                  {% if sensors -%}
-                  {% for s in sensors -%} 
-                  **{{ s.name }}**:
-                  {%- if s.value == 'on' -%} 
-                  🔴 Occupied 
-                  {%- elif s.value == 'off' -%} 
-                  🟢 Clear 
-                  {%- else -%} 
-                  ⚪ Unknown/Offline 
-                  {%- endif %} 
-                  {% endfor %}
-                  {%- else -%} 
-                  _No data_ 
-                  {%- endif %}
+                  {%- set filter = states('select.dashboard_area_filter') -%}
+                  {%- set ns = namespace(areas=[]) -%}
+                  {%- for cat in ['power', 'energy', 'temperature', 'humidity', 'illuminance', 'occupancy'] -%}
+                    {%- set sensors = state_attr('sensor.hardware_sensors', cat) -%}
+                    {%- if sensors -%}
+                      {%- for s in sensors -%}
+                        {%- set area_name = s.get('area') -%}
+                        {%- if area_name and area_name != 'No Area' and area_name not in ns.areas -%}
+                          {%- set ns.areas = ns.areas + [area_name] -%}
+                        {%- endif -%}
+                      {%- endfor -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                  {%- if ns.areas | length == 0 -%}
+                  ⚠️ **No areas detected.**
+                  {%- endif -%}
+                  {%- for area in ns.areas | sort -%}
+                    {%- if filter in ['All Areas', 'unknown', 'unavailable'] or filter == area -%}
+                      <h3>{{ area }}</h3>
+                      <table width="100%">
+                      {%- for cat in ['power', 'energy', 'temperature', 'humidity', 'illuminance', 'occupancy'] -%}
+                        {%- set sensors = state_attr('sensor.hardware_sensors', cat) -%}
+                        {%- if sensors -%}
+                          {%- for s in sensors -%}
+                            {%- if s.get('area') == area -%}
+                              <tr>
+                                <td width="5%" style="text-align: center;">
+                                  <ha-icon icon="{{ 'mdi:lightning-bolt' if cat == 'power' else 'mdi:counter' if cat == 'energy' else 'mdi:thermometer' if cat == 'temperature' else 'mdi:water-percent' if cat == 'humidity' else 'mdi:brightness-5' if cat == 'illuminance' else 'mdi:eye' }}" style="width: 20px; color: var(--secondary-text-color);"></ha-icon>
+                                </td>
+                                <td style="text-align: left;">{{ s.name }}</td>
+                                <td style="text-align: right;">
+                                  {%- if cat == 'occupancy' -%}
+                                    {{ '🔴' if s.value == 'on' else '🟢' }}
+                                  {%- else -%}
+                                    <b>{{ s.value }}</b> <small>{{ s.unit }}</small>
+                                  {%- endif -%}
+                                </td>
+                              </tr>
+                            {%- endif -%}
+                          {%- endfor -%}
+                        {%- endif -%}
+                      {%- endfor -%}
+                      </table>
+                    {%- endif -%}
+                  {%- endfor -%}
 
   # ========== TAB 2: DASHBOARD ==========
   - title: Dashboard

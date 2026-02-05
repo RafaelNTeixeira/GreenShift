@@ -7,7 +7,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN, GS_UPDATE_SIGNAL, GS_AI_UPDATE_SIGNAL, BASELINE_DAYS, UPDATE_INTERVAL_SECONDS
-from .helpers import get_normalized_value
+from .helpers import get_normalized_value, get_entity_area
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -154,11 +154,14 @@ class HardwareSensorsSensor(GreenShiftBaseSensor):
                 if val is None:
                     continue
 
+                area = get_entity_area(self.hass, entity_id) or "No Area"
+
                 data[category].append({
                     "entity_id": entity_id,
                     "name": state.attributes.get("friendly_name", entity_id),
                     "value": val,
                     "unit": unit,
+                    "area": area,
                 })
 
         return data
