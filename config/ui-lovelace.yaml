@@ -13,6 +13,34 @@ views:
               # Monitored Devices
               Real-time values from automatically discovered **hardware sensors**.
 
+              ---
+              ### 📘 Quick Guide
+              {%- set p = state_attr('sensor.hardware_sensors', 'power') %}
+              {%- set e = state_attr('sensor.hardware_sensors', 'energy') %}
+              {%- set l = state_attr('sensor.hardware_sensors', 'illuminance') %}
+              {%- set h = state_attr('sensor.hardware_sensors', 'humidity') %}
+
+              {%- if p and p | length > 0 %}
+              **⚡ W (Watts):** *Instant Speed.* 
+              Shows how much electricity is flowing right now. Turning on a device makes this number go up immediately.
+              {%- endif %}
+
+              {%- if e and e | length > 0 %}
+              **🔋 kWh (Kilowatt-hours):** *Accumulated Usage.*
+              This counts the total volume of energy used over time (what you pay for). 
+              *Impact Example:* **1 kWh** is roughly the energy needed to run a **washing machine cycle**.
+              {%- endif %}
+
+              {%- if l and l | length > 0 %}
+              **💡 Lux:** *Brightness.*
+              Measures light intensity. 0 is pitch black, 500 is a bright place.
+              {%- endif %}
+              
+              {%- if h and h | length > 0 %}
+              **💧 Humidity (%):** *Moisture.*
+              How much water is in the air. 40-60% is usually comfortable.
+              {%- endif %}
+
           # --- GLOBAL OVERVIEW ---
           - type: horizontal-stack
             cards:
