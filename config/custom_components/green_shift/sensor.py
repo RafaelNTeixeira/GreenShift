@@ -456,10 +456,20 @@ class WeeklyChallengeSensor(GreenShiftAISensor):
         self._attr_unit_of_measurement = "%"
         self._attr_native_value = 0
         self._attr_extra_state_attributes = {}
+
+    def _get_target_percentage(self):
+        """Get the current target percentage from input_number."""
+        target_state = self.hass.states.get("input_number.energy_saving_target")
+        try:
+            return float(target_state.state) if target_state else 15.0
+        except (ValueError, TypeError):
+            return 15.0
     
     async def _async_update_state(self):
         # We need to await this because it reads from the DB
-        challenge = await self._agent.get_weekly_challenge_status()
+        current_target = self._get_target_percentage()
+
+        challenge = await self._agent.get_weekly_challenge_status(target_percentage=current_target)
         
         self._attr_native_value = challenge.get("progress", 0)
         
@@ -468,7 +478,7 @@ class WeeklyChallengeSensor(GreenShiftAISensor):
             "current_avg_w": challenge.get("current_avg", 0),
             "target_avg_w": challenge.get("target_avg", 0),
             "baseline_w": challenge.get("baseline", 0),
-            "goal": "Reduce consumption to 85% of baseline",
+            "goal": current_target,
         }
 
 
@@ -483,6 +493,14 @@ class CollaborativeGoalSensor(GreenShiftAISensor):
         self._attr_unit_of_measurement = "%"
         self._attr_icon = "mdi:account-group"
     
+    def _get_target_percentage(self):
+        """Get the current target percentage from input_number."""
+        target_state = self.hass.states.get("input_number.energy_saving_target")
+        try:
+            return float(target_state.state) if target_state else 15.0
+        except (ValueError, TypeError):
+            return 15.0
+    
     @property
     def state(self):
         # Simulation: consumption of group vs. limit (85% of baseline)
@@ -490,9 +508,13 @@ class CollaborativeGoalSensor(GreenShiftAISensor):
         if current == 0:
             return 0
         
-        # Use fixed baseline for consistent comparison during active phase
+        target_pct = self._get_target_percentage()
+
         baseline = self._agent.baseline_consumption_week or self._agent.baseline_consumption
-        limit = baseline * 0.85  # Meta: -15%
+
+        # Calculate limit based on target percentage (e.g., 20% reduction = 0.80 multiplier)
+        reduction_multiplier = 1.0 - (target_pct / 100.0)
+        limit = baseline * reduction_multiplier
         
         if limit > 0:
             progress = (current / limit) * 100
@@ -501,10 +523,15 @@ class CollaborativeGoalSensor(GreenShiftAISensor):
     
     @property
     def extra_state_attributes(self):
+        target_pct = self._get_target_percentage()
         baseline = self._agent.baseline_consumption_week or self._agent.baseline_consumption
+        reduction_multiplier = 1.0 - (target_pct / 100.0)
+        limit = baseline * reduction_multiplier
+
         return {
             "status": "below_target" if self.state < 100 else "above_target",
-            "limit_watts": round(baseline * 0.85, 2),
+            "limit_watts": round(limit, 2),
+            "target_percentage": target_pct,
         }
 
 

@@ -144,6 +144,17 @@ views:
               # Dashboard 
               Analyze your energy consumption patterns and identify opportunities for savings.
 
+          - type: conditional
+            conditions:
+              - entity: sensor.research_phase
+                state: baseline
+            card:
+              type: markdown
+              content: |
+                ## 📊 Calibration in Progress
+                The system is learning your habits.
+                **{{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining** until the History Graph becomes available.
+
           # --- HISTORY GRAPH ---
           - type: history-graph
             title: Consumption vs Baseline (Last Week)
@@ -279,33 +290,43 @@ views:
     path: collaborative
     icon: mdi:account-group
     type: panel
-    visible:
-      - condition: state
-        entity: sensor.research_phase
-        state: active
+    # visible:
+    #   - condition: state
+    #     entity: sensor.research_phase
+    #     state: active
     cards:
       - type: vertical-stack
         cards:
           - type: markdown
-            content: "# Weekly Challenge\nReduce consumption to 85% of your baseline."
+            # [FIX] This now calculates the target dynamically (e.g., 100 - 25 = 75%)
+            content: |
+              # Weekly Challenge
+              Target: Reduce consumption to **{{ 100 - state_attr('sensor.weekly_challenge', 'goal') | int }}%** of your baseline.
+              
+              *(Goal: {{ state_attr('sensor.weekly_challenge', 'goal') }}% Reduction)*
+
           - type: gauge
             entity: sensor.weekly_challenge
-            name: Weekly Target Progress
+            name: Consumption vs Baseline (%)
             min: 0
             max: 100
+            # Note: Gauge colors are static in standard cards and won't move with the slider.
             severity:
               green: 0
-              yellow: 85
+              yellow: 75
               red: 100
+              
           - type: entities
             title: Challenge Details
             entities:
               - entity: sensor.weekly_challenge
+              
           - type: markdown
             content: |
-              **Current Average**: {{ state_attr('sensor.weekly_challenge', 'current_avg_w') }} kW  
-              **Target Average**: {{ state_attr('sensor.weekly_challenge', 'target_avg_w') }} kW  
+              **Current Average**: {{ state_attr('sensor.weekly_challenge', 'current_avg_w') }} kW
+              **Target Average**: {{ state_attr('sensor.weekly_challenge', 'target_avg_w') }} kW
               **Baseline**: {{ state_attr('sensor.weekly_challenge', 'baseline_w') }} kW
+              **Reduction Goal**: {{ state_attr('sensor.weekly_challenge', 'goal') }} %
 
   # ========== TAB 5: USER PROFILE ==========
   - title: Profile
@@ -348,7 +369,7 @@ views:
               yellow: 85
               red: 100
 
-  # ========== TAB 6: SETTINGS ==========
+# ========== TAB 6: SETTINGS ==========
   - title: Settings
     path: settings
     icon: mdi:cog
@@ -358,15 +379,33 @@ views:
         cards:
           - type: markdown
             content: "# System Settings"
+            
           - type: entities
             title: Goals and Preferences
             entities:
-              - entity: input_number.energy_saving_target
+              - type: conditional
+                conditions:
+                  - entity: sensor.research_phase
+                    state: baseline
+                row:
+                  type: section
+                  label: "⚠️ Goals Locked: Calibrating..."
+
+              - type: conditional
+                conditions:
+                  - entity: sensor.research_phase
+                    state: active
+                row:
+                  entity: input_number.energy_saving_target
+                  name: "Reduction Goal"
+              
+              - type: section
+                label: "General"
               - entity: input_select.currency
               - entity: input_number.electricity_price
+
           - type: entities
             title: Status
             entities:
               - entity: sensor.research_phase
               - entity: sensor.energy_baseline
-              - entity: sensor.behaviour_index

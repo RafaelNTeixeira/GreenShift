@@ -65,7 +65,7 @@ class DecisionAgent:
         
         # Tasks and challenges
         self.daily_tasks = []
-        self.weekly_challenge_target = 0.85 # 15% reduction goal # TODO: Needs to be updated based on percentage reduction target picked by the user
+        self.target_percentage = 15 # 15% reduction goal # TODO: Needs to be updated based on percentage reduction target picked by the user
         self.last_task_generation_date = None
         self.tasks_completed_count = 0
 
@@ -491,7 +491,7 @@ class DecisionAgent:
                 self.baseline_consumption_week = np.mean(power_values)
                 _LOGGER.info("Weekly baseline updated: %.2f kW", self.baseline_consumption_week)
     
-    async def get_weekly_challenge_status(self) -> dict:
+    async def get_weekly_challenge_status(self, target_percentage: float = 15.0) -> dict:
         """
         Calculates weekly challenge status (consumption reduction goal).
         Reads consumption history from DataCollector.
@@ -513,9 +513,24 @@ class DecisionAgent:
         
         # Get last 7 days of consumption
         current_avg = np.mean(power_values) if power_values else 0
+
+        reduction_multiplier = 1.0 - (target_percentage / 100.0)
         
-        # Calculate target average based on baseline and challenge target
-        target_avg = self.baseline_consumption_week * self.weekly_challenge_target
+        target_state = self.hass.states.get("input_number.energy_saving_target")
+        try:
+            user_target_pct = float(target_state.state) if target_state else 15.0
+        except (ValueError, TypeError):
+            user_target_pct = 15.0
+
+        _LOGGER.debug("Updated target to: %d", target_state)
+
+        self.target_percentage = user_target_pct
+
+        # Convert percentage (e.g., 20) to multiplier (e.g., 0.80)
+        reduction_multiplier = 1.0 - (user_target_pct / 100.0)
+        
+        # Calculate target average
+        target_avg = self.baseline_consumption_week * reduction_multiplier
         
         # Calculate how close to target based on fixed baseline
         if self.baseline_consumption_week > 0:
@@ -523,7 +538,7 @@ class DecisionAgent:
         else:
             progress = 0
         
-        status = "completed" if progress <= 85 else "in_progress"
+        status = "completed" if progress <= (100 - user_target_pct) else "in_progress"
         
         return {
             "status": status,
@@ -531,5 +546,6 @@ class DecisionAgent:
             "target_avg": round(target_avg, 2),
             "progress": round(progress, 1),
             "baseline": round(self.baseline_consumption_week, 2),
+            "goal_percentage": user_target_pct
         }
     

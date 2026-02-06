@@ -5,7 +5,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_track_time_interval, async_track_state_change_event
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
@@ -101,6 +101,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     hass.data[DOMAIN]["update_listener"] = async_track_time_interval(
         hass, update_agent_ai_model, timedelta(seconds=AI_FREQUENCY_SECONDS)
+    )
+
+    # Listener for changes to the energy saving target slider
+    async def target_changed(event):
+        """Handle changes to the energy saving target slider."""
+        _LOGGER.debug("Energy saving target changed, triggering update")
+        async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
+    
+    hass.data[DOMAIN]["target_listener"] = async_track_state_change_event(
+        hass, 
+        ["input_number.energy_saving_target"],
+        target_changed
     )
     
     return True
