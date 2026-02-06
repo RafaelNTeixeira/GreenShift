@@ -455,13 +455,12 @@ views:
     cards:
       - type: vertical-stack
         cards:
-          # --- 1. HEADER ---
           - type: markdown
             content: |
               # ⚙️ System Configuration
               Manage your preferences, cost settings and view system health.
 
-          # --- 2. SYSTEM STATUS (Read-Only) ---
+          # --- SYSTEM STATUS (Read-Only) ---
           - type: entities
             title: System Status
             show_header_toggle: false
@@ -476,7 +475,7 @@ views:
                 name: Learned Baseline
                 icon: mdi:chart-bell-curve-cumulative
 
-          # --- 3. CONFIGURATION (User Inputs) ---
+          # --- CONFIGURATION (User Inputs) ---
           - type: entities
             title: Preferences & Costs
             show_header_toggle: false
@@ -485,7 +484,6 @@ views:
               - type: section
                 label: "🎯 Energy Goals"
               
-              # Locked State (Shows remaining days instead of just a warning)
               - type: conditional
                 conditions:
                   - entity: sensor.research_phase
@@ -498,7 +496,6 @@ views:
                   icon: mdi:lock-clock
                   suffix: "days left"
 
-              # Unlocked State (Active)
               - type: conditional
                 conditions:
                   - entity: sensor.research_phase
@@ -520,7 +517,7 @@ views:
                 name: Electricity Price (per kWh)
                 icon: mdi:lightning-bolt-circle
 
-          # --- 4. HELP FOOTER ---
+          # --- HELP FOOTER ---
           - type: markdown
             content: |
               ### ℹ️ Quick Guide
