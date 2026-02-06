@@ -290,10 +290,10 @@ views:
     path: collaborative
     icon: mdi:account-group
     type: panel
-    # visible:
-    #   - condition: state
-    #     entity: sensor.research_phase
-    #     state: active
+    visible:
+      - condition: state
+        entity: sensor.research_phase
+        state: active
     cards:
       - type: vertical-stack
         cards:
