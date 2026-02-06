@@ -16,8 +16,10 @@ Checklist to track remaining features, fixes and tests before completion.
 ### 🎮 Gamification
 - [ ] Improve gamification daily tasks
 - [ ] Create a service to check if daily tasks/challenge have been completed
-- [ ] Implement adaptive difficulty
+- [ ] Implement feedback buttons for adaptive difficulty
+- [ ] Store completed/failed tasks in SQLite to track tasks with high/low completion?
 - [ ] Improve logic of Cooperative Goal
+- [ ] Implement adaptive difficulty
 - [ ] Test gamification logic and UI
 
 ### 🤖 AI
@@ -27,8 +29,6 @@ Checklist to track remaining features, fixes and tests before completion.
 - [ ] Improve anomaly index
 - [ ] Develop behaviour index
 - [ ] Develop fatigue index
-- [ ] Implement feedback buttons for adaptive difficulty
 - [ ] Test AI-driven features (notifications, recommendations)
-
 
 ---

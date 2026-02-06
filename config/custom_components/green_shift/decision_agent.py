@@ -404,7 +404,7 @@ class DecisionAgent:
         if len(power_values) < readings_per_hour:
             self.anomaly_index = 0.0
             return
-        
+
         recent = power_values[-readings_per_hour:]
         mean = np.mean(recent)
         std = np.std(recent)
