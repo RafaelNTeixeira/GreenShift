@@ -143,7 +143,7 @@ class DecisionAgent:
         This method is called periodically (every UPDATE_INTERVAL_SECONDS).
         Reads data from DataCollector, does NOT store sensor data.
         """
-        _LOGGER.debug("Processing AI model...")
+        # _LOGGER.debug("Processing AI model...")
         
         # Counter reset of daily notifications
         today = datetime.now().date()
@@ -197,7 +197,7 @@ class DecisionAgent:
             state.extend([total_power, 1.0])
         else:
             state.extend([0.0, 0.0])
-        _LOGGER.debug("Total power consumption: %.2f kW", state[0])
+        # _LOGGER.debug("Total power consumption: %.2f kW", state[0])
         
         # E_app, F_app (Individual Appliance Power)
         # TODO: This needs to be updated when we separate smart plugs
@@ -206,7 +206,7 @@ class DecisionAgent:
             state.extend([app_power, 1.0])
         else:
             state.extend([0.0, 0.0])
-        _LOGGER.debug("Appliance power consumption: %.2f kW", state[2])
+        # _LOGGER.debug("Appliance power consumption: %.2f kW", state[2])
         
         # T_in, F_T (Temperature)
         temp_sensors = self.sensors.get("temperature", [])
@@ -215,7 +215,7 @@ class DecisionAgent:
             state.extend([temp, 1.0])
         else:
             state.extend([0.0, 0.0])
-        _LOGGER.debug("Indoor temperature: %.2f °C", state[4])
+        # _LOGGER.debug("Indoor temperature: %.2f °C", state[4])
         
         # H_in, F_H (Humidity)
         hum_sensors = self.sensors.get("humidity", [])
@@ -224,7 +224,7 @@ class DecisionAgent:
             state.extend([humidity, 1.0])
         else:
             state.extend([0.0, 0.0])
-        _LOGGER.debug("Indoor humidity: %.2f %%", state[6])
+        # _LOGGER.debug("Indoor humidity: %.2f %%", state[6])
         
         # L_in, F_L (Luminosity)
         lux_sensors = self.sensors.get("illuminance", [])
@@ -233,7 +233,7 @@ class DecisionAgent:
             state.extend([lux, 1.0])
         else:
             state.extend([0.0, 0.0])
-        _LOGGER.debug("Indoor luminosity: %.2f lx", state[8])
+        # _LOGGER.debug("Indoor luminosity: %.2f lx", state[8])
         
         # O_status, F_O (Occupancy)
         occ_sensors = self.sensors.get("occupancy", [])
@@ -242,11 +242,11 @@ class DecisionAgent:
             state.extend([float(occupied), 1.0])
         else:
             state.extend([0.0, 0.0])
-        _LOGGER.debug("Occupancy status: %s", "Occupied" if state[10] == 1.0 else "Unoccupied")
+        # _LOGGER.debug("Occupancy status: %s", "Occupied" if state[10] == 1.0 else "Unoccupied")
         
         # Add indices to state vector
         state.extend([self.anomaly_index, self.behaviour_index, self.fatigue_index])
-        _LOGGER.debug("State vector: %s", state)
+        # _LOGGER.debug("State vector: %s", state)
 
         self.state_vector = np.array(state)
     
@@ -384,7 +384,7 @@ class DecisionAgent:
         if std > 0:
             z_score = abs((current - mean) / std)
             self.anomaly_index = min(z_score / 3.0, 1.0)
-            _LOGGER.debug("Anomaly index updated: %.2f", self.anomaly_index)
+            # _LOGGER.debug("Anomaly index updated: %.2f", self.anomaly_index)
         else:
             self.anomaly_index = 0.0
     
@@ -392,12 +392,12 @@ class DecisionAgent:
         """History of user engagement."""
         if len(self.engagement_history) > 0:
             self.behaviour_index = np.clip(np.mean(self.engagement_history), 0, 1)
-            _LOGGER.debug("Behaviour index updated: %.2f", self.behaviour_index)
+            # _LOGGER.debug("Behaviour index updated: %.2f", self.behaviour_index)
     
     def _update_fatigue_index(self):
         """Risk of user fatigue from too many notifications."""
         # self.fatigue_index = self.notification_count_today / MAX_NOTIFICATIONS_PER_DAY # TODO: Cannot be based on a predefined max. Must be dynamic.
-        _LOGGER.debug("Fatigue index updated: %.2f", self.fatigue_index)
+        # _LOGGER.debug("Fatigue index updated: %.2f", self.fatigue_index)
     
     def _discretize_state(self) -> tuple:
         """Converts continuous state vector to discrete tuple for Q-table."""
@@ -408,7 +408,7 @@ class DecisionAgent:
         anomaly = int(self.anomaly_index * 10)
         fatigue = int(self.fatigue_index * 10)
 
-        _LOGGER.debug("State discretized: power=%d, anomaly=%d, fatigue=%d", power, anomaly, fatigue)
+        # _LOGGER.debug("State discretized: power=%d, anomaly=%d, fatigue=%d", power, anomaly, fatigue)
 
         return (power, anomaly, fatigue)
     

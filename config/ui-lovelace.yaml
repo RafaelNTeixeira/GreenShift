@@ -56,20 +56,23 @@ views:
                 content: >
                   {%- set filter = states('select.dashboard_area_filter') -%}
                   {%- set ns = namespace(areas=[]) -%}
+
                   {%- for cat in ['power', 'energy', 'temperature', 'humidity', 'illuminance', 'occupancy'] -%}
                     {%- set sensors = state_attr('sensor.hardware_sensors', cat) -%}
                     {%- if sensors -%}
                       {%- for s in sensors -%}
                         {%- set area_name = s.get('area') -%}
-                        {%- if area_name and area_name != 'No Area' and area_name not in ns.areas -%}
+                        {%- if area_name and area_name not in ns.areas -%}
                           {%- set ns.areas = ns.areas + [area_name] -%}
                         {%- endif -%}
                       {%- endfor -%}
                     {%- endif -%}
                   {%- endfor -%}
+
                   {%- if ns.areas | length == 0 -%}
                   ⚠️ **No areas detected.**
                   {%- endif -%}
+                  
                   {%- for area in ns.areas | sort -%}
                     {%- if filter in ['All Areas', 'unknown', 'unavailable'] or filter == area -%}
                       <h3>{{ area }}</h3>

@@ -16,13 +16,13 @@ def get_normalized_value(state, sensor_type: str) -> Tuple[Optional[float], Opti
                 # Target: Watts (W)
                 if unit == "kW":
                     return round(value, 2) * 1000.0, "W"
-                return value, unit
+                return round(value, 2), unit
 
             elif sensor_type == "energy":
                 # Target: Kilowatt-hours (kWh)
                 if unit == "Wh":
                     return round(value / 1000.0, 2), "kWh"
-                return value, unit
+                return round(value, 2), unit
                 
             return value, unit
         except (ValueError, TypeError):
