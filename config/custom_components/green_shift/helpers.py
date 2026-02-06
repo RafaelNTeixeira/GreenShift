@@ -31,18 +31,36 @@ def get_normalized_value(state, sensor_type: str) -> Tuple[Optional[float], Opti
 def get_environmental_impact(kwh_saved: float) -> dict:
     """
     Converts kWh savings into understandable environmental metrics.
-    - ~0.35 kg CO2 per kWh (Average European Mix)
+    - ~0.1 kg CO2 per kWh (Average Portugal Mix)
     - ~22 kg CO2 absorbed by one mature tree per year
     - ~150 kg CO2 per passenger for a short-haul flight
+    - ~0.17 kg CO2 per km traveled by car
     """
-    co2_saved = kwh_saved * 0.35
-    trees_equivalent = co2_saved / 22.0
-    flights_equivalent = co2_saved / 150.0
+    # Grid Intensity (kg CO2 per kWh)
+    # 0.1 is the Portugal Average.
+    carbon_intensity = 0.1
+    
+    # Tree Metaphor (kg CO2 per "Tree Saved")
+    # This represents the amount of CO2 a tree handles in a year (22kg).
+    co2_per_saved_tree = 22.0 
+
+    # Flight Metaphor (kg CO2 per Passenger)
+    # Average for a short-haul flight (e.g., Lisbon -> Madrid).
+    carbon_flight_short = 150.0
+
+    # Car Metaphor (Europe Avg ~0.17 kg/km)
+    carbon_car_km = 0.17
+
+    co2_saved = kwh_saved * carbon_intensity
+    trees_equivalent = co2_saved / co2_per_saved_tree
+    flights_equivalent = co2_saved / carbon_flight_short
+    km_equivalent = co2_saved / carbon_car_km
 
     return {
         "co2_kg": round(co2_saved, 2),
         "trees": round(trees_equivalent, 2),
-        "flights": round(flights_equivalent, 3)
+        "flights": round(flights_equivalent, 3),
+        "km": round(km_equivalent, 1)
     }
         
 def get_entity_area(hass: HomeAssistant, entity_id: str) -> Optional[str]:

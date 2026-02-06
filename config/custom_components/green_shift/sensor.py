@@ -7,7 +7,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN, GS_UPDATE_SIGNAL, GS_AI_UPDATE_SIGNAL, BASELINE_DAYS, UPDATE_INTERVAL_SECONDS
-from .helpers import get_normalized_value, get_entity_area
+from .helpers import get_normalized_value, get_entity_area, get_environmental_impact
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -388,6 +388,7 @@ class CO2SavedSensor(GreenShiftAISensor):
         self._attr_unit_of_measurement = "kg"
         self._attr_icon = "mdi:leaf"
         self._attr_native_value = 0
+        self._attr_extra_state_attributes = {}
     
     async def _async_update_state(self):
         power_history_data = await self._collector.get_power_history()
@@ -403,10 +404,18 @@ class CO2SavedSensor(GreenShiftAISensor):
         
         readings_per_hour = 3600 / UPDATE_INTERVAL_SECONDS
         hours = len(power_history) / readings_per_hour
+
         saving_kwh = (saving_watts * hours) / 1000
-        co2_saved = saving_kwh * 0.5
+
+        impact = get_environmental_impact(max(0, saving_kwh))
+
+        self._attr_native_value = impact["co2_kg"]
         
-        self._attr_native_value = round(max(0, co2_saved), 2)
+        self._attr_extra_state_attributes = {
+            "trees": impact["trees"],
+            "flights": impact["flights"],
+            "car_km": impact["km"]
+        }
 
 
 class TasksCompletedSensor(GreenShiftAISensor):

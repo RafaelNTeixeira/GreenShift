@@ -368,31 +368,85 @@ views:
             card:
               type: markdown
               content: |
-                ## Profile Under Construction
-                **Calibration Mode**: {{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining
+                ## 🚧 Profile Building...
+                We are currently calibrating your baseline. 
+                Your personal eco-stats and levels will unlock in **{{ state_attr('sensor.research_phase', 'days_remaining') }} days**.
 
-          - type: glance
-            title: Total Impact
-            entities:
-              - entity: sensor.savings_accumulated
-              - entity: sensor.co2_saved
-              - entity: sensor.tasks_completed
+          - type: conditional
+            conditions:
+              - entity: sensor.research_phase
+                state: active
+            card:
+              type: vertical-stack
+              cards:
+                # --- PLAYER LEVEL CARD ---
+                - type: markdown
+                  content: |
+                    {% set tasks = states('sensor.tasks_completed') | int %}
+                    {% if tasks < 5 %}
+                    # 🐣 Level 1: Novice
+                    *Complete more daily tasks to evolve!*
+                    {% elif tasks < 15 %}
+                    # 🌿 Level 2: Eco-Apprentice
+                    *You're getting the hang of this!*
+                    {% elif tasks < 30 %}
+                    # 🌳 Level 3: Guardian
+                    *Amazing dedication!*
+                    {% else %}
+                    # 👑 Level 4: Planet Master
+                    *You are an energy saving legend.*
+                    {% endif %}
+                    
+                    ---
+                    **Total Tasks Completed:** {{ tasks }}
 
-          - type: entities
-            title: Engagement Metrics
-            entities:
-              - entity: sensor.behaviour_index
-              - entity: sensor.fatigue_index
+                # --- RPG STATS GAUGES ---
+                - type: horizontal-stack
+                  cards:
+                    - type: gauge
+                      entity: sensor.behaviour_index
+                      name: Engagement
+                      min: 0
+                      max: 1
+                      severity:
+                        red: 0
+                        yellow: 0.4
+                        green: 0.8
+                    
+                    - type: gauge
+                      entity: sensor.fatigue_index
+                      name: Fatigue Risk
+                      min: 0
+                      max: 1
+                      severity:
+                        green: 0
+                        yellow: 0.5
+                        red: 0.8
 
-          - type: gauge
-            entity: sensor.collaborative_goal_progress
-            name: Weekly Target
-            min: 0
-            max: 100
-            severity:
-              green: 0
-              yellow: 85
-              red: 100
+                # --- TOTAL IMPACT GLANCE ---
+                - type: glance
+                  title: Lifetime Impact
+                  columns: 3
+                  entities:
+                    - entity: sensor.savings_accumulated
+                      name: Money Saved
+                    - entity: sensor.co2_saved
+                      name: CO₂ Avoided
+                    - entity: sensor.weekly_challenge
+                      name: Current Goal
+
+                # --- "DID YOU KNOW?" CONTEXT ---
+                - type: markdown
+                  content: |
+                    ### 🌍 Your Real-World Impact
+                    {% set trees = state_attr('sensor.co2_saved', 'trees') %}
+                    {% set flights = state_attr('sensor.co2_saved', 'flights') %}
+                    {% set km = state_attr('sensor.co2_saved', 'car_km') %}
+                    
+                    Your savings so far are equivalent to:
+                    * Planting **{{ trees }} mature trees** 🌲
+                    * Offsetting **{{ flights }} short-haul flights** ✈️
+                    * Avoiding **{{ km }} km** driven in a gas car 🚗
 
 # ========== TAB 6: SETTINGS ==========
   - title: Settings
