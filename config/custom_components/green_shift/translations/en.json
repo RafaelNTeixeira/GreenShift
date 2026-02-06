@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Welcome to Green Shift",
-        "description": "This integration helps you monitor and optimize your home's energy efficiency. \nClick **Next** to begin setup."
+        "description": "Green Shift combines **Artificial Intelligence** with **Gamification** to transform your energy usage.\n\nOur AI learns your consumption habits to create personalized baselines, while daily challenges help you save energy in a fun interactive way.\n\nClick **Next** to start your journey."
       },
       "settings": {
         "title": "Energy Configuration",
@@ -39,11 +39,11 @@
       },
       "area_assignment": {
         "title": "Area Assignment",
-        "description": "We are tracking **{count}** sensors. Please assign each sensor to the specific room where it is installed.\n\nThis is **critical** for accurate analysis (e.g., separating the Kitchen from the Living Room)."
+        "description": "Assign an area to each of the **{count}** sensors detected below.\n\nSensors left empty will be tracked globally without a specific room assignment, **but the AI will be unable to identify specific rooms wasting energy.**"
       },
       "intervention_info": {
         "title": "Setup Complete",
-        "description": "Green Shift is now configured! The system will start collecting data immediately. You can now add the Dashboard card to your Lovelace view."
+        "description": "Green Shift is now configured! \n\n**Note:** For the first 14 days, you will only see data consumption displays while the system learns your habits. \n\nOnce the baseline phase is complete, **AI insights and Gamification** features will automatically unlock."
       }
     }
   }

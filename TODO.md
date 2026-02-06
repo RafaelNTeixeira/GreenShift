@@ -4,6 +4,7 @@ Checklist to track remaining features, fixes and tests before completion.
 
 ### 🧠 UX / Frontend
 - [x] Show a pop-up when the intervention phase ends
+- [ ] Explain metrics in a clear way
 - [ ] Display charts with energy consumption data
   - [ ] Per appliance
   - [ ] Per area
