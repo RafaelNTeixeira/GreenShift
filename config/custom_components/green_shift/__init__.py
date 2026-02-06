@@ -135,7 +135,7 @@ async def trigger_phase_transition_notification(hass, agent, collector):
         notification_msg += f"**Main Area:** {summary['top_area']}\n"
 
     notification_msg += (
-        f"\n**Target:** We've set a **{target}%** reduction goal for you.\n"
+        f"\n**Target:** We've set a **{target}%** reduction goal for you (you can change this in the Settings tab)\n"
         f"\n---\n"
         f"### Your Potential Impact 🌍\n"
         f"By hitting your **{summary['target']}% target**, in one year you would save:\n"

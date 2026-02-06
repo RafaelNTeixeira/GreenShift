@@ -298,7 +298,6 @@ views:
       - type: vertical-stack
         cards:
           - type: markdown
-            # [FIX] This now calculates the target dynamically (e.g., 100 - 25 = 75%)
             content: |
               # Weekly Challenge
               Target: Reduce consumption to **{{ 100 - state_attr('sensor.weekly_challenge', 'goal') | int }}%** of your baseline.
@@ -310,7 +309,6 @@ views:
             name: Consumption vs Baseline (%)
             min: 0
             max: 100
-            # Note: Gauge colors are static in standard cards and won't move with the slider.
             severity:
               green: 0
               yellow: 75
