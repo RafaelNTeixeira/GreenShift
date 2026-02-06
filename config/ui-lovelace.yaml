@@ -262,69 +262,96 @@ views:
     path: tasks
     icon: mdi:clipboard-check
     type: panel
-    visible:
-      - condition: state
-        entity: sensor.research_phase
-        state: active
     cards:
       - type: vertical-stack
         cards:
-          - type: markdown
-            content: |
-              # Daily Challenges
-              Complete today's random tasks to improve your energy efficiency!
-          - type: markdown
-            content: |
-              {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
-              {% if tasks %}
-                {% for task in tasks %}
-                - **{{ task.title }}**
-                  *{{ task.description }}*
-                {% endfor %}
-              {% else %}
-                No tasks available yet.
-              {% endif %}
+          - type: conditional
+            conditions:
+              - entity: sensor.research_phase
+                state: baseline
+            card:
+              type: markdown
+              content: |
+                ## 🔒 Challenges Locked
+                This section will unlock after the 14-day calibration phase is complete.
+                **{{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining.**
+
+          - type: conditional
+            conditions:
+              - entity: sensor.research_phase
+                state: active
+            card:
+              type: vertical-stack
+              cards:
+                - type: markdown
+                  content: |
+                    # Daily Challenges
+                    Complete today's random tasks to improve your energy efficiency!
+                - type: markdown
+                  content: |
+                    {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                    {% if tasks %}
+                      {% for task in tasks %}
+                      - **{{ task.title }}**
+                        *{{ task.description }}*
+                      {% endfor %}
+                    {% else %}
+                      No tasks available yet.
+                    {% endif %}
 
   # ========== TAB 4: COLLABORATIVE GOAL ==========
   - title: Collaborative Goal
     path: collaborative
     icon: mdi:account-group
     type: panel
-    visible:
-      - condition: state
-        entity: sensor.research_phase
-        state: active
     cards:
       - type: vertical-stack
         cards:
-          - type: markdown
-            content: |
-              # Weekly Challenge
-              Target: Reduce consumption to **{{ 100 - state_attr('sensor.weekly_challenge', 'goal') | int }}%** of your baseline.
-              
-              *(Goal: {{ state_attr('sensor.weekly_challenge', 'goal') }}% Reduction)*
+          - type: conditional
+            conditions:
+              - entity: sensor.research_phase
+                state: baseline
+            card:
+              type: markdown
+              content: |
+                ## 🔒 Goal Locked
+                This section will unlock after the 14-day calibration phase is complete.
 
-          - type: gauge
-            entity: sensor.weekly_challenge
-            name: Consumption vs Baseline (%)
-            min: 0
-            max: 100
-            severity:
-              green: 0
-              yellow: 75
-              red: 100
-              
-          - type: entities
-            title: Challenge Details
-            entities:
-              - entity: sensor.weekly_challenge
-              
-          - type: markdown
-            content: |
-              **Current Average**: {{ state_attr('sensor.weekly_challenge', 'current_avg_w') }} kW
-              **Target Average**: {{ state_attr('sensor.weekly_challenge', 'target_avg_w') }} kW
-              **Baseline**: {{ state_attr('sensor.weekly_challenge', 'baseline_w') }} kW
-              **Reduction Goal**: {{ state_attr('sensor.weekly_challenge', 'goal') }} %
+          - type: conditional
+            conditions:
+              - entity: sensor.research_phase
+                state: active
+            card:
+              type: vertical-stack
+              cards:
+                - type: markdown
+                  content: |
+                    # Weekly Challenge
+                    Target: Reduce consumption to **{{ 100 - state_attr('sensor.weekly_challenge', 'goal') | int }}%** of your baseline.
+                    
+                    *(Goal: {{ state_attr('sensor.weekly_challenge', 'goal') }}% Reduction)*
+
+                - type: gauge
+                  entity: sensor.weekly_challenge
+                  name: Consumption vs Baseline (%)
+                  min: 0
+                  max: 100
+                  severity:
+                    green: 0
+                    yellow: 75
+                    red: 100
+                    
+                - type: entities
+                  title: Challenge Details
+                  entities:
+                    - entity: sensor.weekly_challenge
+                    
+                - type: markdown
+                  content: |
+                    **Current Average**: {{ state_attr('sensor.weekly_challenge', 'current_avg_w') }} kW
+                    **Target Average**: {{ state_attr('sensor.weekly_challenge', 'target_avg_w') }} kW
+                    **Baseline**: {{ state_attr('sensor.weekly_challenge', 'baseline_w') }} kW
+                    **Reduction Goal**: {{ state_attr('sensor.weekly_challenge', 'goal') }} %
 
   # ========== TAB 5: USER PROFILE ==========
   - title: Profile

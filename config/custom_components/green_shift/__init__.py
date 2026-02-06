@@ -53,12 +53,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Initialize the decision agent (AI)
     agent = DecisionAgent(hass, discovered_sensors, collector, storage)
     await agent.setup()
+
+    if not await storage.load_state():
+        _LOGGER.debug("Fresh install detected: Saving initial start_date.")
+        await agent._save_persistent_state()
     
     hass.data[DOMAIN]["storage"] = storage
     hass.data[DOMAIN]["collector"] = collector
     hass.data[DOMAIN]["agent"] = agent
     hass.data[DOMAIN]["discovered_sensors"] = discovered_sensors
-    hass.data[DOMAIN]["start_date"] = datetime.now()
     
     # Platform setup
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -71,7 +74,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Run AI model processing
         await agent.process_ai_model()
         
-        days_running = (datetime.now() - hass.data[DOMAIN]["start_date"]).days
+        days_running = (datetime.now() - agent.start_date).days
 
         # During baseline phase: continuously update baseline_consumption
         if agent.phase == PHASE_BASELINE:

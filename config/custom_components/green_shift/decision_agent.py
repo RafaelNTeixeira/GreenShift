@@ -40,6 +40,8 @@ class DecisionAgent:
         self.storage = storage_manager
         self.phase = PHASE_BASELINE 
         # self.phase = PHASE_ACTIVE # TEMP: For testing purposes, start in active phase
+        self.start_date = datetime.now()
+        self._process_count = 0
         
         # AI state
         self.state_vector = None
@@ -81,6 +83,13 @@ class DecisionAgent:
             return
         
         state = await self.storage.load_state()
+
+        if "start_date" in state:
+            try:
+                self.start_date = datetime.fromisoformat(state["start_date"])
+                _LOGGER.info("Loaded start date: %s", self.start_date)
+            except ValueError:
+                self.start_date = datetime.now()
         
         # Load AI configuration
         if "phase" in state:
@@ -119,11 +128,17 @@ class DecisionAgent:
             return
         
         current_state = await self.storage.load_state()
+
+        if "start_date" in current_state:
+            safe_start_date = current_state["start_date"]
+        else:
+            safe_start_date = self.start_date.isoformat()
         
         # Convert Q-table keys to strings for JSON serialization
         serializable_q_table = {str(k): v for k, v in self.q_table.items()}
         
         ai_state = {
+            "start_date": safe_start_date,
             "phase": self.phase,
             "baseline_consumption": float(self.baseline_consumption),
             "baseline_consumption_week": float(self.baseline_consumption_week) if self.baseline_consumption_week else None,
@@ -166,16 +181,15 @@ class DecisionAgent:
         if self.phase == PHASE_ACTIVE:
             await self._decide_action()
 
+        self._process_count += 1
+
         # Periodically save state (every ~10 minutes to avoid too many writes)
         # Save on every 40th call (40 * 15s = 600s = 10 min)
         calls_per_save = SAVE_STATE_INTERVAL_SECONDS // AI_FREQUENCY_SECONDS
-
-        if not hasattr(self, '_process_count'):
-            self._process_count = 0
-
-        self._process_count += 1
         
-        if self._process_count % calls_per_save == 0 and self.storage:
+        # Save if it's the first run or the periodic interval
+        if self.storage and (self._process_count == 1 or self._process_count % calls_per_save == 0):
+            _LOGGER.debug("Checkpoint: Saving AI state (Run #%d)", self._process_count)
             await self._save_persistent_state()
         
         _LOGGER.debug("AI model processing complete")

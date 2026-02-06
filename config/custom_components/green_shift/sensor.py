@@ -21,12 +21,11 @@ async def async_setup_entry(
     agent = hass.data[DOMAIN]["agent"]
     collector = hass.data[DOMAIN]["collector"]
     storage = hass.data[DOMAIN]["storage"]
-    start_date = hass.data[DOMAIN]["start_date"]
     discovered_sensors = hass.data[DOMAIN]["discovered_sensors"]
     
     sensors = [
         HardwareSensorsSensor(hass, discovered_sensors, config_entry),
-        ResearchPhaseSensor(agent, start_date),
+        ResearchPhaseSensor(agent),
         EnergyBaselineSensor(agent),
         CurrentConsumptionSensor(collector),
         CurrentCostConsumptionSensor(hass, collector), 
@@ -170,9 +169,8 @@ class HardwareSensorsSensor(GreenShiftBaseSensor):
 class ResearchPhaseSensor(GreenShiftAISensor):
     """Sensor that indicates the current research phase."""
     
-    def __init__(self, agent, start_date):
+    def __init__(self, agent):
         self._agent = agent
-        self._start_date = start_date
         self._attr_name = "Research Phase"
         self._attr_unique_id = f"{DOMAIN}_research_phase"
         self._attr_icon = "mdi:flask"
@@ -183,7 +181,7 @@ class ResearchPhaseSensor(GreenShiftAISensor):
     
     @property
     def extra_state_attributes(self):
-        days_running = (datetime.now() - self._start_date).days
+        days_running = (datetime.now() - self._agent.start_date).days
         days_remaining = max(0, BASELINE_DAYS - days_running)
         return {
             "days_running": days_running,
