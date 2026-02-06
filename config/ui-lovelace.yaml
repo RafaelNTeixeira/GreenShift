@@ -143,6 +143,16 @@ views:
             content: |
               # Dashboard 
               Analyze your energy consumption patterns and identify opportunities for savings.
+
+          # --- HISTORY GRAPH ---
+          - type: history-graph
+            title: Consumption vs Baseline (Last Week)
+            hours_to_show: 168
+            entities:
+              - entity: sensor.current_consumption
+                name: Current Consumption
+              - entity: sensor.energy_baseline
+                name: Baseline
           
           # --- AREA CONSUMPTION TABLE ---
           - type: markdown
@@ -152,7 +162,6 @@ views:
               {%- set sensors = state_attr('sensor.hardware_sensors', 'energy') -%}
               {%- set ns = namespace(area_sums={}, total=0) -%}
 
-              {# Aggregate Energy #}
               {%- if sensors -%}
                 {%- for s in sensors -%}
                   {%- if s.value is not none -%}
@@ -194,30 +203,48 @@ views:
               </table>
               {%- endif -%}
 
-          - type: conditional
-            conditions:
-              - entity: sensor.research_phase
-                state: baseline
-            card:
-              type: markdown
-              content: |
-                ## Calibration Mode
-                The system is learning your consumption patterns (**{{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining**). 
+          # --- TOP 5 POWER CONSUMERS ---
+          - type: markdown
+            content: |
+              ### 🏆 Top 5 Power Consumers
+              {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
+              {%- if sensors -%}
+              {# 1. Filter valid sensors and sort by highest Watts first #}
+              {%- set top_devices = sensors
+                  | selectattr('value', 'ne', None)
+                  | sort(attribute='value', reverse=True)
+                  | list
+              -%}
+              {# 2. Get the max value to scale the bars relative to the biggest hog #}
+              {%- set max_val = top_devices[0].value if top_devices else 1 -%}
 
-            title: Consumption vs Baseline (Last Week)
-            hours_to_show: 168
-            entities:
-              - entity: sensor.current_consumption
-                name: Current Consumption
-              - entity: sensor.energy_baseline
-                name: Baseline
+              <table width="100%">
+                <thead>
+                  <tr>
+                    <th style="text-align: left;">Device</th>
+                    <th style="text-align: right;">Load</th>
+                    <th style="text-align: left; padding-left: 10px;">Impact</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {%- for s in top_devices[:5] -%}
+                  {%- set pct = (s.value / max_val * 100) | int -%}
+                  {%- set blocks = (pct / 10) | round(0) | int -%}
+                  {%- set bar = '█' * blocks + '░' * (10 - blocks) -%}
+                  <tr>
+                    <td style="text-align: left;">{{ s.name }}</td>
+                    <td style="text-align: right;"><b>{{ s.value }} W</b></td>
+                    <td style="text-align: left; padding-left: 10px; color: var(--primary-color);">
+                      {{ bar }}
+                    </td>
+                  </tr>
+                  {%- endfor -%}
+                </tbody>
+              </table>
+              {%- else -%}
+              No active devices detected.
+              {%- endif -%}
 
-          - type: glance
-            title: Weekly Summary
-            entities:
-              - entity: sensor.current_consumption
-              - entity: sensor.energy_baseline
-              - entity: sensor.savings_accumulated
 
   # ========== TAB 3: CHALLENGES ==========
   - title: Challenges
