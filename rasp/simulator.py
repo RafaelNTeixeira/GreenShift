@@ -50,6 +50,55 @@ ENVIRONMENTS = {
             ("plug_fridge", "Fridge Energy", "energy", "kWh", {"name": "Fridge Smart Plug", **PLUG_DEV}, "energy", "total_increasing", "sensor", "No Area"),
             ("plug_coffee", "Coffee Machine Energy", "energy", "kWh", {"name": "Coffee Machine Smart Plug", **PLUG_DEV}, "energy", "total_increasing", "sensor", "No Area")
         ]
+    },
+    3: {
+        "name": "Smart Home Environment",
+        "sensors": [
+            # --- Hallway / General ---
+            ("hub_home", "Home Total Energy", "energy", "kWh", HUB_BASE, "energy", "total_increasing", "sensor", "Hallway"),
+            ("hub_home", "Entrance Presence", "occupancy", None, HUB_BASE, "presence_ent", None, "binary_sensor", "Hallway"),
+
+            # --- Living Room ---
+            ("hub_living", "Living Room Temperature", "temperature", "°C", HUB_BASE, "temp", "measurement", "sensor", "Living Room"),
+            ("hub_living", "Living Room Humidity", "humidity", "%", HUB_BASE, "hum", "measurement", "sensor", "Living Room"),
+            ("hub_living", "Living Room Light Level", "illuminance", "lx", HUB_BASE, "lux", "measurement", "sensor", "Living Room"),
+            ("hub_living", "Living Room Presence", "occupancy", None, HUB_BASE, "presence", None, "binary_sensor", "Living Room"),
+            # TV
+            ("plug_tv", "TV Power", "power", "W", {"name": "Smart Plug TV", **PLUG_DEV}, "power", "measurement", "sensor", "Living Room"),
+            ("plug_tv", "TV Energy", "energy", "kWh", {"name": "Smart Plug TV", **PLUG_DEV}, "energy", "total_increasing", "sensor", "Living Room"),
+            # Lamp
+            ("plug_lamp", "Floor Lamp Power", "power", "W", {"name": "Smart Plug Lamp", **PLUG_DEV}, "power", "measurement", "sensor", "Living Room"),
+            ("plug_lamp", "Floor Lamp Energy", "energy", "kWh", {"name": "Smart Plug Lamp", **PLUG_DEV}, "energy", "total_increasing", "sensor", "Living Room"),
+
+            # --- Kitchen ---
+            ("hub_kitchen", "Kitchen Temperature", "temperature", "°C", HUB_BASE, "temp", "measurement", "sensor", "Kitchen"),
+            ("hub_kitchen", "Kitchen Presence", "occupancy", None, HUB_BASE, "presence", None, "binary_sensor", "Kitchen"),
+            # Fridge (Already has Energy)
+            ("plug_fridge_home", "Fridge Energy", "energy", "kWh", {"name": "Smart Plug Fridge", **PLUG_DEV}, "energy", "total_increasing", "sensor", "Kitchen"),
+            # Dishwasher (Already has Energy)
+            ("plug_dishwasher", "Dishwasher Energy", "energy", "kWh", {"name": "Smart Plug Dishwasher", **PLUG_DEV}, "energy", "total_increasing", "sensor", "Kitchen"),
+            # Kettle
+            ("plug_kettle", "Kettle Power", "power", "W", {"name": "Smart Plug Kettle", **PLUG_DEV}, "power", "measurement", "sensor", "Kitchen"),
+            ("plug_kettle", "Kettle Energy", "energy", "kWh", {"name": "Smart Plug Kettle", **PLUG_DEV}, "energy", "total_increasing", "sensor", "Kitchen"),
+
+            # --- Bedroom ---
+            ("hub_bedroom", "Bedroom Temperature", "temperature", "°C", HUB_BASE, "temp", "measurement", "sensor", "Bedroom"),
+            ("hub_bedroom", "Bedroom Presence", "occupancy", None, HUB_BASE, "presence", None, "binary_sensor", "Bedroom"),
+            # Heater
+            ("plug_heater", "Heater Power", "power", "W", {"name": "Smart Plug Heater", **PLUG_DEV}, "power", "measurement", "sensor", "Bedroom"),
+            ("plug_heater", "Heater Energy", "energy", "kWh", {"name": "Smart Plug Heater", **PLUG_DEV}, "energy", "total_increasing", "sensor", "Bedroom"),
+
+            # --- Office ---
+            ("hub_office", "Office Temperature", "temperature", "°C", HUB_BASE, "temp", "measurement", "sensor", "Office"),
+            ("hub_office", "Office Light Level", "illuminance", "lx", HUB_BASE, "lux", "measurement", "sensor", "Office"),
+            ("hub_office", "Office Presence", "occupancy", None, HUB_BASE, "presence", None, "binary_sensor", "Office"),
+            # PC
+            ("plug_pc", "Work PC Power", "power", "W", {"name": "Smart Plug PC", **PLUG_DEV}, "power", "measurement", "sensor", "Office"),
+            ("plug_pc", "Work PC Energy", "energy", "kWh", {"name": "Smart Plug PC", **PLUG_DEV}, "energy", "total_increasing", "sensor", "Office"),
+            # Monitor
+            ("plug_monitor", "Monitor Power", "power", "W", {"name": "Smart Plug Monitor", **PLUG_DEV}, "power", "measurement", "sensor", "Office"),
+            ("plug_monitor", "Monitor Energy", "energy", "kWh", {"name": "Smart Plug Monitor", **PLUG_DEV}, "energy", "total_increasing", "sensor", "Office"),
+        ]
     }
 }
 
@@ -64,9 +113,9 @@ def clear_legacy_configs():
     print("Initiating full cleanup of MQTT discovery topics...")
     # Comprehensive list of old and current IDs to ensure nothing is left behind
     target_ids = [
-        "hub_main", "hub_server", "hub_entrance", "hub_feup",
-        "plug_alpha", "plug_beta", "plug_charlie",
-        "plug_fridge", "plug_coffee"
+        "hub_main", "hub_server", "hub_entrance", "plug_alpha", "plug_beta", "plug_charlie", "plug_alpha", "plug_beta", "plug_charlie",
+        "hub_feup", "plug_fridge", "plug_coffee",
+        "hub_home", "hub_living", "plug_tv", "plug_lamp", "hub_kitchen", "plug_fridge_home","plug_dishwasher", "plug_kettle", "hub_bedroom", "plug_heater", "hub_office", "plug_pc", "plug_monitor"
     ]
     
     # Common keys used across all versions of the script
