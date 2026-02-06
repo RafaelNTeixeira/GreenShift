@@ -9,8 +9,8 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Top 5 power consumers chart
 - [x] Finish Dashboard interface
 - [x] Add a UI input for "Weekly Reduction Target" to replace the hardcoded 0.85 (15%) value currently in the agent
-- [ ] Improve Profile interface
-- [ ] Improve Settings interface
+- [x] Improve Profile interface
+- [x] Improve Settings interface
 - [ ] Improve Gamification interface
 
 ### 🎮 Gamification
