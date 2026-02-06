@@ -459,7 +459,7 @@ views:
           - type: markdown
             content: |
               # ⚙️ System Configuration
-              Manage your preferences, cost settings, and view system health.
+              Manage your preferences, cost settings and view system health.
 
           # --- 2. SYSTEM STATUS (Read-Only) ---
           - type: entities
