@@ -3,12 +3,14 @@ import numpy as np
 from datetime import datetime, timedelta
 from collections import deque
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .storage import StorageManager
 from .const import (
     UPDATE_INTERVAL_SECONDS,
     SAVE_STATE_INTERVAL_SECONDS,
     AI_FREQUENCY_SECONDS,
+    GS_AI_UPDATE_SIGNAL,
     ACTIONS,
     REWARD_WEIGHTS,
     PHASE_BASELINE,
@@ -38,10 +40,10 @@ class DecisionAgent:
         self.sensors = discovered_sensors
         self.data_collector = data_collector  # Reference to DataCollector
         self.storage = storage_manager
-        self.phase = PHASE_BASELINE 
-        # self.phase = PHASE_ACTIVE # TEMP: For testing purposes, start in active phase
         self.start_date = datetime.now()
         self._process_count = 0
+        self.phase = PHASE_BASELINE 
+        # self.phase = PHASE_ACTIVE # TEMP: For testing purposes, start in active phase
         
         # AI state
         self.state_vector = None
@@ -119,6 +121,18 @@ class DecisionAgent:
             self.q_table = {eval(k) if isinstance(k, str) else k: v 
                            for k, v in state["q_table"].items()}
             _LOGGER.info("Loaded Q-table with %d entries", len(self.q_table))
+
+        if "daily_tasks" in state:
+            self.daily_tasks = state["daily_tasks"]
+
+        if "last_task_generation_date" in state and state["last_task_generation_date"]:
+            try:
+                self.last_task_generation_date = datetime.fromisoformat(state["last_task_generation_date"]).date()
+            except ValueError:
+                self.last_task_generation_date = None
+
+        if "tasks_completed_count" in state:
+            self.tasks_completed_count = state["tasks_completed_count"]
         
         _LOGGER.info("Persistent AI state loaded successfully")
 
@@ -146,6 +160,9 @@ class DecisionAgent:
             "behaviour_index": float(self.behaviour_index),
             "fatigue_index": float(self.fatigue_index),
             "q_table": serializable_q_table,
+            "daily_tasks": self.daily_tasks,
+            "last_task_generation_date": self.last_task_generation_date.isoformat() if self.last_task_generation_date else None,
+            "tasks_completed_count": self.tasks_completed_count
         }
 
         current_state.update(ai_state)
@@ -159,7 +176,7 @@ class DecisionAgent:
         Reads data from DataCollector, does NOT store sensor data.
         """
         # _LOGGER.debug("Processing AI model...")
-        
+    
         # Counter reset of daily notifications
         today = datetime.now().date()
         if self.last_notification_date != today:
@@ -179,6 +196,8 @@ class DecisionAgent:
         
         # Decide action A_t if in active phase
         if self.phase == PHASE_ACTIVE:
+            await self._generate_daily_tasks()       
+            await self._update_weekly_baseline()
             await self._decide_action()
 
         self._process_count += 1
@@ -276,10 +295,7 @@ class DecisionAgent:
         
         # anomaly: needs enough consumption history
         power_history_data = await self.data_collector.get_power_history(hours=1)
-
-        power_values = [power for timestamp, power in power_history_data]
-
-        if len(power_values) < 100:
+        if len(power_history_data) < 100:
             mask[ACTIONS["anomaly"]] = 0
         
         # behavioural: always available
@@ -426,7 +442,7 @@ class DecisionAgent:
 
         return (power, anomaly, fatigue)
     
-    def _generate_daily_tasks(self):
+    async def _generate_daily_tasks(self):
         """Generates 3 random daily tasks based on available sensors."""
         today = datetime.now().date()
         
@@ -438,47 +454,33 @@ class DecisionAgent:
         
         # Define available tasks based on sensor availability
         available_tasks = []
+
+        # Helper to add tasks safely
+        def add_task(title, desc, cat):
+            available_tasks.append({"title": title, "description": desc, "category": cat, "completed": False})
         
-        # Temperature sensor tasks
         if self.sensors.get("temperature"):
-            available_tasks.extend([
-                {"title": "Lower heating by 1°C", "description": "Small temperature adjustments save energy", "category": "temperature"},
-                {"title": "Use natural temperature control", "description": "Open windows during cool hours", "category": "temperature"},
-            ])
+            add_task("Lower heating by 1°C", "Small adjustments save energy.", "temperature")
+            add_task("Use natural cooling", "Open windows instead of AC.", "temperature")
         
-        # Occupancy sensor tasks
         if self.sensors.get("occupancy"):
-            available_tasks.extend([
-                {"title": "Turn off lights when leaving", "description": "Ensure lights are off in empty rooms", "category": "occupancy"},
-                {"title": "Manage room occupancy efficiently", "description": "Close doors to unoccupied areas", "category": "occupancy"},
-            ])
+            add_task("Turn off lights", "Check empty rooms.", "occupancy")
+            add_task("Close doors", "Keep heat/cool inside used rooms.", "occupancy")
         
-        # Power sensor tasks
         if self.sensors.get("power"):
-            available_tasks.extend([
-                {"title": "Unplug unused devices", "description": "Eliminate standby power consumption", "category": "power"},
-                {"title": "Use power strips for appliances", "description": "Group related devices for easier control", "category": "power"},
-            ])
+            add_task("Unplug vampires", "Disconnect unused chargers.", "power")
+            add_task("Use power strips", "Turn off groups of devices.", "power")
         
-        # Humidity sensor tasks
         if self.sensors.get("humidity"):
-            available_tasks.extend([
-                {"title": "Use fan mode for cooling", "description": "Fans use less energy than AC", "category": "humidity"},
-                {"title": "Improve air circulation", "description": "Better ventilation reduces HVAC load", "category": "humidity"},
-            ])
+            add_task("Use fan mode", "Fans use less energy than AC.", "humidity")
         
-        # Illuminance sensor tasks
         if self.sensors.get("illuminance"):
-            available_tasks.extend([
-                {"title": "Use natural light during day", "description": "Maximize sunlight hours", "category": "illuminance"},
-                {"title": "Switch to energy-efficient lighting", "description": "Consider LED bulbs", "category": "illuminance"},
-            ])
+            add_task("Use daylight", "Open blinds, turn off bulbs.", "illuminance")
+            add_task("Check bulbs", "Ensure LEDs are installed.", "illuminance")
         
-        # Default tasks (always available)
-        available_tasks.extend([
-            {"title": "Plan energy-intensive tasks", "description": "Run dishwasher/laundry during off-peak hours", "category": "general"},
-            {"title": "Monitor energy usage", "description": "Check the dashboard for consumption patterns", "category": "general"},
-        ])
+        add_task("Wash cold", "30°C is enough for most clothes.", "general")
+        add_task("Short shower", "Cut 2 minutes off your shower.", "general")
+        add_task("Eco mode", "Use Eco mode on appliances.", "general")
         
         # Select 3 random tasks
         if len(available_tasks) >= 3:
@@ -488,6 +490,10 @@ class DecisionAgent:
             self.daily_tasks = available_tasks[:3]
         
         _LOGGER.info("Generated daily tasks: %s", [t["title"] for t in self.daily_tasks])
+
+        await self._save_persistent_state()
+
+        async_dispatcher_send(self.hass, GS_AI_UPDATE_SIGNAL)
     
     async def _update_weekly_baseline(self):
         """Updates the fixed baseline once per week."""

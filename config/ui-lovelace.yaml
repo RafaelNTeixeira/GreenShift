@@ -273,6 +273,7 @@ views:
               content: |
                 ## 🔒 Challenges Locked
                 This section will unlock after the 14-day calibration phase is complete.
+                
                 **{{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining.**
 
           - type: conditional
@@ -284,19 +285,36 @@ views:
               cards:
                 - type: markdown
                   content: |
-                    # Daily Challenges
-                    Complete today's random tasks to improve your energy efficiency!
+                    ## 📅 Daily Missions
+                    Complete these actions to improve efficiency.
+
                 - type: markdown
                   content: |
                     {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
-                    {% if tasks %}
-                      {% for task in tasks %}
-                      - **{{ task.title }}**
-                        *{{ task.description }}*
-                      {% endfor %}
-                    {% else %}
-                      No tasks available yet.
-                    {% endif %}
+                    {% if tasks and tasks | length > 0 -%}
+                    <table width="100%">
+                    {%- for task in tasks -%}
+                    {%- set i = 'mdi:leaf' -%}
+                    {%- set color = 'var(--primary-color)' -%}
+                    {%- if task.category == 'temperature' %}{% set i = 'mdi:thermometer' %}{% set color = '#e74c3c' %}
+                    {%- elif task.category == 'occupancy' %}{% set i = 'mdi:walk' %}{% set color = '#9b59b6' %}
+                    {%- elif task.category == 'power' %}{% set i = 'mdi:power-plug' %}{% set color = '#f1c40f' %}
+                    {%- elif task.category == 'humidity' %}{% set i = 'mdi:water-percent' %}{% set color = '#3498db' %}
+                    {%- elif task.category == 'illuminance' %}{% set i = 'mdi:brightness-5' %}{% set color = '#e67e22' %}
+                    {%- endif -%}
+                    {%- set is_done = task.get('completed', false) -%}
+                    {%- set status_icon = 'mdi:check-circle' if is_done else 'mdi:circle-outline' -%}
+                    {%- set status_color = '#2ecc71' if is_done else 'var(--secondary-text-color)' -%}
+                    <tr>
+                    <td width="40px" style="text-align: center; vertical-align: middle;"><ha-icon icon="{{ i }}" style="color: {{ color }};"></ha-icon></td>
+                    <td style="padding: 8px 10px;"><b>{{ task.title }}</b><br><span style="font-size: 0.85em; opacity: 0.7;">{{ task.description }}</span></td>
+                    <td width="30px" style="text-align: right; vertical-align: middle;"><ha-icon icon="{{ status_icon }}" style="color: {{ status_color }}; opacity: {{ '1' if is_done else '0.5' }};"></ha-icon></td>
+                    </tr>
+                    {%- endfor -%}
+                    </table>
+                    {%- else -%}
+                    <div style="text-align: center; padding: 20px;"><b>No tasks available yet.</b><br>Check back tomorrow!</div>
+                    {%- endif -%}
 
   # ========== TAB 4: COLLABORATIVE GOAL ==========
   - title: Collaborative Goal
