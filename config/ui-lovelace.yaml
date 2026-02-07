@@ -516,7 +516,7 @@ views:
                     - **😐 Just Right** → Difficulty stays the same
                     - **😰 Too Hard** → Next time will be easier
                     
-                    Tasks auto-verify every hour based on your actual sensor data!
+                    Tasks auto-verify every 30 minutes based on your actual sensor data!
 
   # ========== TAB 4: COLLABORATIVE GOAL ==========
   - title: Collaborative Goal

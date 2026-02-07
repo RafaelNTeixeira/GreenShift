@@ -17,7 +17,7 @@ from .const import (
     BASELINE_DAYS,
     AI_FREQUENCY_SECONDS,
     TASK_GENERATION_TIME,
-    VERIFY_TASKS_HOURS
+    VERIFY_TASKS_INTERVAL_MINUTES
 )
 from .data_collector import DataCollector
 from .decision_agent import DecisionAgent
@@ -147,7 +147,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     async def verify_tasks_callback(now):
-        """Verify tasks periodically every VERIFY_TASKS_HOURS hours."""
+        """Verify tasks periodically every VERIFY_TASKS_INTERVAL_MINUTES minutes."""
         if agent.phase != PHASE_ACTIVE:
             _LOGGER.debug("Skipping task verification - system in %s phase", agent.phase)
             return
@@ -158,7 +158,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
     
     hass.data[DOMAIN]["task_verification_listener"] = async_track_time_interval(
-        hass, verify_tasks_callback, timedelta(hours=VERIFY_TASKS_HOURS)
+        hass, verify_tasks_callback, timedelta(minutes=VERIFY_TASKS_INTERVAL_MINUTES)
     )
 
     # Generate tasks immediately if none exist for today (only in active phase)

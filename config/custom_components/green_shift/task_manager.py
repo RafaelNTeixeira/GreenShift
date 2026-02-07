@@ -67,7 +67,7 @@ class TaskManager:
         # TODO: ADD TASK GENERATORS THAT USE ENERGY DATA
         # Energy-based tasks (always available if we have energy sensors)
         # if self.sensors.get("energy"):
-        #     # ADD ENERGY-BASED TASK GENERATORS HERE
+        #     
         
         # Select 3 random task generators
         num_tasks = min(3, len(available_task_generators))

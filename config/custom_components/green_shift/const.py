@@ -14,7 +14,7 @@ UPDATE_INTERVAL_SECONDS = 5 # Frequency to store data
 AI_FREQUENCY_SECONDS = 15 # Update interval for agent state
 SAVE_STATE_INTERVAL_SECONDS = 600 # Frequency to save AI state to avoid many writes (600 seconds = 10 minutes)
 TASK_GENERATION_TIME = (6, 0, 0) # (hour, minute, second) for daily task generation
-VERIFY_TASKS_HOURS = 1 # Frequency to verify tasks in hours
+VERIFY_TASKS_INTERVAL_MINUTES = 30 # Frequency to verify tasks in minutes
 
 # Sensor categories and keywords for auto-discovery
 SENSOR_MAPPING = {
