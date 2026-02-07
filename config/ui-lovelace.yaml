@@ -312,15 +312,6 @@ views:
                         {% endif %}
                         {% endif %}
 
-                    - type: button
-                      name: "Verify"
-                      icon: mdi:check-circle
-                      icon_height: 20px
-                      tap_action:
-                        action: call-service
-                        service: green_shift.verify_tasks
-                      show_state: false
-
                 - type: horizontal-stack
                   cards:
                     - type: button
@@ -387,15 +378,6 @@ views:
                         🎯 **Active** - Complete this today!
                         {% endif %}
                         {% endif %}
-
-                    - type: button
-                      name: "Verify"
-                      icon: mdi:check-circle
-                      icon_height: 20px
-                      tap_action:
-                        action: call-service
-                        service: green_shift.verify_tasks
-                      show_state: false
 
                 - type: horizontal-stack
                   cards:
@@ -464,15 +446,6 @@ views:
                         {% endif %}
                         {% endif %}
 
-                    - type: button
-                      name: "Verify"
-                      icon: mdi:check-circle
-                      icon_height: 20px
-                      tap_action:
-                        action: call-service
-                        service: green_shift.verify_tasks
-                      show_state: false
-
                 - type: horizontal-stack
                   cards:
                     - type: button
@@ -513,6 +486,15 @@ views:
                           feedback: too_hard
                       entity: sensor.daily_tasks
                       show_state: false
+
+                - type: button
+                  name: "Verify All Tasks"
+                  icon: mdi:check-circle
+                  icon_height: 20px
+                  tap_action:
+                    action: call-service
+                    service: green_shift.verify_tasks
+                  show_state: false
 
                 # Summary
                 - type: markdown
