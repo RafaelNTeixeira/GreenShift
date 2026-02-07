@@ -507,7 +507,7 @@ views:
                     - **😐 Just Right** → Difficulty stays the same
                     - **😰 Too Hard** → Next time will be easier
                     
-                    Tasks auto-verify every 30 minutes based on your actual sensor data!
+                    Click on the "Verify All Tasks" button to see which ones you achieved today!
 
   # ========== TAB 4: COLLABORATIVE GOAL ==========
   - title: Collaborative Goal
