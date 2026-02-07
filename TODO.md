@@ -12,14 +12,16 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Improve Profile interface
 - [x] Improve Settings interface
 - [ ] Improve Gamification interface
+ - [ ] Display only number of generated tasks 
 
 ### 🎮 Gamification
-- [ ] Improve gamification daily tasks
-- [ ] Create a service to check if daily tasks/challenge have been completed
-- [ ] Implement feedback buttons for adaptive difficulty
-- [ ] Store completed/failed tasks in SQLite to track tasks with high/low completion?
+- [x] Improve gamification daily tasks
+- [x] Create a service to check if daily tasks have been completed
+- [x] Implement feedback buttons for adaptive difficulty
+- [x] Store completed/failed tasks in SQLite to track tasks with high/low completion
 - [ ] Improve logic of Cooperative Goal
-- [ ] Implement adaptive difficulty
+- [ ] Create a service to check if weekly challenge has been completed
+- [x] Implement adaptive difficulty
 - [ ] Test gamification logic and UI
 
 ### 🤖 AI
