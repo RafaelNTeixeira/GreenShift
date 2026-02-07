@@ -33,12 +33,12 @@ async def async_setup_entry(
         DailyCO2EstimateSensor(hass, collector),
         SavingsAccumulatedSensor(agent, collector),
         CO2SavedSensor(agent, collector),
-        TasksCompletedSensor(agent),
-        DailyTasksSensor(agent),
+        TasksCompletedSensor(storage),
         WeeklyChallengeSensor(agent),
         CollaborativeGoalSensor(agent, collector),
         BehaviourIndexSensor(agent),
         FatigueIndexSensor(agent),
+        DailyTasksSensor(storage),
     ]
 
     async_add_entities(sensors)
@@ -421,36 +421,24 @@ class CO2SavedSensor(GreenShiftAISensor):
 class TasksCompletedSensor(GreenShiftAISensor):
     """Sensor with the number of completed tasks."""
     
-    def __init__(self, agent):
-        self._agent = agent
+    def __init__(self, storage):
+        self._storage = storage
         self._attr_name = "Tasks Completed"
         self._attr_unique_id = f"{DOMAIN}_tasks"
         self._attr_icon = "mdi:check-circle"
+        self._completed_count = 0
     
     @property
     def state(self):
-        return self._agent.tasks_completed_count
+        return self._completed_count
 
-
-class DailyTasksSensor(GreenShiftAISensor):
-    """Sensor with today's random daily tasks."""
-    
-    def __init__(self, agent):
-        self._agent = agent
-        self._attr_name = "Daily Tasks"
-        self._attr_unique_id = f"{DOMAIN}_daily_tasks"
-        self._attr_icon = "mdi:clipboard-list"
-    
-    @property
-    def state(self):
-        return len(self._agent.daily_tasks)
-    
-    @property
-    def extra_state_attributes(self):
-        return {
-            "tasks": self._agent.daily_tasks,
-        }
-
+    async def _async_update_state(self):
+        """Fetch completed task count from storage."""
+        tasks = await self._storage.get_today_tasks()
+        if tasks:
+            self._completed_count = sum(1 for t in tasks if t.get('completed') or t.get('verified'))
+        else:
+            self._completed_count = 0
 
 class WeeklyChallengeSensor(GreenShiftAISensor):
     """Sensor for the weekly energy reduction challenge."""
@@ -568,3 +556,106 @@ class FatigueIndexSensor(GreenShiftAISensor):
     @property
     def state(self):
         return round(self._agent.fatigue_index, 2)
+
+
+class DailyTasksSensor(GreenShiftAISensor):
+    """Sensor showing daily tasks with verification status and difficulty feedback."""
+    
+    _attr_should_poll = False
+    
+    def __init__(self, storage):
+        self._storage = storage
+        self._attr_name = "Daily Tasks"
+        self._attr_unique_id = f"{DOMAIN}_daily_tasks"
+        self._attr_icon = "mdi:clipboard-check-outline"
+        self._tasks = []
+    
+    async def async_added_to_hass(self):
+        """Register the listener when the entity is added to HA."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, 
+                GS_AI_UPDATE_SIGNAL,
+                self._update_callback
+            )
+        )
+        # Initial load
+        await self._async_update_state()
+    
+    @callback
+    def _update_callback(self):
+        """Force update when signal is received."""
+        self.hass.async_create_task(self._async_update_and_write())
+    
+    async def _async_update_and_write(self):
+        """Helper to await the update and then write state."""
+        await self._async_update_state()
+        self.async_write_ha_state()
+    
+    async def _async_update_state(self):
+        """Fetch today's tasks from storage."""
+        self._tasks = await self._storage.get_today_tasks()
+    
+    @property
+    def state(self):
+        """Return number of tasks."""
+        return len(self._tasks)
+    
+    @property
+    def extra_state_attributes(self):
+        """Return task details with verification and feedback status."""
+        if not self._tasks:
+            return {
+                "tasks": [],
+                "completed_count": 0,
+                "verified_count": 0,
+            }
+        
+        completed_count = sum(1 for t in self._tasks if t['completed'])
+        verified_count = sum(1 for t in self._tasks if t['verified'])
+        
+        # Format tasks for display
+        tasks_display = []
+        for task in self._tasks:
+            task_info = {
+                'task_id': task['task_id'],
+                'title': task['title'],
+                'description': task['description'],
+                'target_value': task['target_value'],
+                'target_unit': task['target_unit'],
+                'baseline_value': task['baseline_value'],
+                'difficulty_level': task['difficulty_level'],
+                'completed': task['completed'],
+                'verified': task['verified'],
+                'user_feedback': task['user_feedback'],
+                'area_name': task['area_name'],
+            }
+            
+            # Add completion value if available
+            if task['completion_value']:
+                task_info['completion_value'] = task['completion_value']
+            
+            # Add status indicator
+            if task['verified']:
+                task_info['status'] = 'verified'
+                task_info['status_emoji'] = '✅'
+            elif task['completed']:
+                task_info['status'] = 'completed'
+                task_info['status_emoji'] = '⏳'
+            else:
+                task_info['status'] = 'pending'
+                task_info['status_emoji'] = '🎯'
+            
+            # Add difficulty indicator
+            difficulty_emojis = {1: '⭐', 2: '⭐⭐', 3: '⭐⭐⭐', 4: '⭐⭐⭐⭐', 5: '⭐⭐⭐⭐⭐'}
+            task_info['difficulty_display'] = difficulty_emojis.get(task['difficulty_level'], '⭐⭐⭐')
+            
+            tasks_display.append(task_info)
+        
+        return {
+            "tasks": tasks_display,
+            "completed_count": completed_count,
+            "verified_count": verified_count,
+            "total_count": len(self._tasks),
+        }

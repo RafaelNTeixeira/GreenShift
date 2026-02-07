@@ -67,11 +67,8 @@ class DecisionAgent:
         self.behaviour_index = 0.5 
         self.fatigue_index = 0.0 
         
-        # Tasks and challenges
-        self.daily_tasks = []
+        # Challenges
         self.target_percentage = 15 # 15% reduction goal # TODO: Needs to be updated based on percentage reduction target picked by the user
-        self.last_task_generation_date = None
-        self.tasks_completed_count = 0
 
     async def setup(self):
         """Initialize agent and load persistent state."""
@@ -122,18 +119,6 @@ class DecisionAgent:
                            for k, v in state["q_table"].items()}
             _LOGGER.info("Loaded Q-table with %d entries", len(self.q_table))
 
-        if "daily_tasks" in state:
-            self.daily_tasks = state["daily_tasks"]
-
-        if "last_task_generation_date" in state and state["last_task_generation_date"]:
-            try:
-                self.last_task_generation_date = datetime.fromisoformat(state["last_task_generation_date"]).date()
-            except ValueError:
-                self.last_task_generation_date = None
-
-        if "tasks_completed_count" in state:
-            self.tasks_completed_count = state["tasks_completed_count"]
-        
         _LOGGER.info("Persistent AI state loaded successfully")
 
     async def _save_persistent_state(self):
@@ -160,9 +145,7 @@ class DecisionAgent:
             "behaviour_index": float(self.behaviour_index),
             "fatigue_index": float(self.fatigue_index),
             "q_table": serializable_q_table,
-            "daily_tasks": self.daily_tasks,
-            "last_task_generation_date": self.last_task_generation_date.isoformat() if self.last_task_generation_date else None,
-            "tasks_completed_count": self.tasks_completed_count
+
         }
 
         current_state.update(ai_state)
@@ -196,7 +179,6 @@ class DecisionAgent:
         
         # Decide action A_t if in active phase
         if self.phase == PHASE_ACTIVE:
-            await self._generate_daily_tasks()       
             await self._update_weekly_baseline()
             await self._decide_action()
 
@@ -441,59 +423,6 @@ class DecisionAgent:
         # _LOGGER.debug("State discretized: power=%d, anomaly=%d, fatigue=%d", power, anomaly, fatigue)
 
         return (power, anomaly, fatigue)
-    
-    async def _generate_daily_tasks(self):
-        """Generates 3 random daily tasks based on available sensors."""
-        today = datetime.now().date()
-        
-        # Only generate once per day
-        if self.last_task_generation_date == today and len(self.daily_tasks) > 0:
-            return
-        
-        self.last_task_generation_date = today
-        
-        # Define available tasks based on sensor availability
-        available_tasks = []
-
-        # Helper to add tasks safely
-        def add_task(title, desc, cat):
-            available_tasks.append({"title": title, "description": desc, "category": cat, "completed": False})
-        
-        if self.sensors.get("temperature"):
-            add_task("Lower heating by 1°C", "Small adjustments save energy.", "temperature")
-            add_task("Use natural cooling", "Open windows instead of AC.", "temperature")
-        
-        if self.sensors.get("occupancy"):
-            add_task("Turn off lights", "Check empty rooms.", "occupancy")
-            add_task("Close doors", "Keep heat/cool inside used rooms.", "occupancy")
-        
-        if self.sensors.get("power"):
-            add_task("Unplug vampires", "Disconnect unused chargers.", "power")
-            add_task("Use power strips", "Turn off groups of devices.", "power")
-        
-        if self.sensors.get("humidity"):
-            add_task("Use fan mode", "Fans use less energy than AC.", "humidity")
-        
-        if self.sensors.get("illuminance"):
-            add_task("Use daylight", "Open blinds, turn off bulbs.", "illuminance")
-            add_task("Check bulbs", "Ensure LEDs are installed.", "illuminance")
-        
-        add_task("Wash cold", "30°C is enough for most clothes.", "general")
-        add_task("Short shower", "Cut 2 minutes off your shower.", "general")
-        add_task("Eco mode", "Use Eco mode on appliances.", "general")
-        
-        # Select 3 random tasks
-        if len(available_tasks) >= 3:
-            self.daily_tasks = list(np.random.choice(len(available_tasks), 3, replace=False))
-            self.daily_tasks = [available_tasks[i] for i in self.daily_tasks]
-        else:
-            self.daily_tasks = available_tasks[:3]
-        
-        _LOGGER.info("Generated daily tasks: %s", [t["title"] for t in self.daily_tasks])
-
-        await self._save_persistent_state()
-
-        async_dispatcher_send(self.hass, GS_AI_UPDATE_SIGNAL)
     
     async def _update_weekly_baseline(self):
         """Updates the fixed baseline once per week."""

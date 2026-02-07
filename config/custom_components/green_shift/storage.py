@@ -1,6 +1,6 @@
 """
 Storage management for Green Shift integration.
-- SQLite: Temporal sensor data (14 days rolling window) with area-based tracking
+- SQLite: Temporal sensor data (14 days rolling window) with area-based tracking + Daily tasks
 - JSON: Persistent state (AI configuration, indices, Q-table)
 """
 import logging
@@ -80,6 +80,41 @@ class StorageManager:
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # Daily tasks table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS daily_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL UNIQUE,
+                    date TEXT NOT NULL,
+                    task_type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    target_value REAL,
+                    target_unit TEXT,
+                    baseline_value REAL,
+                    area_name TEXT,
+                    difficulty_level INTEGER DEFAULT 1,
+                    completed INTEGER DEFAULT 0,
+                    verified INTEGER DEFAULT 0,
+                    completion_value REAL,
+                    completion_timestamp REAL,
+                    user_feedback TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Task difficulty history table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS task_difficulty_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_type TEXT NOT NULL,
+                    difficulty_level INTEGER NOT NULL,
+                    feedback TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             
             # Index for faster queries by timestamp
             cursor.execute("""
@@ -91,6 +126,12 @@ class StorageManager:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_area_timestamp 
                 ON area_sensor_history(area_name, timestamp)
+            """)
+
+            # Index for tasks by date
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_task_date 
+                ON daily_tasks(date)
             """)
             
             conn.commit()
@@ -122,11 +163,19 @@ class StorageManager:
             )
             deleted_area = cursor.rowcount
 
+            # Clean old tasks (keep 30 days for historical analysis)
+            cutoff_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            cursor.execute(
+                "DELETE FROM daily_tasks WHERE date < ?",
+                (cutoff_date,)
+            )
+            deleted_tasks = cursor.rowcount
+
             conn.commit()
             conn.close()
             
-            if deleted_global > 0 or deleted_area > 0:
-                _LOGGER.info("Cleaned up %d global and %d area records", deleted_global, deleted_area)
+            if deleted_global > 0 or deleted_area > 0 or deleted_tasks > 0:
+                _LOGGER.info("Cleaned up %d global, %d area, and %d task records", deleted_global, deleted_area, deleted_tasks)
         
         await self.hass.async_add_executor_job(_cleanup)
     
@@ -365,6 +414,225 @@ class StorageManager:
         
         return await self.hass.async_add_executor_job(_query)
     
+    # ==================== DAILY TASKS (SQLite) ====================
+
+    async def save_daily_tasks(self, tasks: List[Dict]) -> bool:
+        """Save daily tasks to database."""
+        def _insert():
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            
+            for task in tasks:
+                try:
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO daily_tasks 
+                        (task_id, date, task_type, title, description, target_value, 
+                         target_unit, baseline_value, area_name, difficulty_level)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        task['task_id'],
+                        task['date'],
+                        task['task_type'],
+                        task['title'],
+                        task['description'],
+                        task.get('target_value'),
+                        task.get('target_unit'),
+                        task.get('baseline_value'),
+                        task.get('area_name'),
+                        task.get('difficulty_level', 1)
+                    ))
+                except Exception as e:
+                    _LOGGER.error("Error saving task %s: %s", task['task_id'], e)
+                    conn.close()
+                    return False
+            
+            conn.commit()
+            conn.close()
+            return True
+        
+        return await self.hass.async_add_executor_job(_insert)
+    
+    async def get_today_tasks(self) -> List[Dict]:
+        """Get today's tasks."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        
+        def _query():
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT task_id, date, task_type, title, description, 
+                       target_value, target_unit, baseline_value, area_name,
+                       difficulty_level, completed, verified, completion_value,
+                       completion_timestamp, user_feedback
+                FROM daily_tasks 
+                WHERE date = ?
+                ORDER BY id ASC
+            """, (today,))
+            
+            rows = cursor.fetchall()
+            conn.close()
+            
+            tasks = []
+            for row in rows:
+                tasks.append({
+                    'task_id': row[0],
+                    'date': row[1],
+                    'task_type': row[2],
+                    'title': row[3],
+                    'description': row[4],
+                    'target_value': row[5],
+                    'target_unit': row[6],
+                    'baseline_value': row[7],
+                    'area_name': row[8],
+                    'difficulty_level': row[9],
+                    'completed': bool(row[10]),
+                    'verified': bool(row[11]),
+                    'completion_value': row[12],
+                    'completion_timestamp': row[13],
+                    'user_feedback': row[14]
+                })
+            
+            return tasks
+        
+        return await self.hass.async_add_executor_job(_query)
+    
+    async def mark_task_completed(self, task_id: str, completion_value: float = None) -> bool:
+        """Mark a task as completed."""
+        def _update():
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                UPDATE daily_tasks 
+                SET completed = 1, 
+                    completion_value = ?,
+                    completion_timestamp = ?
+                WHERE task_id = ?
+            """, (completion_value, datetime.now().timestamp(), task_id))
+            
+            success = cursor.rowcount > 0
+            conn.commit()
+            conn.close()
+            return success
+        
+        return await self.hass.async_add_executor_job(_update)
+    
+    async def mark_task_verified(self, task_id: str, verified: bool = True) -> bool:
+        """Mark a task as verified by the system."""
+        def _update():
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                UPDATE daily_tasks 
+                SET verified = ?
+                WHERE task_id = ?
+            """, (1 if verified else 0, task_id))
+            
+            success = cursor.rowcount > 0
+            conn.commit()
+            conn.close()
+            return success
+        
+        return await self.hass.async_add_executor_job(_update)
+    
+    async def save_task_feedback(self, task_id: str, feedback: str) -> bool:
+        """Save user feedback for a task (too_easy, just_right, too_hard)."""
+        def _update():
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            
+            # First, get task info
+            cursor.execute("""
+                SELECT task_type, difficulty_level, date
+                FROM daily_tasks 
+                WHERE task_id = ?
+            """, (task_id,))
+            
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return False
+            
+            task_type, difficulty_level, date = row
+            
+            # Update the task feedback
+            cursor.execute("""
+                UPDATE daily_tasks 
+                SET user_feedback = ?
+                WHERE task_id = ?
+            """, (feedback, task_id))
+            
+            # Save to difficulty history
+            cursor.execute("""
+                INSERT INTO task_difficulty_history 
+                (task_type, difficulty_level, feedback, date)
+                VALUES (?, ?, ?, ?)
+            """, (task_type, difficulty_level, feedback, date))
+            
+            conn.commit()
+            conn.close()
+            return True
+        
+        return await self.hass.async_add_executor_job(_update)
+    
+    async def get_task_difficulty_stats(self, task_type: str) -> Dict:
+        """Get difficulty statistics for a task type to adjust future difficulty."""
+        def _query():
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            
+            # Get recent feedback (last 30 days)
+            cutoff_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            
+            cursor.execute("""
+                SELECT difficulty_level, feedback, COUNT(*) as count
+                FROM task_difficulty_history
+                WHERE task_type = ? AND date >= ?
+                GROUP BY difficulty_level, feedback
+                ORDER BY difficulty_level, feedback
+            """, (task_type, cutoff_date))
+            
+            rows = cursor.fetchall()
+            conn.close()
+            
+            # Process statistics
+            stats = {
+                'too_easy_count': 0,
+                'just_right_count': 0,
+                'too_hard_count': 0,
+                'avg_difficulty': 1,
+                'suggested_adjustment': 0
+            }
+            
+            total = 0
+            difficulty_sum = 0
+            
+            for difficulty, feedback, count in rows:
+                total += count
+                difficulty_sum += difficulty * count
+                
+                if feedback == 'too_easy':
+                    stats['too_easy_count'] += count
+                elif feedback == 'just_right':
+                    stats['just_right_count'] += count
+                elif feedback == 'too_hard':
+                    stats['too_hard_count'] += count
+            
+            if total > 0:
+                stats['avg_difficulty'] = difficulty_sum / total
+                
+                # Suggest adjustment based on feedback
+                if stats['too_easy_count'] > stats['too_hard_count'] * 2:
+                    stats['suggested_adjustment'] = 1  # Increase difficulty
+                elif stats['too_hard_count'] > stats['too_easy_count'] * 2:
+                    stats['suggested_adjustment'] = -1  # Decrease difficulty
+            
+            return stats
+        
+        return await self.hass.async_add_executor_job(_query)
+    
     # ==================== PERSISTENT STATE (JSON) ====================
     
     async def save_state(self, state_data: Dict[str, Any]):
@@ -446,6 +714,8 @@ class StorageManager:
                 cursor = conn.cursor()  
                 cursor.execute("DELETE FROM sensor_history")
                 cursor.execute("DELETE FROM area_sensor_history")
+                cursor.execute("DELETE FROM daily_tasks")
+                cursor.execute("DELETE FROM task_difficulty_history")
                 conn.commit()
                 conn.close()
             

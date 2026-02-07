@@ -272,9 +272,7 @@ views:
               type: markdown
               content: |
                 ## 🔒 Challenges Locked
-                This section will unlock after the 14-day calibration phase is complete.
-                
-                **{{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining.**
+                **{{ state_attr('sensor.research_phase', 'days_remaining') }} days** until unlock
 
           - type: conditional
             conditions:
@@ -285,36 +283,240 @@ views:
               cards:
                 - type: markdown
                   content: |
-                    ## 📅 Daily Missions
-                    Complete these actions to improve efficiency.
+                    # 📅 Daily Energy Challenges
+                    {% set verified = state_attr('sensor.daily_tasks', 'verified_count') | default(0) %}
+                    {% set total = state_attr('sensor.daily_tasks', 'total_count') | default(3) %}
+                    **{{ verified }}/{{ total }}** tasks verified today
 
+                # Task 1 Card
                 - type: markdown
                   content: |
                     {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
-                    {% if tasks and tasks | length > 0 -%}
-                    <table width="100%">
-                    {%- for task in tasks -%}
-                    {%- set i = 'mdi:leaf' -%}
-                    {%- set color = 'var(--primary-color)' -%}
-                    {%- if task.category == 'temperature' %}{% set i = 'mdi:thermometer' %}{% set color = '#e74c3c' %}
-                    {%- elif task.category == 'occupancy' %}{% set i = 'mdi:walk' %}{% set color = '#9b59b6' %}
-                    {%- elif task.category == 'power' %}{% set i = 'mdi:power-plug' %}{% set color = '#f1c40f' %}
-                    {%- elif task.category == 'humidity' %}{% set i = 'mdi:water-percent' %}{% set color = '#3498db' %}
-                    {%- elif task.category == 'illuminance' %}{% set i = 'mdi:brightness-5' %}{% set color = '#e67e22' %}
-                    {%- endif -%}
-                    {%- set is_done = task.get('completed', false) -%}
-                    {%- set status_icon = 'mdi:check-circle' if is_done else 'mdi:circle-outline' -%}
-                    {%- set status_color = '#2ecc71' if is_done else 'var(--secondary-text-color)' -%}
-                    <tr>
-                    <td width="40px" style="text-align: center; vertical-align: middle;"><ha-icon icon="{{ i }}" style="color: {{ color }};"></ha-icon></td>
-                    <td style="padding: 8px 10px;"><b>{{ task.title }}</b><br><span style="font-size: 0.85em; opacity: 0.7;">{{ task.description }}</span></td>
-                    <td width="30px" style="text-align: right; vertical-align: middle;"><ha-icon icon="{{ status_icon }}" style="color: {{ status_color }}; opacity: {{ '1' if is_done else '0.5' }};"></ha-icon></td>
-                    </tr>
-                    {%- endfor -%}
-                    </table>
-                    {%- else -%}
-                    <div style="text-align: center; padding: 20px;"><b>No tasks available yet.</b><br>Check back tomorrow!</div>
-                    {%- endif -%}
+                    {% if tasks and tasks | length > 0 %}
+                    {% set t = tasks[0] %}
+                    
+                    ### {{ t.status_emoji }} Task 1: {{ t.title }}
+                    
+                    {{ t.description }}
+                    
+                    **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
+                    **Difficulty:** {{ t.difficulty_display }}  
+                    {% if t.area_name %}**Area:** {{ t.area_name }}{% endif %}
+                    
+                    {% if t.verified %}
+                    ✅ **VERIFIED!** You achieved the target!
+                    {% elif t.completed %}
+                    ⏳ **Completed** - Waiting for system verification
+                    {% else %}
+                    🎯 **Active** - Work on this today!
+                    {% endif %}
+                    {% endif %}
+
+                - type: horizontal-stack
+                  cards:
+                    - type: button
+                      name: Too Easy
+                      icon: mdi:emoticon-happy-outline
+                      icon_height: 30px
+                      tap_action:
+                        action: call-service
+                        service: green_shift.submit_task_feedback
+                        service_data:
+                          task_id: >
+                            {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                            {{ tasks[0].task_id if tasks and tasks | length > 0 else '' }}
+                          feedback: too_easy
+                      entity: sensor.daily_tasks
+                      show_state: false
+                    
+                    - type: button
+                      name: Just Right
+                      icon: mdi:emoticon-neutral-outline
+                      icon_height: 30px
+                      tap_action:
+                        action: call-service
+                        service: green_shift.submit_task_feedback
+                        service_data:
+                          task_id: >
+                            {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                            {{ tasks[0].task_id if tasks and tasks | length > 0 else '' }}
+                          feedback: just_right
+                      entity: sensor.daily_tasks
+                      show_state: false
+                    
+                    - type: button
+                      name: Too Hard
+                      icon: mdi:emoticon-sad-outline
+                      icon_height: 30px
+                      tap_action:
+                        action: call-service
+                        service: green_shift.submit_task_feedback
+                        service_data:
+                          task_id: >
+                            {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                            {{ tasks[0].task_id if tasks and tasks | length > 0 else '' }}
+                          feedback: too_hard
+                      entity: sensor.daily_tasks
+                      show_state: false
+
+                # Task 2 Card
+                - type: markdown
+                  content: |
+                    {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                    {% if tasks and tasks | length > 1 %}
+                    {% set t = tasks[1] %}
+                    
+                    ---
+                    
+                    ### {{ t.status_emoji }} Task 2: {{ t.title }}
+                    
+                    {{ t.description }}
+                    
+                    **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
+                    **Difficulty:** {{ t.difficulty_display }}  
+                    {% if t.area_name %}**Area:** {{ t.area_name }}{% endif %}
+                    
+                    {% if t.verified %}
+                    ✅ **VERIFIED!** You achieved the target!
+                    {% elif t.completed %}
+                    ⏳ **Completed** - Waiting for system verification
+                    {% else %}
+                    🎯 **Active** - Work on this today!
+                    {% endif %}
+                    {% endif %}
+
+                - type: horizontal-stack
+                  cards:
+                    - type: button
+                      name: Too Easy
+                      icon: mdi:emoticon-happy-outline
+                      icon_height: 30px
+                      tap_action:
+                        action: call-service
+                        service: green_shift.submit_task_feedback
+                        service_data:
+                          task_id: >
+                            {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                            {{ tasks[1].task_id if tasks and tasks | length > 1 else '' }}
+                          feedback: too_easy
+                      entity: sensor.daily_tasks
+                      show_state: false
+                    
+                    - type: button
+                      name: Just Right
+                      icon: mdi:emoticon-neutral-outline
+                      icon_height: 30px
+                      tap_action:
+                        action: call-service
+                        service: green_shift.submit_task_feedback
+                        service_data:
+                          task_id: >
+                            {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                            {{ tasks[1].task_id if tasks and tasks | length > 1 else '' }}
+                          feedback: just_right
+                      entity: sensor.daily_tasks
+                      show_state: false
+                    
+                    - type: button
+                      name: Too Hard
+                      icon: mdi:emoticon-sad-outline
+                      icon_height: 30px
+                      tap_action:
+                        action: call-service
+                        service: green_shift.submit_task_feedback
+                        service_data:
+                          task_id: >
+                            {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                            {{ tasks[1].task_id if tasks and tasks | length > 1 else '' }}
+                          feedback: too_hard
+                      entity: sensor.daily_tasks
+                      show_state: false
+
+                # Task 3 Card
+                - type: markdown
+                  content: |
+                    {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                    {% if tasks and tasks | length > 2 %}
+                    {% set t = tasks[2] %}
+                    
+                    ---
+                    
+                    ### {{ t.status_emoji }} Task 3: {{ t.title }}
+                    
+                    {{ t.description }}
+                    
+                    **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
+                    **Difficulty:** {{ t.difficulty_display }}  
+                    {% if t.area_name %}**Area:** {{ t.area_name }}{% endif %}
+                    
+                    {% if t.verified %}
+                    ✅ **VERIFIED!** You achieved the target!
+                    {% elif t.completed %}
+                    ⏳ **Completed** - Waiting for system verification
+                    {% else %}
+                    🎯 **Active** - Work on this today!
+                    {% endif %}
+                    {% endif %}
+
+                - type: horizontal-stack
+                  cards:
+                    - type: button
+                      name: Too Easy
+                      icon: mdi:emoticon-happy-outline
+                      icon_height: 30px
+                      tap_action:
+                        action: call-service
+                        service: green_shift.submit_task_feedback
+                        service_data:
+                          task_id: >
+                            {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                            {{ tasks[2].task_id if tasks and tasks | length > 2 else '' }}
+                          feedback: too_easy
+                      entity: sensor.daily_tasks
+                      show_state: false
+                    
+                    - type: button
+                      name: Just Right
+                      icon: mdi:emoticon-neutral-outline
+                      icon_height: 30px
+                      tap_action:
+                        action: call-service
+                        service: green_shift.submit_task_feedback
+                        service_data:
+                          task_id: >
+                            {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                            {{ tasks[2].task_id if tasks and tasks | length > 2 else '' }}
+                          feedback: just_right
+                      entity: sensor.daily_tasks
+                      show_state: false
+                    
+                    - type: button
+                      name: Too Hard
+                      icon: mdi:emoticon-sad-outline
+                      icon_height: 30px
+                      tap_action:
+                        action: call-service
+                        service: green_shift.submit_task_feedback
+                        service_data:
+                          task_id: >
+                            {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                            {{ tasks[2].task_id if tasks and tasks | length > 2 else '' }}
+                          feedback: too_hard
+                      entity: sensor.daily_tasks
+                      show_state: false
+
+                # Summary
+                - type: markdown
+                  content: |
+                    ---
+                    ### 💡 How Feedback Works
+                    
+                    Rate each task's difficulty to help the system adjust future challenges:
+                    - **😊 Too Easy** → Next time will be harder
+                    - **😐 Just Right** → Difficulty stays the same
+                    - **😰 Too Hard** → Next time will be easier
+                    
+                    Tasks auto-verify every hour based on your actual sensor data!
 
   # ========== TAB 4: COLLABORATIVE GOAL ==========
   - title: Collaborative Goal

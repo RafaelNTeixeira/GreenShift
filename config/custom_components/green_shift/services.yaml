@@ -1,0 +1,49 @@
+# Services for Green Shift Integration
+
+mark_task_complete:
+  name: Mark Task Complete
+  description: Manually mark a daily task as completed
+  fields:
+    task_id:
+      name: Task ID
+      description: The ID of the task to mark as complete
+      required: true
+      example: "temp_20260207"
+      selector:
+        text:
+
+submit_task_feedback:
+  name: Submit Task Feedback
+  description: Provide feedback on task difficulty
+  fields:
+    task_id:
+      name: Task ID
+      description: The ID of the task to provide feedback for
+      required: true
+      example: "temp_20260207"
+      selector:
+        text:
+    feedback:
+      name: Feedback
+      description: Your feedback on the task difficulty
+      required: true
+      example: "just_right"
+      selector:
+        select:
+          options:
+            - label: "Too Easy"
+              value: "too_easy"
+            - label: "Just Right"
+              value: "just_right"
+            - label: "Too Hard"
+              value: "too_hard"
+
+verify_tasks:
+  name: Verify Tasks
+  description: Manually trigger task verification for today
+  fields: {}
+
+regenerate_tasks:
+  name: Regenerate Tasks
+  description: Force regeneration of today's tasks (admin use only)
+  fields: {}

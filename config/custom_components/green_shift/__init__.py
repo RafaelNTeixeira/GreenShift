@@ -2,10 +2,10 @@ import logging
 from datetime import datetime, timedelta
 import numpy as np
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.event import async_track_time_interval, async_track_state_change_event
+from homeassistant.helpers.event import async_track_time_interval, async_track_state_change_event, async_track_time_change
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
@@ -16,10 +16,13 @@ from .const import (
     PHASE_ACTIVE,
     BASELINE_DAYS,
     AI_FREQUENCY_SECONDS,
+    TASK_GENERATION_TIME,
+    VERIFY_TASKS_HOURS
 )
 from .data_collector import DataCollector
 from .decision_agent import DecisionAgent
 from .storage import StorageManager
+from .task_manager import TaskManager
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor", "select"]
@@ -54,6 +57,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     agent = DecisionAgent(hass, discovered_sensors, collector, storage)
     await agent.setup()
 
+    # Initialize task manager
+    task_manager = TaskManager(hass, discovered_sensors, collector, storage)
+
     if not await storage.load_state():
         _LOGGER.debug("Fresh install detected: Saving initial start_date.")
         await agent._save_persistent_state()
@@ -61,10 +67,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN]["storage"] = storage
     hass.data[DOMAIN]["collector"] = collector
     hass.data[DOMAIN]["agent"] = agent
+    hass.data[DOMAIN]["task_manager"] = task_manager
     hass.data[DOMAIN]["discovered_sensors"] = discovered_sensors
     
     # Platform setup
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    await async_setup_services(hass)
     
     # Periodic AI model update task (runs every AI_FREQUENCY_SECONDS)
     async def update_agent_ai_model(now):
@@ -75,6 +84,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await agent.process_ai_model()
         
         days_running = (datetime.now() - agent.start_date).days
+
+        days_running = 14 # TEMP: For testing purposes, simulate baseline phase completion after 14 days
 
         # During baseline phase: continuously update baseline_consumption
         if agent.phase == PHASE_BASELINE:
@@ -117,8 +128,119 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ["input_number.energy_saving_target"],
         target_changed
     )
+
+    # Daily task generation at TASK_GENERATION_TIME
+    async def generate_daily_tasks_callback(now):
+        """Generate daily tasks at TASK_GENERATION_TIME."""
+        if agent.phase != PHASE_ACTIVE:
+            _LOGGER.debug("Skipping task generation - system in %s phase", agent.phase)
+            return
+        
+        _LOGGER.info("Generating daily tasks...")
+        tasks = await task_manager.generate_daily_tasks()
+        if tasks:
+            _LOGGER.info("Generated %d tasks for today", len(tasks))
+            async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
+    
+    hass.data[DOMAIN]["task_generation_listener"] = async_track_time_change(
+        hass, generate_daily_tasks_callback, hour=TASK_GENERATION_TIME[0], minute=TASK_GENERATION_TIME[1], second=TASK_GENERATION_TIME[2]
+    )
+
+    async def verify_tasks_callback(now):
+        """Verify tasks periodically every VERIFY_TASKS_HOURS hours."""
+        if agent.phase != PHASE_ACTIVE:
+            _LOGGER.debug("Skipping task verification - system in %s phase", agent.phase)
+            return
+        
+        results = await task_manager.verify_tasks()
+        if any(results.values()):
+            _LOGGER.info("Task verification completed: %s", results)
+            async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
+    
+    hass.data[DOMAIN]["task_verification_listener"] = async_track_time_interval(
+        hass, verify_tasks_callback, timedelta(hours=VERIFY_TASKS_HOURS)
+    )
+
+    # Generate tasks immediately if none exist for today (only in active phase)
+    if agent.phase == PHASE_ACTIVE:
+        today_tasks = await storage.get_today_tasks()
+        if not today_tasks:
+            _LOGGER.info("No tasks found for today, generating now...")
+            await task_manager.generate_daily_tasks()
     
     return True
+
+
+async def async_setup_services(hass: HomeAssistant):
+    """Setup services for task management."""
+    
+    async def mark_task_complete(call: ServiceCall):
+        """Service to manually mark a task as complete."""
+        task_id = call.data.get("task_id")
+        if not task_id:
+            _LOGGER.error("Task ID not provided")
+            return
+        
+        storage = hass.data[DOMAIN]["storage"]
+        success = await storage.mark_task_completed(task_id)
+        
+        if success:
+            _LOGGER.info("Task %s marked as completed", task_id)
+            async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
+        else:
+            _LOGGER.error("Failed to mark task %s as completed", task_id)
+    
+    async def submit_task_feedback(call: ServiceCall):
+        """Service to submit task difficulty feedback."""
+        task_id = call.data.get("task_id")
+        feedback = call.data.get("feedback")
+        
+        if not task_id or not feedback:
+            _LOGGER.error("Task ID or feedback not provided")
+            return
+        
+        if feedback not in ['too_easy', 'just_right', 'too_hard']:
+            _LOGGER.error("Invalid feedback value: %s", feedback)
+            return
+        
+        storage = hass.data[DOMAIN]["storage"]
+        success = await storage.save_task_feedback(task_id, feedback)
+        
+        if success:
+            _LOGGER.info("Feedback '%s' saved for task %s", feedback, task_id)
+            async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
+        else:
+            _LOGGER.error("Failed to save feedback for task %s", task_id)
+    
+    async def verify_tasks(call: ServiceCall):
+        """Service to manually trigger task verification."""
+        task_manager = hass.data[DOMAIN]["task_manager"]
+        results = await task_manager.verify_tasks()
+        
+        _LOGGER.info("Manual task verification completed: %s", results)
+        async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
+    
+    async def regenerate_tasks(call: ServiceCall):
+        """Service to force regeneration of today's tasks (admin only)."""
+        storage = hass.data[DOMAIN]["storage"]
+        task_manager = hass.data[DOMAIN]["task_manager"]
+        
+        # Delete today's tasks first
+        # today = datetime.now().strftime("%Y-%m-%d")
+        # This would require a new storage method, for now just generate new ones
+        
+        tasks = await task_manager.generate_daily_tasks()
+        _LOGGER.info("Tasks regenerated: %d tasks", len(tasks))
+        async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
+    
+    # Register services
+    hass.services.async_register(DOMAIN, "mark_task_complete", mark_task_complete)
+    hass.services.async_register(DOMAIN, "submit_task_feedback", submit_task_feedback)
+    hass.services.async_register(DOMAIN, "verify_tasks", verify_tasks)
+    hass.services.async_register(DOMAIN, "regenerate_tasks", regenerate_tasks)
+    
+    _LOGGER.info("Services registered successfully")
+
 
 async def trigger_phase_transition_notification(hass, agent, collector):
     """Calculates baseline summary and sends the transition notification."""
@@ -157,6 +279,7 @@ async def trigger_phase_transition_notification(hass, agent, collector):
         }
     )
 
+
 async def sync_helper_entities(hass: HomeAssistant, entry: ConfigEntry):
     """Syncs the options chosen in the Config Flow to the corresponding helper entities in Home Assistant."""
     chosen_currency = entry.data.get("currency", "EUR")
@@ -188,8 +311,21 @@ async def sync_helper_entities(hass: HomeAssistant, entry: ConfigEntry):
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload of the config entry."""
+    # Unregister services
+    hass.services.async_remove(DOMAIN, "mark_task_complete")
+    hass.services.async_remove(DOMAIN, "submit_task_feedback")
+    hass.services.async_remove(DOMAIN, "verify_tasks")
+    hass.services.async_remove(DOMAIN, "regenerate_tasks")
+
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN]["update_listener"]()
+
+        # Cancel task listeners
+        if "task_generation_listener" in hass.data[DOMAIN]:
+            hass.data[DOMAIN]["task_generation_listener"]()
+        
+        if "task_verification_listener" in hass.data[DOMAIN]:
+            hass.data[DOMAIN]["task_verification_listener"]()
 
         # Close storage connections
         storage = hass.data[DOMAIN].get("storage")
