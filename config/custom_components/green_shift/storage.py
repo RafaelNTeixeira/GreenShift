@@ -510,6 +510,8 @@ class StorageManager:
                     completion_timestamp = ?
                 WHERE task_id = ?
             """, (completion_value, datetime.now().timestamp(), task_id))
+
+            _LOGGER.debug("Marking task %s as completed with value %s", task_id, completion_value)
             
             success = cursor.rowcount > 0
             conn.commit()
@@ -542,6 +544,8 @@ class StorageManager:
         def _update():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
+
+            _LOGGER.debug("Saving feedback for task %s: %s", task_id, feedback)
             
             # First, get task info
             cursor.execute("""

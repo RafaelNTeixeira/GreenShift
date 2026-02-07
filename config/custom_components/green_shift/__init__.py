@@ -174,40 +174,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_setup_services(hass: HomeAssistant):
     """Setup services for task management."""
     
-    async def mark_task_complete(call: ServiceCall):
-        """Service to manually mark a task as complete."""
-        task_id = call.data.get("task_id")
-        if not task_id:
-            _LOGGER.error("Task ID not provided")
-            return
-        
-        storage = hass.data[DOMAIN]["storage"]
-        success = await storage.mark_task_completed(task_id)
-        
-        if success:
-            _LOGGER.info("Task %s marked as completed", task_id)
-            async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
-        else:
-            _LOGGER.error("Failed to mark task %s as completed", task_id)
-    
     async def submit_task_feedback(call: ServiceCall):
         """Service to submit task difficulty feedback."""
-        task_id = call.data.get("task_id")
+        task_index = call.data.get("task_index")
         feedback = call.data.get("feedback")
         
-        if not task_id or not feedback:
-            _LOGGER.error("Task ID or feedback not provided")
+        if task_index is None or feedback is None:
+            _LOGGER.error("Task index or feedback not provided")
             return
         
         if feedback not in ['too_easy', 'just_right', 'too_hard']:
             _LOGGER.error("Invalid feedback value: %s", feedback)
             return
         
+        # Get today's tasks and find the task_id by index
         storage = hass.data[DOMAIN]["storage"]
+        tasks = await storage.get_today_tasks()
+        
+        if not tasks or task_index >= len(tasks):
+            _LOGGER.error("Invalid task index %d (only %d tasks available)", task_index, len(tasks) if tasks else 0)
+            return
+        
+        task_id = tasks[task_index].get("task_id")
+        if not task_id:
+            _LOGGER.error("Could not find task_id for task index %d", task_index)
+            return
+        
         success = await storage.save_task_feedback(task_id, feedback)
         
         if success:
-            _LOGGER.info("Feedback '%s' saved for task %s", feedback, task_id)
+            _LOGGER.info("Feedback '%s' saved for task %s (index %d)", feedback, task_id, task_index)
             async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
         else:
             _LOGGER.error("Failed to save feedback for task %s", task_id)
@@ -234,7 +230,6 @@ async def async_setup_services(hass: HomeAssistant):
         async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
     
     # Register services
-    hass.services.async_register(DOMAIN, "mark_task_complete", mark_task_complete)
     hass.services.async_register(DOMAIN, "submit_task_feedback", submit_task_feedback)
     hass.services.async_register(DOMAIN, "verify_tasks", verify_tasks)
     hass.services.async_register(DOMAIN, "regenerate_tasks", regenerate_tasks)
@@ -312,7 +307,6 @@ async def sync_helper_entities(hass: HomeAssistant, entry: ConfigEntry):
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload of the config entry."""
     # Unregister services
-    hass.services.async_remove(DOMAIN, "mark_task_complete")
     hass.services.async_remove(DOMAIN, "submit_task_feedback")
     hass.services.async_remove(DOMAIN, "verify_tasks")
     hass.services.async_remove(DOMAIN, "regenerate_tasks")

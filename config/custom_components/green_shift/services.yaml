@@ -1,28 +1,19 @@
 # Services for Green Shift Integration
 
-mark_task_complete:
-  name: Mark Task Complete
-  description: Manually mark a daily task as completed
-  fields:
-    task_id:
-      name: Task ID
-      description: The ID of the task to mark as complete
-      required: true
-      example: "temp_20260207"
-      selector:
-        text:
-
 submit_task_feedback:
   name: Submit Task Feedback
   description: Provide feedback on task difficulty
   fields:
-    task_id:
-      name: Task ID
-      description: The ID of the task to provide feedback for
+    task_index:
+      name: Task Index
+      description: The index of the task (0 = first task, 1 = second, 2 = third)
       required: true
-      example: "temp_20260207"
+      example: 0
       selector:
-        text:
+        number:
+          min: 0
+          max: 2
+          mode: box
     feedback:
       name: Feedback
       description: Your feedback on the task difficulty
