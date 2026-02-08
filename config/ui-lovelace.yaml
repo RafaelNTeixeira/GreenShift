@@ -285,229 +285,275 @@ views:
                   content: |
                     # 📅 Daily Energy Challenges
                     {% set verified = state_attr('sensor.daily_tasks', 'verified_count') | default(0) %}
-                    {% set total = state_attr('sensor.daily_tasks', 'total_count') | default(3) %}
+                    {% set total = state_attr('sensor.daily_tasks', 'total_count') | default(0) %}
+                    {% if total > 0 %}
                     **{{ verified }}/{{ total }}** tasks verified today
+                    {% else %}
+                    No tasks available for today.
+                    {% endif %}
 
-                # Task 1 Card
-                - type: horizontal-stack
-                  cards:
-                    - type: markdown
-                      content: |
-                        {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
-                        {% if tasks and tasks | length > 0 %}
-                        {% set t = tasks[0] %}
-                        
-                        ### {{ t.status_emoji }} Task 1: {{ t.title }}
-                        
-                        {{ t.description }}
-                        
-                        **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
-                        **Difficulty:** {{ t.difficulty_display }}  
-                        {% if t.area_name %}**Area:** {{ t.area_name }}{% endif %}
-                        
-                        {% if t.verified %}
-                        ✅ **VERIFIED!** You achieved the target!
-                        {% else %}
-                        🎯 **Active** - Complete this today!
-                        {% endif %}
-                        {% endif %}
+                # Task 1 Card - Only show if at least 1 task exists
+                - type: conditional
+                  conditions:
+                    - condition: numeric_state
+                      entity: sensor.daily_tasks
+                      attribute: total_count
+                      above: 0
+                  card:
+                    type: vertical-stack
+                    cards:
+                      - type: horizontal-stack
+                        cards:
+                          - type: markdown
+                            content: |
+                              {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                              {% if tasks and tasks | length > 0 %}
+                              {% set t = tasks[0] %}
+                              
+                              ### {{ t.status_emoji }} Task 1: {{ t.title }}
+                              
+                              {{ t.description }}
+                              
+                              **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
+                              **Difficulty:** {{ t.difficulty_display }}  
+                              {% if t.area_name %}**Area:** {{ t.area_name }}{% endif %}
+                              
+                              {% if t.verified %}
+                              ✅ **VERIFIED!** You achieved the target!
+                              {% else %}
+                              🎯 **Active** - Complete this today!
+                              {% endif %}
+                              {% endif %}
 
-                - type: horizontal-stack
-                  cards:
-                    - type: button
-                      name: Too Easy
-                      icon: mdi:emoticon-happy-outline
-                      icon_height: 30px
-                      tap_action:
-                        action: call-service
-                        service: green_shift.submit_task_feedback
-                        data:
-                          task_index: 0
-                          feedback: too_easy
-                      entity: sensor.daily_tasks
-                      show_state: false
-                    
-                    - type: button
-                      name: Just Right
-                      icon: mdi:emoticon-neutral-outline
-                      icon_height: 30px
-                      tap_action:
-                        action: call-service
-                        service: green_shift.submit_task_feedback
-                        data:
-                          task_index: 0
-                          feedback: just_right
-                      entity: sensor.daily_tasks
-                      show_state: false
-                    
-                    - type: button
-                      name: Too Hard
-                      icon: mdi:emoticon-sad-outline
-                      icon_height: 30px
-                      tap_action:
-                        action: call-service
-                        service: green_shift.submit_task_feedback
-                        data:
-                          task_index: 0
-                          feedback: too_hard
-                      entity: sensor.daily_tasks
-                      show_state: false
+                      - type: horizontal-stack
+                        cards:
+                          - type: button
+                            name: Too Easy
+                            icon: mdi:emoticon-happy-outline
+                            icon_height: 30px
+                            tap_action:
+                              action: call-service
+                              service: green_shift.submit_task_feedback
+                              data:
+                                task_index: 0
+                                feedback: too_easy
+                            entity: sensor.daily_tasks
+                            show_state: false
+                          
+                          - type: button
+                            name: Just Right
+                            icon: mdi:emoticon-neutral-outline
+                            icon_height: 30px
+                            tap_action:
+                              action: call-service
+                              service: green_shift.submit_task_feedback
+                              data:
+                                task_index: 0
+                                feedback: just_right
+                            entity: sensor.daily_tasks
+                            show_state: false
+                          
+                          - type: button
+                            name: Too Hard
+                            icon: mdi:emoticon-sad-outline
+                            icon_height: 30px
+                            tap_action:
+                              action: call-service
+                              service: green_shift.submit_task_feedback
+                              data:
+                                task_index: 0
+                                feedback: too_hard
+                            entity: sensor.daily_tasks
+                            show_state: false
 
-                # Task 2 Card
-                - type: horizontal-stack
-                  cards:
-                    - type: markdown
-                      content: |
-                        {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
-                        {% if tasks and tasks | length > 1 %}
-                        {% set t = tasks[1] %}
-                        
-                        ---
-                        
-                        ### {{ t.status_emoji }} Task 2: {{ t.title }}
-                        
-                        {{ t.description }}
-                        
-                        **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
-                        **Difficulty:** {{ t.difficulty_display }}  
-                        {% if t.area_name %}**Area:** {{ t.area_name }}{% endif %}
-                        
-                        {% if t.verified %}
-                        ✅ **VERIFIED!** You achieved the target!
-                        {% else %}
-                        🎯 **Active** - Complete this today!
-                        {% endif %}
-                        {% endif %}
+                # Task 2 Card - Only show if at least 2 tasks exist
+                - type: conditional
+                  conditions:
+                    - condition: numeric_state
+                      entity: sensor.daily_tasks
+                      attribute: total_count
+                      above: 1
+                  card:
+                    type: vertical-stack
+                    cards:
+                      - type: horizontal-stack
+                        cards:
+                          - type: markdown
+                            content: |
+                              {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                              {% if tasks and tasks | length > 1 %}
+                              {% set t = tasks[1] %}
 
-                - type: horizontal-stack
-                  cards:
-                    - type: button
-                      name: Too Easy
-                      icon: mdi:emoticon-happy-outline
-                      icon_height: 30px
-                      tap_action:
-                        action: call-service
-                        service: green_shift.submit_task_feedback
-                        data:
-                          task_index: 1
-                          feedback: too_easy
-                      entity: sensor.daily_tasks
-                      show_state: false
-                    
-                    - type: button
-                      name: Just Right
-                      icon: mdi:emoticon-neutral-outline
-                      icon_height: 30px
-                      tap_action:
-                        action: call-service
-                        service: green_shift.submit_task_feedback
-                        data:
-                          task_index: 1
-                          feedback: just_right
-                      entity: sensor.daily_tasks
-                      show_state: false
-                    
-                    - type: button
-                      name: Too Hard
-                      icon: mdi:emoticon-sad-outline
-                      icon_height: 30px
-                      tap_action:
-                        action: call-service
-                        service: green_shift.submit_task_feedback
-                        data:
-                          task_index: 1
-                          feedback: too_hard
-                      entity: sensor.daily_tasks
-                      show_state: false
+                              ---
 
-                # Task 3 Card
-                - type: horizontal-stack
-                  cards:
-                    - type: markdown
-                      content: |
-                        {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
-                        {% if tasks and tasks | length > 2 %}
-                        {% set t = tasks[2] %}
-                        
-                        ---
-                        
-                        ### {{ t.status_emoji }} Task 3: {{ t.title }}
-                        
-                        {{ t.description }}
-                        
-                        **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
-                        **Difficulty:** {{ t.difficulty_display }}  
-                        {% if t.area_name %}**Area:** {{ t.area_name }}{% endif %}
-                        
-                        {% if t.verified %}
-                        ✅ **VERIFIED!** You achieved the target!
-                        {% else %}
-                        🎯 **Active** - Complete this today!
-                        {% endif %}
-                        {% endif %}
+                              ### {{ t.status_emoji }} Task 2: {{ t.title }}
+                              
+                              {{ t.description }}
+                              
+                              **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
+                              **Difficulty:** {{ t.difficulty_display }}  
+                              {% if t.area_name %}**Area:** {{ t.area_name }}{% endif %}
+                              
+                              {% if t.verified %}
+                              ✅ **VERIFIED!** You achieved the target!
+                              {% else %}
+                              🎯 **Active** - Complete this today!
+                              {% endif %}
+                              {% endif %}
 
-                - type: horizontal-stack
-                  cards:
-                    - type: button
-                      name: Too Easy
-                      icon: mdi:emoticon-happy-outline
-                      icon_height: 30px
-                      tap_action:
-                        action: call-service
-                        service: green_shift.submit_task_feedback
-                        data:
-                          task_index: 2
-                          feedback: too_easy
-                      entity: sensor.daily_tasks
-                      show_state: false
-                    
-                    - type: button
-                      name: Just Right
-                      icon: mdi:emoticon-neutral-outline
-                      icon_height: 30px
-                      tap_action:
-                        action: call-service
-                        service: green_shift.submit_task_feedback
-                        data:
-                          task_index: 2
-                          feedback: just_right
-                      entity: sensor.daily_tasks
-                      show_state: false
-                    
-                    - type: button
-                      name: Too Hard
-                      icon: mdi:emoticon-sad-outline
-                      icon_height: 30px
-                      tap_action:
-                        action: call-service
-                        service: green_shift.submit_task_feedback
-                        data:
-                          task_index: 2
-                          feedback: too_hard
-                      entity: sensor.daily_tasks
-                      show_state: false
+                      - type: horizontal-stack
+                        cards:
+                          - type: button
+                            name: Too Easy
+                            icon: mdi:emoticon-happy-outline
+                            icon_height: 30px
+                            tap_action:
+                              action: call-service
+                              service: green_shift.submit_task_feedback
+                              data:
+                                task_index: 1
+                                feedback: too_easy
+                            entity: sensor.daily_tasks
+                            show_state: false
+                          
+                          - type: button
+                            name: Just Right
+                            icon: mdi:emoticon-neutral-outline
+                            icon_height: 30px
+                            tap_action:
+                              action: call-service
+                              service: green_shift.submit_task_feedback
+                              data:
+                                task_index: 1
+                                feedback: just_right
+                            entity: sensor.daily_tasks
+                            show_state: false
+                          
+                          - type: button
+                            name: Too Hard
+                            icon: mdi:emoticon-sad-outline
+                            icon_height: 30px
+                            tap_action:
+                              action: call-service
+                              service: green_shift.submit_task_feedback
+                              data:
+                                task_index: 1
+                                feedback: too_hard
+                            entity: sensor.daily_tasks
+                            show_state: false
 
-                - type: button
-                  name: "Verify All Tasks"
-                  icon: mdi:check-circle
-                  icon_height: 20px
-                  tap_action:
-                    action: call-service
-                    service: green_shift.verify_tasks
-                  show_state: false
+                # Task 3 Card - Only show if 3 tasks exist
+                - type: conditional
+                  conditions:
+                    - condition: numeric_state
+                      entity: sensor.daily_tasks
+                      attribute: total_count
+                      above: 2
+                  card:
+                    type: vertical-stack
+                    cards:
+                      - type: horizontal-stack
+                        cards:
+                          - type: markdown
+                            content: |
+                              {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                              {% if tasks and tasks | length > 2 %}
+                              {% set t = tasks[2] %}
 
-                # Summary
-                - type: markdown
-                  content: |
-                    ---
-                    ### 💡 How Feedback Works
-                    
-                    Rate each task's difficulty to help the system adjust future challenges:
-                    - **😊 Too Easy** → Next time will be harder
-                    - **😐 Just Right** → Difficulty stays the same
-                    - **😰 Too Hard** → Next time will be easier
-                    
-                    Click on the "Verify All Tasks" button to see which ones you achieved today!
+                              ---
+
+                              ### {{ t.status_emoji }} Task 3: {{ t.title }}
+                              
+                              {{ t.description }}
+                              
+                              **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
+                              **Difficulty:** {{ t.difficulty_display }}  
+                              {% if t.area_name %}**Area:** {{ t.area_name }}{% endif %}
+                              
+                              {% if t.verified %}
+                              ✅ **VERIFIED!** You achieved the target!
+                              {% else %}
+                              🎯 **Active** - Complete this today!
+                              {% endif %}
+                              {% endif %}
+
+                      - type: horizontal-stack
+                        cards:
+                          - type: button
+                            name: Too Easy
+                            icon: mdi:emoticon-happy-outline
+                            icon_height: 30px
+                            tap_action:
+                              action: call-service
+                              service: green_shift.submit_task_feedback
+                              data:
+                                task_index: 2
+                                feedback: too_easy
+                            entity: sensor.daily_tasks
+                            show_state: false
+                          
+                          - type: button
+                            name: Just Right
+                            icon: mdi:emoticon-neutral-outline
+                            icon_height: 30px
+                            tap_action:
+                              action: call-service
+                              service: green_shift.submit_task_feedback
+                              data:
+                                task_index: 2
+                                feedback: just_right
+                            entity: sensor.daily_tasks
+                            show_state: false
+                          
+                          - type: button
+                            name: Too Hard
+                            icon: mdi:emoticon-sad-outline
+                            icon_height: 30px
+                            tap_action:
+                              action: call-service
+                              service: green_shift.submit_task_feedback
+                              data:
+                                task_index: 2
+                                feedback: too_hard
+                            entity: sensor.daily_tasks
+                            show_state: false
+
+                # Verify All Tasks Button - Only show if tasks exist
+                - type: conditional
+                  conditions:
+                    - condition: numeric_state
+                      entity: sensor.daily_tasks
+                      attribute: total_count
+                      above: 0
+                  card:
+                    type: button
+                    name: "Verify All Tasks"
+                    icon: mdi:check-circle
+                    icon_height: 20px
+                    tap_action:
+                      action: call-service
+                      service: green_shift.verify_tasks
+                    show_state: false
+
+                # Summary - Only show if tasks exist
+                - type: conditional
+                  conditions:
+                    - condition: numeric_state
+                      entity: sensor.daily_tasks
+                      attribute: total_count
+                      above: 0
+                  card:
+                    type: markdown
+                    content: |
+                      ---
+                      ### 💡 How Feedback Works
+                      
+                      Rate each task's difficulty to help the system adjust future challenges:
+                      - **😊 Too Easy** → Next time will be harder
+                      - **😐 Just Right** → Difficulty stays the same
+                      - **😰 Too Hard** → Next time will be easier
+                      
+                      Tasks are verified every 15 minutes, but you can also manually trigger verification by clicking on the "Verify All Tasks" button to see which ones you achieved today!
 
   # ========== TAB 4: COLLABORATIVE GOAL ==========
   - title: Collaborative Goal
