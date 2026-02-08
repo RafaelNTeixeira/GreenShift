@@ -658,8 +658,4 @@ class DailyTasksSensor(GreenShiftAISensor):
             "completed_count": completed_count,
             "verified_count": verified_count,
             "total_count": len(self._tasks),
-            # Add individual task IDs for direct access in UI
-            "task_0_id": tasks_display[0]['task_id'] if len(tasks_display) > 0 else None,
-            "task_1_id": tasks_display[1]['task_id'] if len(tasks_display) > 1 else None,
-            "task_2_id": tasks_display[2]['task_id'] if len(tasks_display) > 2 else None,
         }
