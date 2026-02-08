@@ -58,9 +58,9 @@ def get_environmental_impact(kwh_saved: float) -> dict:
 
     return {
         "co2_kg": round(co2_saved, 2),
-        "trees": round(trees_equivalent, 2),
+        "trees": round(trees_equivalent, 3),
         "flights": round(flights_equivalent, 3),
-        "km": round(km_equivalent, 1)
+        "km": round(km_equivalent, 2)
     }
         
 def get_entity_area(hass: HomeAssistant, entity_id: str) -> Optional[str]:

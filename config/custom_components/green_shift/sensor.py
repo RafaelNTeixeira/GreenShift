@@ -35,7 +35,6 @@ async def async_setup_entry(
         CO2SavedSensor(agent, collector),
         TasksCompletedSensor(storage),
         WeeklyChallengeSensor(agent),
-        CollaborativeGoalSensor(agent, collector),
         BehaviourIndexSensor(agent),
         FatigueIndexSensor(agent),
         DailyTasksSensor(storage),
@@ -461,7 +460,6 @@ class WeeklyChallengeSensor(GreenShiftAISensor):
             return 15.0
     
     async def _async_update_state(self):
-        # We need to await this because it reads from the DB
         current_target = self._get_target_percentage()
 
         challenge = await self._agent.get_weekly_challenge_status(target_percentage=current_target)
@@ -474,59 +472,8 @@ class WeeklyChallengeSensor(GreenShiftAISensor):
             "target_avg_w": challenge.get("target_avg", 0),
             "baseline_w": challenge.get("baseline", 0),
             "goal": current_target,
-        }
-
-
-class CollaborativeGoalSensor(GreenShiftAISensor):
-    """Sensor with the collaborative goal progress (% of limit)."""
-    
-    def __init__(self, agent, collector):
-        self._agent = agent
-        self._collector = collector
-        self._attr_name = "Collaborative Goal Progress"
-        self._attr_unique_id = f"{DOMAIN}_collab_goal"
-        self._attr_unit_of_measurement = "%"
-        self._attr_icon = "mdi:account-group"
-    
-    def _get_target_percentage(self):
-        """Get the current target percentage from input_number."""
-        target_state = self.hass.states.get("input_number.energy_saving_target")
-        try:
-            return float(target_state.state) if target_state else 15.0
-        except (ValueError, TypeError):
-            return 15.0
-    
-    @property
-    def state(self):
-        # Simulation: consumption of group vs. limit (85% of baseline)
-        current = self._collector.current_total_power
-        if current == 0:
-            return 0
-        
-        target_pct = self._get_target_percentage()
-
-        baseline = self._agent.baseline_consumption_week or self._agent.baseline_consumption
-
-        # Calculate limit based on target percentage (e.g., 20% reduction = 0.80 multiplier)
-        reduction_multiplier = 1.0 - (target_pct / 100.0)
-        limit = baseline * reduction_multiplier
-        
-        if limit > 0:
-            progress = (current / limit) * 100
-            return round(min(progress, 100), 1)
-        return 0
-    
-    @property
-    def extra_state_attributes(self):
-        target_pct = self._get_target_percentage()
-        baseline = self._agent.baseline_consumption_week or self._agent.baseline_consumption
-        reduction_multiplier = 1.0 - (target_pct / 100.0)
-        limit = baseline * reduction_multiplier
-
-        return {
-            "status": "below_target" if self.state < 100 else "above_target",
-            "limit_watts": round(limit, 2),
-            "target_percentage": target_pct,
+            "week_start": challenge.get("week_start", None),
+            "days_in_week": challenge.get("days_in_week", 0),
         }
 
 

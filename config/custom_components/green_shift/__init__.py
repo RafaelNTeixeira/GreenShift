@@ -100,9 +100,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if days_running >= BASELINE_DAYS and agent.phase == PHASE_BASELINE:
             agent.phase = PHASE_ACTIVE
             _LOGGER.info("System entered active phase after %d days with baseline: %.2f kW", days_running, agent.baseline_consumption)
-            
-            # Freeze baseline_consumption and set fixed baseline for active phase
-            agent.baseline_consumption_week = agent.baseline_consumption
 
             # Trigger the new notification function
             await trigger_phase_transition_notification(hass, agent, collector)

@@ -586,21 +586,20 @@ views:
                     Target: Reduce consumption to **{{ 100 - state_attr('sensor.weekly_challenge', 'goal') | int }}%** of your baseline.
                     
                     *(Goal: {{ state_attr('sensor.weekly_challenge', 'goal') }}% Reduction)*
+                    
+                    **📊 How to read the gauge:**
+                    - **Under 100%** = ✅ You're meeting the challenge!
+                    - **Over 100%** = ❌ Exceeding the target
 
                 - type: gauge
                   entity: sensor.weekly_challenge
-                  name: Consumption vs Baseline (%)
+                  name: Consumption vs Target (%)
                   min: 0
-                  max: 100
+                  max: 150
                   severity:
                     green: 0
-                    yellow: 75
-                    red: 100
-                    
-                - type: entities
-                  title: Challenge Details
-                  entities:
-                    - entity: sensor.weekly_challenge
+                    yellow: 100
+                    red: 120
                     
                 - type: markdown
                   content: |
@@ -608,6 +607,8 @@ views:
                     **Target Average**: {{ state_attr('sensor.weekly_challenge', 'target_avg_w') }} kW
                     **Baseline**: {{ state_attr('sensor.weekly_challenge', 'baseline_w') }} kW
                     **Reduction Goal**: {{ state_attr('sensor.weekly_challenge', 'goal') }} %
+                    **Start Date**: {{ state_attr('sensor.weekly_challenge', 'week_start') }}
+                    **Day Count**: {{ state_attr('sensor.weekly_challenge', 'days_in_week') }}
 
   # ========== TAB 5: USER PROFILE ==========
   - title: Profile

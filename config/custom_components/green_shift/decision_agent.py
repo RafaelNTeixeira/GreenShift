@@ -48,9 +48,7 @@ class DecisionAgent:
         # AI state
         self.state_vector = None
         self.action_mask = None
-        self.baseline_consumption = 0.0 
-        self.baseline_consumption_week = None  # Fixed baseline for challenges (set after each week)
-        self.last_baseline_update_date = None  # Track weekly baseline updates
+        self.baseline_consumption = 0.0
         
         # Engagement history
         self.engagement_history = deque(maxlen=100)
@@ -68,7 +66,8 @@ class DecisionAgent:
         self.fatigue_index = 0.0 
         
         # Challenges
-        self.target_percentage = 15 # 15% reduction goal # TODO: Needs to be updated based on percentage reduction target picked by the user
+        self.target_percentage = 15 # Default 15% reduction goal
+        self.current_week_start_date = None  # Track when the current weekly challenge started 
 
     async def setup(self):
         """Initialize agent and load persistent state."""
@@ -99,8 +98,11 @@ class DecisionAgent:
             self.baseline_consumption = state["baseline_consumption"]
             _LOGGER.info("Loaded baseline consumption: %.2f kW", self.baseline_consumption)
         
-        if "baseline_consumption_week" in state:
-            self.baseline_consumption_week = state["baseline_consumption_week"]
+        if "current_week_start_date" in state and state["current_week_start_date"]:
+            try:
+                self.current_week_start_date = datetime.fromisoformat(state["current_week_start_date"]).date()
+            except (ValueError, AttributeError):
+                self.current_week_start_date = None
         
         # Load indices
         if "anomaly_index" in state:
@@ -140,7 +142,7 @@ class DecisionAgent:
             "start_date": safe_start_date,
             "phase": self.phase,
             "baseline_consumption": float(self.baseline_consumption),
-            "baseline_consumption_week": float(self.baseline_consumption_week) if self.baseline_consumption_week else None,
+            "current_week_start_date": self.current_week_start_date.isoformat() if self.current_week_start_date else None,
             "anomaly_index": float(self.anomaly_index),
             "behaviour_index": float(self.behaviour_index),
             "fatigue_index": float(self.fatigue_index),
@@ -179,7 +181,6 @@ class DecisionAgent:
         
         # Decide action A_t if in active phase
         if self.phase == PHASE_ACTIVE:
-            await self._update_weekly_baseline()
             await self._decide_action()
 
         self._process_count += 1
@@ -424,77 +425,74 @@ class DecisionAgent:
 
         return (power, anomaly, fatigue)
     
-    async def _update_weekly_baseline(self):
-        """Updates the fixed baseline once per week."""
-        today = datetime.now().date()
-        
-        # Only update once per week (Monday)
-        if self.last_baseline_update_date is None or \
-           (today - self.last_baseline_update_date).days >= 7:
-            self.last_baseline_update_date = today
-            
-            power_history_data = await self.data_collector.get_power_history(days=7) # Last week
-            power_values = [power for timestamp, power in power_history_data] 
-
-            if len(power_values) > 0:
-                self.baseline_consumption_week = np.mean(power_values)
-                _LOGGER.info("Weekly baseline updated: %.2f kW", self.baseline_consumption_week)
-    
     async def get_weekly_challenge_status(self, target_percentage: float = 15.0) -> dict:
         """
         Calculates weekly challenge status (consumption reduction goal).
-        Reads consumption history from DataCollector.
+        Tracks energy from the start of the current week (Monday) and compares to baseline.
+        Progress updates dynamically as new data comes in during the week.
         """
-        # Use fixed weekly baseline for consistent comparison
-        if self.baseline_consumption_week is None or self.baseline_consumption_week == 0:
+        # Use fixed baseline from baseline phase for consistent comparison
+        if self.baseline_consumption is None or self.baseline_consumption == 0:
             return {"status": "pending", "current_avg": 0, "target_avg": 0, "progress": 0}
         
-        power_history_data = await self.data_collector.get_power_history(days=7) # Last week
+        # Initialize or reset current_week_start_date
+        today = datetime.now().date()
+        days_since_monday = today.weekday()  # 0 = Monday, 6 = Sunday
+        current_week_monday = today - timedelta(days=days_since_monday)
+        
+        # Check if we need to initialize or if we've moved to a new week
+        if self.current_week_start_date is None or self.current_week_start_date != current_week_monday:
+            self.current_week_start_date = current_week_monday
+            _LOGGER.info("Weekly challenge start date set to: %s", self.current_week_start_date)
+            # Save immediately when week date changes
+            if self.storage:
+                await self._save_persistent_state()
+        
+        # Calculate days from start of week to now
+        days_in_current_week = (today - self.current_week_start_date).days + 1  # +1 to include today
+        
+        # Get power history from the start of the current week
+        power_history_data = await self.data_collector.get_power_history(days=days_in_current_week)
         power_values = [power for timestamp, power in power_history_data]
         
         # Calculate readings per day based on data collection interval
         day_in_seconds = 86400
         readings_per_day = int(day_in_seconds / UPDATE_INTERVAL_SECONDS)
         
-        # Need at least 1 day of data
-        if len(power_values) < readings_per_day:
+        # Need at least 4 hours of data from this week
+        min_readings = int(readings_per_day / 6)  # 4 hours worth
+        if len(power_values) < min_readings:
             return {"status": "pending", "current_avg": 0, "target_avg": 0, "progress": 0}
         
-        # Get last 7 days of consumption
+        # Get current week's average (updates dynamically as the week progresses)
         current_avg = np.mean(power_values) if power_values else 0
 
+        self.target_percentage = target_percentage
+
+        # Convert percentage (e.g., 15) to multiplier (e.g., 0.85)
         reduction_multiplier = 1.0 - (target_percentage / 100.0)
         
-        target_state = self.hass.states.get("input_number.energy_saving_target")
-        try:
-            user_target_pct = float(target_state.state) if target_state else 15.0
-        except (ValueError, TypeError):
-            user_target_pct = 15.0
-
-        _LOGGER.debug("Updated target to: %d", target_state)
-
-        self.target_percentage = user_target_pct
-
-        # Convert percentage (e.g., 20) to multiplier (e.g., 0.80)
-        reduction_multiplier = 1.0 - (user_target_pct / 100.0)
+        # Calculate target average based on fixed baseline
+        target_avg = self.baseline_consumption * reduction_multiplier
         
-        # Calculate target average
-        target_avg = self.baseline_consumption_week * reduction_multiplier
-        
-        # Calculate how close to target based on fixed baseline
-        if self.baseline_consumption_week > 0:
-            progress = (current_avg / self.baseline_consumption_week) * 100
+        # Calculate progress as percentage of target consumption
+        # Under 100% = SUCCESS (consuming less than target)
+        # Over 100% = FAILURE (consuming more than target)
+        if target_avg > 0:
+            progress = (current_avg / target_avg) * 100
         else:
             progress = 0
         
-        status = "completed" if progress <= (100 - user_target_pct) else "in_progress"
+        status = "completed" if progress < 100 else "in_progress"
         
         return {
             "status": status,
             "current_avg": round(current_avg, 2),
             "target_avg": round(target_avg, 2),
             "progress": round(progress, 1),
-            "baseline": round(self.baseline_consumption_week, 2),
-            "goal_percentage": user_target_pct
+            "baseline": round(self.baseline_consumption, 2),
+            "goal_percentage": target_percentage,
+            "week_start": self.current_week_start_date.isoformat(),
+            "days_in_week": days_in_current_week
         }
     
