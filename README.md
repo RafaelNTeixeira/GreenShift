@@ -7,10 +7,11 @@
 ### Key Features
 
 - 🤖 **AI-Powered Decisions**: Uses a Markov Decision Process (MDP) with reinforcement learning
-- 🔍 **Auto-Discovery**: Automatically detects all energy sensors in your Home Assistant setup
+- 🎮 **Gamification:** Daily tasks and a weekly challenge with adaptive difficulty to keep you entertained
+- 🔍 **Auto-Discovery**: Automatically detects all sensors and areas in your Home Assistant setup
 - 📊 **Real-Time Monitoring**: Tracks power consumption, temperature, humidity and occupancy
 - 💡 **Smart Recommendations**: Suggests contextual actions based on consumption anomalies
-- 📈 **Impact Tracking**: Shows savings in EUR and CO2 avoided
+- 📈 **Impact Tracking**: Shows savings in CO2 avoided and your picked currency
 - 😊 **Feedback Integration**: Learns from your reactions to improve future recommendations
 - ⚙️ **Zero Configuration**: Helpers and dashboard created automatically
 - 🎯 **Phased Approach**: 14-day learning phase, then active engagement
@@ -164,58 +165,7 @@ Green Shift creates the following sensors:
 | `input_number.electricity_price` | Number | Local electricity cost |
 | `input_select.currency` | Select | Display currency (EUR/USD/GBP) |
 | `input_select.task_difficulty` | Select | Rate task difficulty |
-| `input_boolean.enable_notifications` | Boolean | Toggle recommendations |
 | `input_boolean.task_1/2/3` | Boolean | Daily task completion |
-
----
-
-## 💬 User Feedback Integration
-
-### Through Notifications
-
-When you receive a recommendation from Green Shift, you can provide feedback:
-
-1. **Positive** ✅: You followed the tip and found it helpful
-2. **Neutral** ⚪: You saw it but didn't act
-3. **Negative** ❌: You found it irrelevant or intrusive
-
-The RL agent uses this feedback to update its **reward function**:
-
-$$R_t = \alpha (E_{baseline} - E_{actual}) + \beta \bar{I}_{engagement} - \delta P_{fatigue}$$
-
-Where:
-- **α** = 1.0 (energy savings weight)
-- **β** = 0.5 (engagement weight)
-- **δ** = 0.3 (fatigue penalty weight)
-
-### Task Difficulty Rating
-
-In the **Challenges** tab, rate each task:
-
-- **Too Easy** ↗️: System increases challenge complexity
-- **Just Right** ➡️: System maintains current difficulty
-- **Too Hard** ↘️: System simplifies future suggestions
-
-This feedback is stored and used to personalize future recommendations.
-
----
-
-## ⚙️ Configuration
-
-### Settings Tab
-
-Configure these parameters:
-
-- **Savings Target (%)**: Your desired energy reduction (default: 15%)
-- **Electricity Price (€/kWh)**: Local electricity cost for savings calculation (default: 0.25)
-- **Currency**: Display currency for savings (EUR/USD/GBP)
-- **Enable Notifications**: Toggle recommendations on/off
-
-### Notification Limits
-
-- **Max notifications per day**: 3 (prevents user fatigue)
-- **Baseline days**: 14 (calibration period before recommendations)
-- **Discount factor (γ)**: 0.95 (RL future reward weighting)
 
 ---
 
@@ -227,16 +177,19 @@ Green Shift implements a **Markov Decision Process** (MDP):
 
 $$\langle S, A, M, P, R, \gamma \rangle$$
 
-**S - State Vector** (9 components):
-- Total power consumption + existence flag
-- Individual appliance power + existence flag
-- Temperature + existence flag
-- Humidity + existence flag
-- Illuminance + existence flag
-- Occupancy + existence flag
-- Anomaly index (0-1)
-- behaviour index (0-1)
-- Fatigue index (0-1)
+**S - State Vector** (12 components):
+1. Global power consumption + existence flag
+2. Top appliance power + existence flag  
+3. Temperature + existence flag
+4. Humidity + existence flag
+5. Illuminance + existence flag
+6. Occupancy + existence flag
+7. Anomaly index (0-1)
+8. Behaviour index (0-1)
+9. Fatigue index (0-1)
+10. Area anomaly count (spatial awareness)
+11. Time of day (normalized 0-1)
+12. Day of week (normalized 0-1)
 
 **A - Action Space** (5 discrete actions):
 ```python
@@ -259,19 +212,107 @@ ACTIONS = {
 **R - Reward Function**:
 $$R_t = \alpha \cdot \Delta E - \beta \cdot I_{fatigue} + \gamma \cdot I_{engagement}$$
 
-### Zero-Padding with Existence Flags
+Where:
+- **α = 1.0**: Energy savings weight
+- **β = 0.5**: Engagement weight (user feedback)
+- **δ = 0.3**: Fatigue penalty weight
 
-Enables robustness to missing sensors:
+### Q-Learning Implementation
+
+**Update Rule:**
+$$Q(s,a) \leftarrow Q(s,a) + \alpha [R + \gamma \max Q(s',a') - Q(s,a)]$$
+
+**Parameters:**
+- Learning rate (α): 0.1
+- Discount factor (γ): 0.95
+- Exploration rate (ε): 0.2
+
+**Epsilon-Greedy Policy:**
+- 20% exploration (random available action)
+- 80% exploitation (best known action from Q-table)
+
+
+### Area-Based Learning
+
+During baseline phase, the system calculates **area-specific baselines**:
 
 ```python
-# If sensor available:
-state.extend([sensor_value, 1.0])
-
-# If sensor missing:
-state.extend([0.0, 0.0])
+area_baselines = {
+    "Living Room": {
+        "temperature": 21.5,  # °C
+        "power": 120.0,       # W
+        "humidity": 45.0      # %
+    },
+    "Bedroom": {
+        "temperature": 19.0,
+        "power": 40.0,
+        "humidity": 50.0
+    }
+}
 ```
 
-This allows the agent to work with heterogeneous smart home setups.
+During active phase, **area anomalies** are detected:
+
+```python
+area_anomalies = {
+    "Living Room": {
+        "temperature": 0.8,  # High anomaly (0-1)
+        "power": 0.2         # Low anomaly
+    }
+}
+```
+
+## 💬 User Feedback Integration
+
+### Through Actionable Notifications
+
+When you receive a recommendation from Green Shift:
+
+1. **Positive** ✅ "Helpful": 
+   - Engagement score: +1.0
+   - Behaviour index increases
+   - Q-table: Positive reward for (state, action) pair
+   
+2. **Negative** ✗ "Not useful":
+   - Engagement score: -0.5
+   - Behaviour index decreases  
+   - Fatigue index increases
+   - Q-table: Negative reward for (state, action) pair
+
+**Feedback Processing:**
+- Exponentially weighted moving average (recent feedback weighted more)
+- Updates behaviour index: `I_behaviour ∈ [0, 1]`
+- Influences future action selection via Q-learning
+- Prevents notification fatigue via adaptive fatigue index
+
+### Task Difficulty Rating
+
+In the **Challenges** tab, rate each task:
+
+- **Too Easy** ↗️: System increases challenge complexity
+- **Just Right** ➡️: System maintains current difficulty
+- **Too Hard** ↘️: System simplifies future suggestions
+
+This feedback is stored and analyzed to personalize future task generation.
+
+---
+
+## ⚙️ Configuration
+
+### Settings Tab
+
+Configure these parameters:
+
+- **Savings Target (%)**: Your desired energy reduction (default: 15%)
+- **Electricity Price (€/kWh)**: Local electricity cost for savings calculation (default: 0.25)
+- **Currency**: Display currency for savings (EUR/USD/GBP)
+
+### Notification Limits
+
+- **Max notifications per day**: 3 (prevents user fatigue)
+- **Min time between notifications**: 1 hour
+- **Fatigue threshold**: 0.7 (notifications pause above this)
+- **Baseline days**: 14 (calibration period before recommendations)
 
 ---
 
