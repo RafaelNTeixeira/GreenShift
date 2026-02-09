@@ -153,7 +153,7 @@ class DataCollector:
                         for eid in area_sensors
                     )
                     self.area_data[area]["power"] = round(area_total, 2)
-                    _LOGGER.debug("Area '%s' power: %.2f W", area, self.area_data[area]["power"])
+                    # _LOGGER.debug("Area '%s' power: %.2f W", area, self.area_data[area]["power"])
 
                 self._recalculate_total_power()
 
@@ -184,7 +184,7 @@ class DataCollector:
             total_power += val
             
         self.current_total_power = total_power
-        _LOGGER.debug("Power recalculated by summing: %.2f W", total_power)
+        # _LOGGER.debug("Power recalculated by summing: %.2f W", total_power)
 
     async def _setup_energy_monitoring(self):
         """Setup instant monitoring for energy sensors.""" 
@@ -209,7 +209,7 @@ class DataCollector:
                     return
 
                 self._energy_sensor_cache[entity_id] = value
-                _LOGGER.debug("Updated energy cache for %s: %.3f kWh", entity_id, value)
+                # _LOGGER.debug("Updated energy cache for %s: %.3f kWh", entity_id, value)
 
                 if self._energy_midnight_points.get(entity_id) is None: # Initialize midnight point (since the setup will usually happen after midnight)
                     self._energy_midnight_points[entity_id] = value
@@ -233,7 +233,7 @@ class DataCollector:
                                 area_daily += (current_val - midnight_val)
                     
                     self.area_data[area]["energy"] = round(area_daily, 3)
-                    _LOGGER.debug("Area '%s' daily energy: %.3f kWh", area, self.area_data[area]["energy"])
+                    # _LOGGER.debug("Area '%s' daily energy: %.3f kWh", area, self.area_data[area]["energy"])
 
                 self.get_daily_kwh()
                 
@@ -259,7 +259,7 @@ class DataCollector:
                 else:
                     self.current_daily_energy = current_val - midnight_val
                 
-                _LOGGER.debug("Daily energy from main sensor: %.3f kWh", self.current_daily_energy)
+                # _LOGGER.debug("Daily energy from main sensor: %.3f kWh", self.current_daily_energy)
                 return
 
         # Case 2: Fallback to summing all individual sensors (Original logic)
@@ -276,7 +276,7 @@ class DataCollector:
                 total_kwh += (current_val - midnight_val)
                 
         self.current_daily_energy = total_kwh
-        _LOGGER.debug("Total daily kWh calculated: %.3f kWh", total_kwh)
+        # _LOGGER.debug("Total daily kWh calculated: %.3f kWh", total_kwh)
     
     async def _setup_environment_monitoring(self):
         """Setup instant monitoring for environmental sensors."""
@@ -294,7 +294,7 @@ class DataCollector:
                 try:
                     val = float(new_state.state)
                     self._temperature_sensor_cache[entity_id] = val
-                    _LOGGER.debug("Temperature value: %.2f", val)
+                    # _LOGGER.debug("Temperature value: %.2f", val)
 
                     # Update area-specific data
                     area = get_entity_area(self.hass, entity_id) or "No Area"
@@ -304,7 +304,7 @@ class DataCollector:
                         area_values = [self._temperature_sensor_cache[eid] for eid in area_sensors if eid in self._temperature_sensor_cache]
                         if area_values:
                             self.area_data[area]["temperature"] = round(sum(area_values) / len(area_values), 1)
-                            _LOGGER.debug("Area '%s' temperature: %.1f°C", area, self.area_data[area]["temperature"])
+                            # _LOGGER.debug("Area '%s' temperature: %.1f°C", area, self.area_data[area]["temperature"])
                     
                     # Calculate Average of all valid cache entries
                     if self._temperature_sensor_cache:
@@ -332,7 +332,7 @@ class DataCollector:
                     val = float(new_state.state)
                     self._humidity_sensor_cache[entity_id] = val
 
-                    _LOGGER.debug("Hum value: %.2f", val)
+                    # _LOGGER.debug("Hum value: %.2f", val)
 
                     # Update area-specific data
                     area = get_entity_area(self.hass, entity_id) or "No Area"
@@ -341,7 +341,7 @@ class DataCollector:
                         area_values = [self._humidity_sensor_cache[eid] for eid in area_sensors if eid in self._humidity_sensor_cache]
                         if area_values:
                             self.area_data[area]["humidity"] = round(sum(area_values) / len(area_values), 1)
-                            _LOGGER.debug("Area '%s' humidity: %.1f%%", area, self.area_data[area]["humidity"])
+                            # _LOGGER.debug("Area '%s' humidity: %.1f%%", area, self.area_data[area]["humidity"])
                     
                     if self._humidity_sensor_cache:
                         avg = sum(self._humidity_sensor_cache.values()) / len(self._humidity_sensor_cache)
@@ -368,7 +368,7 @@ class DataCollector:
                     val = float(new_state.state)
                     self._illuminance_sensor_cache[entity_id] = val
 
-                    _LOGGER.debug("Illum value: %.2f", val)
+                    # _LOGGER.debug("Illum value: %.2f", val)
                     
                     # Update area-specific data
                     area = get_entity_area(self.hass, entity_id) or "No Area"
@@ -377,7 +377,7 @@ class DataCollector:
                         area_values = [self._illuminance_sensor_cache[eid] for eid in area_sensors if eid in self._illuminance_sensor_cache]
                         if area_values:
                             self.area_data[area]["illuminance"] = round(sum(area_values) / len(area_values), 1)
-                            _LOGGER.debug("Area '%s' illuminance: %.1f lx", area, self.area_data[area]["illuminance"])
+                            # _LOGGER.debug("Area '%s' illuminance: %.1f lx", area, self.area_data[area]["illuminance"])
                     
                     if self._illuminance_sensor_cache:
                         avg = sum(self._illuminance_sensor_cache.values()) / len(self._illuminance_sensor_cache)
@@ -405,7 +405,7 @@ class DataCollector:
                     is_on = new_state.state.lower() in ["on", "true", "detected"]
                     self._occupancy_sensor_cache[entity_id] = is_on
 
-                    _LOGGER.debug("Occupancy value: %s", is_on)
+                    # _LOGGER.debug("Occupancy value: %s", is_on)
 
                     # Update area-specific data
                     area = get_entity_area(self.hass, entity_id) or "No Area"
@@ -414,7 +414,7 @@ class DataCollector:
                         # Area is occupied if ANY sensor in the area is True
                         area_occupied = any(self._occupancy_sensor_cache.get(eid, False) for eid in area_sensors)
                         self.area_data[area]["occupancy"] = area_occupied
-                        _LOGGER.debug("Area '%s' occupancy: %s", area, area_occupied)
+                        # _LOGGER.debug("Area '%s' occupancy: %s", area, area_occupied)
                     
                     # If ANY sensor in the cache is True, the building is occupied
                     self.current_occupancy = any(self._occupancy_sensor_cache.values())

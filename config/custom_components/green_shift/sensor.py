@@ -465,6 +465,8 @@ class WeeklyChallengeSensor(GreenShiftAISensor):
         challenge = await self._agent.get_weekly_challenge_status(target_percentage=current_target)
         
         self._attr_native_value = challenge.get("progress", 0)
+
+        _LOGGER.debug(f"Weekly Challenge Update: Progress={self._attr_native_value}%, Details={challenge}")
         
         self._attr_extra_state_attributes = {
             "status": challenge.get("status", "pending"),

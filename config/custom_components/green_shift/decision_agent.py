@@ -433,6 +433,7 @@ class DecisionAgent:
         """
         # Use fixed baseline from baseline phase for consistent comparison
         if self.baseline_consumption is None or self.baseline_consumption == 0:
+            _LOGGER.warning("Baseline consumption not set. Cannot calculate weekly challenge status.")
             return {"status": "pending", "current_avg": 0, "target_avg": 0, "progress": 0}
         
         # Initialize or reset current_week_start_date
@@ -453,15 +454,18 @@ class DecisionAgent:
         
         # Get power history from the start of the current week
         power_history_data = await self.data_collector.get_power_history(days=days_in_current_week)
+        _LOGGER.info(f"Retrieved {len(power_history_data)} power readings for week challenge")
         power_values = [power for timestamp, power in power_history_data]
         
         # Calculate readings per day based on data collection interval
         day_in_seconds = 86400
         readings_per_day = int(day_in_seconds / UPDATE_INTERVAL_SECONDS)
         
-        # Need at least 4 hours of data from this week
-        min_readings = int(readings_per_day / 6)  # 4 hours worth
+        # Need at least 1 hour of data from this week
+        min_readings = int(readings_per_day / 24) # 1 hour 
+
         if len(power_values) < min_readings:
+            _LOGGER.warning("Not enough data for weekly challenge progress: %d readings (need at least %d)", len(power_values), min_readings)
             return {"status": "pending", "current_avg": 0, "target_avg": 0, "progress": 0}
         
         # Get current week's average (updates dynamically as the week progresses)
@@ -484,6 +488,11 @@ class DecisionAgent:
             progress = 0
         
         status = "completed" if progress < 100 else "in_progress"
+
+        _LOGGER.info(
+            "Weekly challenge calculation: %d readings, current_avg=%.2f, baseline=%.2f, target_pct=%.1f%%",
+            len(power_values), np.mean(power_values), self.baseline_consumption, target_percentage
+        )
         
         return {
             "status": status,
