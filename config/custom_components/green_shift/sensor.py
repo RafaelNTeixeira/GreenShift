@@ -444,12 +444,8 @@ class TasksCompletedSensor(GreenShiftAISensor):
         return self._completed_count
 
     async def _async_update_state(self):
-        """Fetch completed task count from storage."""
-        tasks = await self._storage.get_today_tasks()
-        if tasks:
-            self._completed_count = sum(1 for t in tasks if t.get('completed') or t.get('verified'))
-        else:
-            self._completed_count = 0
+        """Fetch total completed task count from storage."""
+        self._completed_count = await self._storage.get_total_completed_tasks_count()
 
 class WeeklyChallengeSensor(GreenShiftAISensor):
     """Sensor for the weekly energy reduction challenge."""

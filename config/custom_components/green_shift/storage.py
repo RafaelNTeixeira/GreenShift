@@ -497,6 +497,25 @@ class StorageManager:
         
         return await self.hass.async_add_executor_job(_query)
     
+    async def get_total_completed_tasks_count(self) -> int:
+        """Get the total count of all completed tasks across all time."""
+        def _query():
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM daily_tasks 
+                WHERE completed = 1 OR verified = 1
+            """)
+            
+            count = cursor.fetchone()[0]
+            conn.close()
+            
+            return count
+        
+        return await self.hass.async_add_executor_job(_query)
+    
     async def mark_task_completed(self, task_id: str, completion_value: float = None) -> bool:
         """Mark a task as completed."""
         def _update():

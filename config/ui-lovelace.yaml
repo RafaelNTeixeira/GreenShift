@@ -573,11 +573,11 @@ views:
               content: |
                 ## 🔒 Goal Locked
                 
-                The system is currently learning your household's baseline habits.
+                The system is currently learning your building's baseline habits.
                 
                 **Time Remaining:** {{ state_attr('sensor.research_phase', 'days_remaining') }} days
                 
-                *Once calibration is complete, your weekly household energy challenges will appear here.*
+                *Once calibration is complete, your weekly energy challenges will appear here.*
 
           # --- CASE 2: ACTIVE PHASE (UNLOCKED) ---
           - type: conditional
@@ -633,11 +633,11 @@ views:
                         {% set potential_watts = baseline - target %}
                         {% set potential_eur = (potential_watts * 24 * 7 / 1000 * price) | round(2) %}
                         
-                        If we hit this target, the household saves approximately in a week:
+                        If you hit this target, you could save approximately:
                         
                         # {{ potential_eur }} {{ currency }}
                         
-                        *compared to our standard baseline week.*
+                        *compared to your standard baseline week.*
 
                 # STATS BAR
                 - type: entities
