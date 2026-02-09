@@ -45,7 +45,6 @@ class DecisionAgent:
         self.start_date = datetime.now()
         self._process_count = 0
         self.phase = PHASE_BASELINE 
-        # self.phase = PHASE_ACTIVE # TEMP: For testing purposes, start in active phase
         
         # AI state
         self.state_vector = None

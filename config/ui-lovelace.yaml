@@ -714,15 +714,6 @@ views:
             name: Active Alerts
             icon: mdi:bell-ring
             color: accent
-            
-          - type: entities
-            title: System Status
-            show_header_toggle: false
-            entities:
-              - entity: sensor.behaviour_index
-                name: Engagement Score
-              - entity: sensor.fatigue_index
-                name: Fatigue Level
 
           - type: markdown
             content: |
