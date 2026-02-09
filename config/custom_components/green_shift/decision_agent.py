@@ -454,7 +454,6 @@ class DecisionAgent:
         
         # Get power history from the start of the current week
         power_history_data = await self.data_collector.get_power_history(days=days_in_current_week)
-        _LOGGER.info(f"Retrieved {len(power_history_data)} power readings for week challenge")
         power_values = [power for timestamp, power in power_history_data]
         
         # Calculate readings per day based on data collection interval

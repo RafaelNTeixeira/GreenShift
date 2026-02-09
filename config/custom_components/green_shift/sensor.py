@@ -470,6 +470,7 @@ class WeeklyChallengeSensor(GreenShiftAISensor):
         
         self._attr_extra_state_attributes = {
             "status": challenge.get("status", "pending"),
+            "progress": self._attr_native_value,
             "current_avg_w": challenge.get("current_avg", 0),
             "target_avg_w": challenge.get("target_avg", 0),
             "baseline_w": challenge.get("baseline", 0),

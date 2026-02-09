@@ -11,16 +11,16 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Add a UI input for "Weekly Reduction Target" to replace the hardcoded 0.85 (15%) value currently in the agent
 - [x] Improve Profile interface
 - [x] Improve Settings interface
-- [ ] Improve Gamification interface
- - [ ] Display only number of generated tasks 
+- [x] Improve Gamification interface
+ - [x] Display only number of generated tasks 
 
 ### 🎮 Gamification
 - [x] Improve gamification daily tasks
 - [x] Create a service to check if daily tasks have been completed
 - [x] Implement feedback buttons for adaptive difficulty
 - [x] Store completed/failed tasks in SQLite to track tasks with high/low completion
-- [ ] Improve logic of Cooperative Goal
-- [ ] Create a service to check if weekly challenge has been completed
+- [x] Improve logic of Cooperative Goal
+- [x] Create a service to check if weekly challenge has been completed
 - [x] Implement adaptive difficulty
 - [ ] Test gamification logic and UI
 
