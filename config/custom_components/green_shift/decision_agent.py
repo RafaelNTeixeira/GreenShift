@@ -413,6 +413,7 @@ class DecisionAgent:
         # Get appropriate notification template
         notification = await self._generate_notification(action_name)
         
+        # TODO: Feedback buttons don't appear. Might need to include a separate tab for notifications in the frontend
         if notification:
             # Create actionable notification with feedback buttons
             notification_id = f"energy_nudge_{datetime.now().timestamp()}"
