@@ -17,6 +17,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [ ] Improve Dashboard tab
 - [ ] Add emojis to places where they are missing to make screen more appealing
 - [ ] Add extra attributes to money saved in Profile tab?
+- [ ] Update guide from Settings tab
 
 ### 🎮 Gamification
 - [x] Improve gamification daily tasks
@@ -26,9 +27,11 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Improve logic of Cooperative Goal
 - [x] Create a service to check if weekly challenge has been completed
 - [x] Implement adaptive difficulty
-- [ ] EXTRA: Add level system based on XP obtained from task/challenge completion? Or just level based on number of tasks completion
+- [ ] Need to round sensor values from tasks
 - [ ] Store data needed for analysis/results extraction
+- [ ] EXTRA: Add level system based on XP obtained from task/challenge completion? Or just level based on number of tasks completion
 - [ ] Test gamification logic and UI
+
 
 ### 🤖 AI
 - [x] Correct state vector gathered data
@@ -37,8 +40,10 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Improve anomaly index
 - [x] Develop behaviour index
 - [x] Develop fatigue index
-- [ ] Check if indices are updating during the intervention
+- [ ] Set default MAX_NOTIFICATIONS_PER_DAY value to 5
 - [ ] Check why it is still sending notifications when notification count exceeds MAX_NOTIFICATIONS_PER_DAY
+- [ ] Check if indices are updating during the intervention
+- [ ] Check adaptive difficulty updates
 - [ ] Check notification templates that make more sense
 - [ ] Store data needed for analysis/results extraction
 - [ ] Test AI-driven features (notifications, recommendations)
