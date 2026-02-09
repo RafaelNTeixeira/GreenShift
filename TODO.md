@@ -25,12 +25,12 @@ Checklist to track remaining features, fixes and tests before completion.
 - [ ] Test gamification logic and UI
 
 ### 🤖 AI
-- [ ] Correct state vector gathered data
+- [x] Correct state vector gathered data
 - [ ] Fix state vector with 0º of temperature, etc.
 - [ ] Dismiss/Accept buttons for notifications
 - [ ] Improve anomaly index
-- [ ] Develop behaviour index
-- [ ] Develop fatigue index
+- [x] Develop behaviour index
+- [x] Develop fatigue index
 - [ ] Test AI-driven features (notifications, recommendations)
 
 ---
