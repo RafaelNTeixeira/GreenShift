@@ -4,8 +4,10 @@ from datetime import datetime, timedelta
 from collections import deque
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+import random
 
 from .storage import StorageManager
+from .helpers import get_friendly_name
 from .const import (
     UPDATE_INTERVAL_SECONDS,
     SAVE_STATE_INTERVAL_SECONDS,
@@ -17,6 +19,8 @@ from .const import (
     PHASE_ACTIVE,
     FATIGUE_THRESHOLD,
     GAMMA,
+    NOTIFICATION_TEMPLATES,
+    MAX_NOTIFICATIONS_PER_DAY
 )
 
 _LOGGER = logging.getLogger(f"{__name__}.ai_model")
@@ -25,20 +29,18 @@ _LOGGER = logging.getLogger(f"{__name__}.ai_model")
 class DecisionAgent:
     """
     AI Decision agent based on MDP: ⟨S, A, M, P, R, γ⟩:
-    - S: State vector with sensor readings and indices
+    - S: State vector with area-based sensor readings and indices
     - A: Action space (noop, specific, anomaly, behavioural, normative)
     - M: Action mask based on sensor availability and context
     - P: Transition probabilities (implicit in state updates)
     - R: Reward function based on energy savings and user engagement
     - γ: Discount factor for future rewards
-    
-    Note: This agent does NOT store sensor data. It reads data from DataCollector.
     """
     
     def __init__(self, hass: HomeAssistant, discovered_sensors: dict, data_collector, storage_manager: StorageManager = None):
         self.hass = hass
         self.sensors = discovered_sensors
-        self.data_collector = data_collector  # Reference to DataCollector
+        self.data_collector = data_collector
         self.storage = storage_manager
         self.start_date = datetime.now()
         self._process_count = 0
@@ -49,14 +51,19 @@ class DecisionAgent:
         self.state_vector = None
         self.action_mask = None
         self.baseline_consumption = 0.0
+
+        # Area-based baselines for anomaly detection
+        self.area_baselines = {}  # {area: {metric: baseline_value}}
         
         # Engagement history
         self.engagement_history = deque(maxlen=100)
+        self.notification_history = deque(maxlen=50)  # Track recent notifications
         self.notification_count_today = 0
         self.last_notification_date = None
+        self.last_notification_time = None
         
-        # Q-table simplified 
-        self.q_table = {} # TODO: Update? Maybe to DQN
+        # Q-table for reinforcement learning
+        self.q_table = {}
         self.learning_rate = 0.1
         self.epsilon = 0.2  # Exploration rate
         
@@ -64,6 +71,9 @@ class DecisionAgent:
         self.anomaly_index = 0.0 
         self.behaviour_index = 0.5 
         self.fatigue_index = 0.0 
+
+        # Area-specific anomaly tracking
+        self.area_anomalies = {}  # {area: {metric: anomaly_score}}
         
         # Challenges
         self.target_percentage = 15 # Default 15% reduction goal
@@ -97,6 +107,10 @@ class DecisionAgent:
         if "baseline_consumption" in state:
             self.baseline_consumption = state["baseline_consumption"]
             _LOGGER.info("Loaded baseline consumption: %.2f kW", self.baseline_consumption)
+
+        if "area_baselines" in state:
+            self.area_baselines = state["area_baselines"]
+            _LOGGER.info("Loaded %d area baselines", len(self.area_baselines))
         
         if "current_week_start_date" in state and state["current_week_start_date"]:
             try:
@@ -113,10 +127,13 @@ class DecisionAgent:
         
         if "fatigue_index" in state:
             self.fatigue_index = state["fatigue_index"]
+
+        # Load notification history
+        if "notification_history" in state:
+            self.notification_history = deque(state["notification_history"], maxlen=50)
         
         # Load Q-table
         if "q_table" in state:
-            # Convert string keys back to tuples if needed
             self.q_table = {eval(k) if isinstance(k, str) else k: v 
                            for k, v in state["q_table"].items()}
             _LOGGER.info("Loaded Q-table with %d entries", len(self.q_table))
@@ -142,12 +159,13 @@ class DecisionAgent:
             "start_date": safe_start_date,
             "phase": self.phase,
             "baseline_consumption": float(self.baseline_consumption),
+            "area_baselines": self.area_baselines,
             "current_week_start_date": self.current_week_start_date.isoformat() if self.current_week_start_date else None,
             "anomaly_index": float(self.anomaly_index),
             "behaviour_index": float(self.behaviour_index),
             "fatigue_index": float(self.fatigue_index),
+            "notification_history": list(self.notification_history),
             "q_table": serializable_q_table,
-
         }
 
         current_state.update(ai_state)
@@ -157,11 +175,8 @@ class DecisionAgent:
     async def process_ai_model(self):
         """
         Process AI model and perform complex calculations.
-        This method is called periodically (every UPDATE_INTERVAL_SECONDS).
-        Reads data from DataCollector, does NOT store sensor data.
+        This method is called periodically (every AI_FREQUENCY_SECONDS).
         """
-        # _LOGGER.debug("Processing AI model...")
-    
         # Counter reset of daily notifications
         today = datetime.now().date()
         if self.last_notification_date != today:
@@ -169,12 +184,13 @@ class DecisionAgent:
             self.last_notification_date = today
         
         # Build state vector from DataCollector's current readings
-        self._build_state_vector()
+        await self._build_state_vector()
         
         # Calculate indices (anomaly, behaviour, fatigue)
         await self._update_anomaly_index()
+        await self._update_area_anomalies()
         self._update_behaviour_index()
-        self._update_fatigue_index()
+        await self._update_fatigue_index()
         
         # Update action mask M_t
         await self._update_action_mask()
@@ -196,156 +212,408 @@ class DecisionAgent:
         
         _LOGGER.debug("AI model processing complete")
     
-    def _build_state_vector(self):
+    async def _build_state_vector(self):
         """
         Builds state vector S_t from DataCollector's current sensor readings.
-        Does NOT read from Home Assistant directly - gets data from DataCollector.
+
+        State components:
+        1. Global power consumption + flag
+        2. Individual appliance power (top consumer) + flag
+        3. Global temperature + flag
+        4. Global humidity + flag
+        5. Global illuminance + flag
+        6. Global occupancy + flag
+        7. Anomaly index (0-1)
+        8. Behaviour index (0-1)
+        9. Fatigue index (0-1)
+        10. Area anomaly count (number of areas with anomalies)
+        11. Time of day (normalized 0-1)
+        12. Day of week (normalized 0-1)
         """
+        current_state = self.data_collector.get_current_state()
+
         state = []
         
-        # Get current readings from DataCollector
-        current_state = self.data_collector.get_current_state()
+        # 1. Global power consumption
+        power = current_state.get("power", 0.0)
+        state.extend([power, 1.0 if power > 0 else 0.0])
+        _LOGGER.debug("Global power consumption: %.2f kW", state[0])
         
-        # E_total, F_total (Total Power Consumption)
-        power_sensors = self.sensors.get("power", []) # TODO: This might be a single sensor with total power directly.
-        if power_sensors:
-            total_power = current_state["power"]
-            state.extend([total_power, 1.0])
-        else:
-            state.extend([0.0, 0.0])
-        # _LOGGER.debug("Total power consumption: %.2f kW", state[0])
+        # 2. Top power consumer (individual appliance)
+        top_consumer = await self._get_top_power_consumer()
+        state.extend([top_consumer, 1.0 if top_consumer > 0 else 0.0])
+        _LOGGER.debug("Top power consumer: %.2f kW", state[2])
         
-        # E_app, F_app (Individual Appliance Power)
-        # TODO: This needs to be updated when we separate smart plugs
-        if len(power_sensors) > 1:
-            app_power = current_state["power"]  # Simplified for now
-            state.extend([app_power, 1.0])
-        else:
-            state.extend([0.0, 0.0])
-        # _LOGGER.debug("Appliance power consumption: %.2f kW", state[2])
+        # 3. Temperature
+        temp = current_state.get("temperature", 0.0)
+        state.extend([temp if temp is not None else 0.0, 1.0 if temp is not None else 0.0])
+        _LOGGER.debug("Indoor temperature: %.2f °C", state[4])
         
-        # T_in, F_T (Temperature)
-        temp_sensors = self.sensors.get("temperature", [])
-        if temp_sensors:
-            temp = current_state["temperature"]
-            state.extend([temp, 1.0])
-        else:
-            state.extend([0.0, 0.0])
-        # _LOGGER.debug("Indoor temperature: %.2f °C", state[4])
+        # 4. Humidity
+        hum = current_state.get("humidity", 0.0)
+        state.extend([hum if hum is not None else 0.0, 1.0 if hum is not None else 0.0])
+        _LOGGER.debug("Indoor humidity: %.2f %%", state[6])
         
-        # H_in, F_H (Humidity)
-        hum_sensors = self.sensors.get("humidity", [])
-        if hum_sensors:
-            humidity = current_state["humidity"]
-            state.extend([humidity, 1.0])
-        else:
-            state.extend([0.0, 0.0])
-        # _LOGGER.debug("Indoor humidity: %.2f %%", state[6])
+        # 5. Illuminance
+        lux = current_state.get("illuminance", 0.0)
+        state.extend([lux if lux is not None else 0.0, 1.0 if lux is not None else 0.0])
+        _LOGGER.debug("Indoor illuminance: %.2f lx", state[8])
         
-        # L_in, F_L (Luminosity)
-        lux_sensors = self.sensors.get("illuminance", [])
-        if lux_sensors:
-            lux = current_state["illuminance"]
-            state.extend([lux, 1.0])
-        else:
-            state.extend([0.0, 0.0])
-        # _LOGGER.debug("Indoor luminosity: %.2f lx", state[8])
+        # 6. Occupancy
+        occ = 1.0 if current_state.get("occupancy", False) else 0.0
+        state.extend([occ, 1.0])
         
-        # O_status, F_O (Occupancy)
-        occ_sensors = self.sensors.get("occupancy", [])
-        if occ_sensors:
-            occupied = current_state["occupancy"]
-            state.extend([float(occupied), 1.0])
-        else:
-            state.extend([0.0, 0.0])
-        # _LOGGER.debug("Occupancy status: %s", "Occupied" if state[10] == 1.0 else "Unoccupied")
-        
-        # Add indices to state vector
-        state.extend([self.anomaly_index, self.behaviour_index, self.fatigue_index])
-        # _LOGGER.debug("State vector: %s", state)
+        # 7-9. Indices
+        state.extend([
+            self.anomaly_index,
+            self.behaviour_index,
+            self.fatigue_index
+        ])
 
-        self.state_vector = np.array(state)
+        # 10. Area anomaly count (spatial awareness)
+        area_anomaly_count = len([a for a in self.area_anomalies.values() if any(v > 0.3 for v in a.values())])
+        state.append(area_anomaly_count)
+        
+        # 11. Time of day (normalized)
+        now = datetime.now()
+        time_of_day = (now.hour * 60 + now.minute) / (24 * 60)  # 0 to 1
+        state.append(time_of_day)
+        
+        # 12. Day of week (normalized)
+        day_of_week = now.weekday() / 6.0  # 0 (Monday) to 1 (Sunday)
+        state.append(day_of_week)
+        
+        self.state_vector = state
+        _LOGGER.debug("State vector built: %s", state)
+
+    async def _get_top_power_consumer(self) -> float:
+        """Get the power consumption of the highest consuming device."""
+        power_sensors = self.sensors.get("power", [])
+        if not power_sensors:
+            return 0.0
+        
+        max_power = 0.0
+        for entity_id in power_sensors:
+            state = self.hass.states.get(entity_id)
+            if state and state.state not in ['unknown', 'unavailable']:
+                try:
+                    power = float(state.state)
+                    max_power = max(max_power, power)
+                except (ValueError, TypeError):
+                    continue
+        
+        return max_power
     
     async def _update_action_mask(self):
-        """Generates binary action mask M_t."""
-        mask = np.ones(len(ACTIONS))
+        """Updates the action mask M_t based on context and sensor availability."""
+        mask = {action: False for action in ACTIONS.values()}
         
         # noop: always available
+        mask[ACTIONS["noop"]] = True
 
-        # specific: needs smart plugs
-        if not self.sensors.get("power"):
-            mask[ACTIONS["specific"]] = 0
+        # specific: requires individual power sensors
+        power_sensors = self.sensors.get("power", [])
+        if len(power_sensors) > 0:
+            mask[ACTIONS["specific"]] = True
         
-        # anomaly: needs enough consumption history
-        power_history_data = await self.data_collector.get_power_history(hours=1)
-        if len(power_history_data) < 100:
-            mask[ACTIONS["anomaly"]] = 0
+        # anomaly: requires sufficient history and detected anomalies
+        power_history = await self.data_collector.get_power_history(hours=1)
+        has_area_anomalies = any(any(v > 0.3 for v in area_anomalies.values()) 
+                                for area_anomalies in self.area_anomalies.values())
+        if len(power_history) >= 100 and (self.anomaly_index > 0.3 or has_area_anomalies):
+            mask[ACTIONS["anomaly"]] = True
         
         # behavioural: always available
+        mask[ACTIONS["behavioural"]] = True
 
         # normative: requires consumption data
-        if self.baseline_consumption == 0.0:
-            mask[ACTIONS["normative"]] = 0
+        if self.baseline_consumption > 0.0:
+            mask[ACTIONS["normative"]] = True
         
         self.action_mask = mask
-        _LOGGER.debug("Action mask: %s", mask)
+        _LOGGER.debug("Action mask updated: %s", {k: v for k, v in mask.items() if v})
     
     async def _decide_action(self):
-        """Selects an action using epsilon-greedy policy."""  
-        available_actions = [i for i, m in enumerate(self.action_mask) if m == 1]
-        if not available_actions:
-            _LOGGER.warning("No available actions in current state.")
+        """Selects action A_t using epsilon-greedy policy with Q-learning.""" 
+        # Check notification limits
+        if self.notification_count_today >= MAX_NOTIFICATIONS_PER_DAY:
+            _LOGGER.debug("Max notifications reached for today")
             return
         
+        # Check fatigue threshold
+        if self.fatigue_index > FATIGUE_THRESHOLD:
+            _LOGGER.debug("User fatigue too high (%.2f), skipping notification", self.fatigue_index)
+            return
+
+        # Minimum time between notifications (1 hour)
+        if self.last_notification_time:
+            time_since_last = (datetime.now() - self.last_notification_time).total_seconds()
+            if time_since_last < 3600:  # 1 hour
+                return
+            
+        # Get current state
         state_key = self._discretize_state()
-        
-        # Epsilon-greedy
-        if np.random.rand() < self.epsilon:
-            action = np.random.choice(available_actions)
-            _LOGGER.debug("Random action selected: %d", action)
+
+        # Available actions based on mask
+        available_actions = [a for a, available in self.action_mask.items() if available and a != ACTIONS["noop"]]
+
+        if not available_actions:
+            return
+
+       # Epsilon-greedy action selection
+        if random.random() < self.epsilon:
+            # Exploration: random action
+            action = random.choice(available_actions)
+            _LOGGER.debug("Exploration: selected random action %d", action)
         else:
-            q_values = {a: self.q_table.get((state_key, a), 0.0) for a in available_actions}
-            action = max(q_values, key=q_values.get)
-            _LOGGER.debug("Greedy action selected: %d with Q-value: %.2f", action, q_values[action])
+            # Exploitation: best known action
+            if state_key not in self.q_table:
+                self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
+            
+            # Choose best available action
+            best_action = max(available_actions, key=lambda a: self.q_table[state_key].get(a, 0.0))
+            action = best_action
+            _LOGGER.debug("Exploitation: selected best action %d (Q=%.2f)", action, self.q_table[state_key].get(action, 0.0))
         
         # Execute action
         await self._execute_action(action)
         
-        # Update Q-table (simplified)
-        reward = self._calculate_reward()
-        old_q = self.q_table.get((state_key, action), 0.0)
-        self.q_table[(state_key, action)] = old_q + self.learning_rate * (reward - old_q)
-        _LOGGER.debug("Q-table updated: state=%s, action=%d, reward=%.2f", state_key, action, reward)
+        # Update Q-table
+        reward = await self._calculate_reward()
+        await self._update_q_table(state_key, action, reward)
+
+    async def _update_q_table(self, state_key: tuple, action: int, reward: float):
+        """
+        Updates Q-table using Q-learning update rule:
+        Q(s,a) ← Q(s,a) + α[R + γ max Q(s',a') - Q(s,a)]
+        """
+        if state_key not in self.q_table:
+            self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
+        
+        current_q = self.q_table[state_key].get(action, 0.0)
+        
+        # Get next state (after action execution)
+        next_state_key = self._discretize_state()
+        if next_state_key not in self.q_table:
+            self.q_table[next_state_key] = {a: 0.0 for a in ACTIONS.values()}
+        
+        max_next_q = max(self.q_table[next_state_key].values())
+        
+        # Q-learning update
+        new_q = current_q + self.learning_rate * (reward + GAMMA * max_next_q - current_q)
+        self.q_table[state_key][action] = new_q
+        
+        _LOGGER.debug("Q-table updated: state=%s, action=%d, reward=%.2f, Q: %.2f → %.2f", 
+                     state_key[:3], action, reward, current_q, new_q)
     
     async def _execute_action(self, action: int):
-        """Executes selected action."""
+        """Executes selected action by sending a notification."""
         action_name = [k for k, v in ACTIONS.items() if v == action][0]
 
-        messages = {
-            "specific": "Tip: The heater is consuming more than normal.",
-            "anomaly": "Anomaly detected in energy consumption.",
-            "behavioural": "Try turning off devices in standby before going to bed.",
-            "normative": "Your department is 15% above the weekly target.",
-        }
+        # Get appropriate notification template
+        notification = await self._generate_notification(action_name)
         
-        message = messages.get(action_name, "")
-        if message:
+        if notification:
+            # Create actionable notification with feedback buttons
+            notification_id = f"energy_nudge_{datetime.now().timestamp()}"
+            
             await self.hass.services.async_call(
+                "notify",
                 "persistent_notification",
-                "create",
                 {
-                    "title": "Energy Nudge",
-                    "message": message,
-                    "notification_id": f"energy_nudge_{datetime.now().timestamp()}",
+                    "message": notification["message"],
+                    "title": notification["title"],
+                    "data": {
+                        "notification_id": notification_id,
+                        "actions": [
+                            {
+                                "action": f"accept_{notification_id}",
+                                "title": "✓ Helpful"
+                            },
+                            {
+                                "action": f"reject_{notification_id}",
+                                "title": "✗ Not useful"
+                            }
+                        ]
+                    }
                 },
             )
+
+            # Track notification
             self.notification_count_today += 1
-            _LOGGER.info("Action executed: %s", action_name)
+            self.last_notification_time = datetime.now()
+            self.notification_history.append({
+                "timestamp": datetime.now().isoformat(),
+                "action_type": action_name,
+                "notification_id": notification_id,
+                "responded": False
+            })
+
+            # Register notification response handler
+            await self._register_notification_handler(notification_id, action_name)
+            
+            _LOGGER.info("Action executed: %s - %s", action_name, notification["title"])
+
+    async def _generate_notification(self, action_type: str) -> dict:
+        """
+        Generates context-aware notification based on action type.
+        """
+        templates = NOTIFICATION_TEMPLATES.get(action_type, [])
+        if not templates:
+            return None
+        
+        # Select template based on context
+        template = random.choice(templates)
+        
+        # Gather context for template
+        context = await self._gather_notification_context(action_type)
+        
+        # Format message
+        try:
+            message = template["message"].format(**context)
+            title = template["title"].format(**context)
+        except KeyError as e:
+            _LOGGER.error("Missing context key for notification: %s", e)
+            return None
+        
+        return {
+            "title": title,
+            "message": message
+        }
+    
+    async def _gather_notification_context(self, action_type: str) -> dict:
+        """
+        Gathers contextual information for notification templates.
+        """
+        context = {}
+        
+        # Current consumption
+        current_state = self.data_collector.get_current_state()
+        context["current_power"] = int(current_state.get("power", 0))
+        context["baseline_power"] = int(self.baseline_consumption)
+        
+        # Calculate percentage difference
+        if self.baseline_consumption > 0:
+            diff = ((current_state.get("power", 0) - self.baseline_consumption) / self.baseline_consumption) * 100
+            context["percent_above"] = int(abs(diff))
+        else:
+            context["percent_above"] = 0
+        
+        # Find top power consumer
+        top_device, top_power = await self._find_top_consumer()
+        context["device_name"] = top_device if top_device else "Unknown device"
+        context["device_power"] = int(top_power)
+        
+        # Find area with highest anomaly
+        anomaly_area, anomaly_metric = await self._find_highest_anomaly_area()
+        context["area_name"] = anomaly_area if anomaly_area else "Living room"
+        context["metric"] = anomaly_metric if anomaly_metric else "temperature"
+        
+        # Get area-specific temperature for comfort suggestions
+        if anomaly_area:
+            area_state = self.data_collector.get_area_state(anomaly_area)
+            context["area_temp"] = int(area_state.get("temperature", 22) if area_state.get("temperature") is not None else 22)
+        else:
+            context["area_temp"] = int(current_state.get("temperature", 22) if current_state.get("temperature") is not None else 22)
+        
+        # Time-based context
+        now = datetime.now()
+        context["time_of_day"] = "evening" if 18 <= now.hour < 22 else "night" if 22 <= now.hour or now.hour < 6 else "day"
+        
+        return context
+    
+    async def _find_top_consumer(self) -> tuple:
+        """Find the device consuming the most power."""
+        power_sensors = self.sensors.get("power", [])
+        if not power_sensors:
+            return None, 0.0
+        
+        max_power = 0.0
+        top_device = None
+        
+        for entity_id in power_sensors:
+            state = self.hass.states.get(entity_id)
+            if state and state.state not in ['unknown', 'unavailable']:
+                try:
+                    power = float(state.state)
+                    if power > max_power:
+                        max_power = power
+                        top_device = get_friendly_name(self.hass, entity_id)
+                except (ValueError, TypeError):
+                    continue
+        
+        return top_device, max_power
+    
+    async def _find_highest_anomaly_area(self) -> tuple:
+        """Find the area with the highest anomaly score."""
+        if not self.area_anomalies:
+            return None, None
+        
+        max_anomaly = 0.0
+        anomaly_area = None
+        anomaly_metric = None
+        
+        for area, metrics in self.area_anomalies.items():
+            for metric, score in metrics.items():
+                if score > max_anomaly:
+                    max_anomaly = score
+                    anomaly_area = area
+                    anomaly_metric = metric
+        
+        return anomaly_area, anomaly_metric
+    
+    async def _register_notification_handler(self, notification_id: str, action_type: str):
+        """Register handler for notification feedback."""
+        async def handle_accept(call):
+            """Handle acceptance of notification."""
+            await self._handle_notification_feedback(notification_id, accepted=True)
+        
+        async def handle_reject(call):
+            """Handle rejection of notification."""
+            await self._handle_notification_feedback(notification_id, accepted=False)
+        
+        # Register temporary services for this notification
+        self.hass.services.async_register(
+            "green_shift",
+            f"accept_{notification_id}",
+            handle_accept
+        )
+        
+        self.hass.services.async_register(
+            "green_shift",
+            f"reject_{notification_id}",
+            handle_reject
+        )
+
+    async def _handle_notification_feedback(self, notification_id: str, accepted: bool):
+        """
+        Handle user feedback on notifications.
+        Updates behaviour index and engagement history.
+        """
+        # Find notification in history
+        for notif in self.notification_history:
+            if notif["notification_id"] == notification_id:
+                notif["responded"] = True
+                notif["accepted"] = accepted
+                break
+        
+        # Update engagement history
+        engagement_score = 1.0 if accepted else -0.5
+        self.engagement_history.append(engagement_score)
+        
+        # Update behaviour index
+        self._update_behaviour_index()
+        
+        _LOGGER.info("Notification feedback received: %s - %s", notification_id, "accepted" if accepted else "rejected")
+        
+        # Save state
+        if self.storage:
+            await self._save_persistent_state()
     
     async def _calculate_reward(self) -> float:
         """
-        Calculates reward R_t based on energy savings and user engagement.
-        Reads consumption history from DataCollector.
+        Calculates reward R_t based on energy savings, engagement and fatigue.
+        Formula: R_t = α·ΔE + β·I_engagement - δ·I_fatigue
         """
         power_history_data = await self.data_collector.get_power_history(hours=1) # Last hour
         power_values = [power for timestamp, power in power_history_data]
@@ -376,9 +644,8 @@ class DecisionAgent:
     async def _update_anomaly_index(self):
         """
         Detects anomalies in consumption using z-score.
-        Reads consumption history from DataCollector.
         """
-        power_history_data = await self.data_collector.get_power_history(hours=1)  # Last hour
+        power_history_data = await self.data_collector.get_power_history(hours=1) # Last hour
         power_values = [power for timestamp, power in power_history_data]
         
         # Calculate anomaly index based on last hour of data
@@ -397,39 +664,219 @@ class DecisionAgent:
         if std > 0:
             z_score = abs((current - mean) / std)
             self.anomaly_index = min(z_score / 3.0, 1.0)
-            # _LOGGER.debug("Anomaly index updated: %.2f", self.anomaly_index)
+            _LOGGER.debug("Anomaly index updated: %.2f", self.anomaly_index)
         else:
             self.anomaly_index = 0.0
     
+    async def _update_area_anomalies(self):
+        """Detects anomalies in each area for spatial awareness."""
+        areas = self.data_collector.get_all_areas()
+        self.area_anomalies = {}
+        
+        for area in areas:
+            if area == "No Area":
+                continue
+            
+            area_anomalies = {}
+            
+            # Check temperature anomalies
+            temp_history = await self.data_collector.get_area_history(area, "temperature", hours=2)
+            if temp_history:
+                temp_values = [val for ts, val in temp_history if val is not None]
+                if len(temp_values) >= 10:
+                    mean = np.mean(temp_values)
+                    std = np.std(temp_values)
+                    current = temp_values[-1]
+                    
+                    # TODO: Also check against baseline if available
+                    baseline_temp = self.area_baselines.get(area, {}).get("temperature")
+                    
+                    if std > 0:
+                        z_score = abs((current - mean) / std)
+                        area_anomalies["temperature"] = min(z_score / 3.0, 1.0)
+                    
+                    # Additional check: extreme values
+                    if current < 16 or current > 28:
+                        area_anomalies["temperature"] = max(area_anomalies.get("temperature", 0), 0.8)
+            
+            # Check power anomalies per area
+            power_history = await self.data_collector.get_area_history(area, "power", hours=2)
+            if power_history:
+                power_values = [val for ts, val in power_history if val is not None]
+                if len(power_values) >= 10:
+                    mean = np.mean(power_values)
+                    std = np.std(power_values)
+                    current = power_values[-1]
+                    
+                    if std > 0:
+                        z_score = abs((current - mean) / std)
+                        area_anomalies["power"] = min(z_score / 3.0, 1.0)
+            
+            # Check humidity anomalies
+            hum_history = await self.data_collector.get_area_history(area, "humidity", hours=2)
+            if hum_history:
+                hum_values = [val for ts, val in hum_history if val is not None]
+                if len(hum_values) >= 10:
+                    current = hum_values[-1]
+                    
+                    # Check against comfortable range (30-60%)
+                    if current < 30 or current > 60:
+                        deviation = max(30 - current, current - 60, 0)
+                        area_anomalies["humidity"] = min(deviation / 30.0, 1.0)
+            
+            if area_anomalies:
+                self.area_anomalies[area] = area_anomalies
+        
+        _LOGGER.debug("Area anomalies updated: %d areas with anomalies", len(self.area_anomalies))
+
     def _update_behaviour_index(self):
-        """History of user engagement."""
+        """
+        Updates behaviour index based on user engagement history.
+        Uses exponential moving average for recent behavior.
+        """
         if len(self.engagement_history) > 0:
-            self.behaviour_index = np.clip(np.mean(self.engagement_history), 0, 1)
-            # _LOGGER.debug("Behaviour index updated: %.2f", self.behaviour_index)
+            # Weighted towards recent interactions
+            weights = np.exp(np.linspace(-2, 0, len(self.engagement_history)))
+            weights /= weights.sum()
+            
+            weighted_engagement = np.average(self.engagement_history, weights=weights)
+            self.behaviour_index = np.clip(weighted_engagement, 0, 1)
+            _LOGGER.debug("Behaviour index updated: %.2f", self.behaviour_index)
     
-    def _update_fatigue_index(self):
-        """Risk of user fatigue from too many notifications."""
-        # self.fatigue_index = self.notification_count_today / MAX_NOTIFICATIONS_PER_DAY # TODO: Cannot be based on a predefined max. Must be dynamic.
-        # _LOGGER.debug("Fatigue index updated: %.2f", self.fatigue_index)
+    async def _update_fatigue_index(self):
+        """
+        Calculates user fatigue based on recent notification patterns.
+        Considers rejection rate, frequency of notifications and time since last interaction.
+        """
+        if len(self.notification_history) == 0:
+            self.fatigue_index = 0.0
+            return
+        
+        # Count responses in the last 10 notifications
+        recent_notifs = list(self.notification_history)[-10:]
+        responded = [n for n in recent_notifs if n.get("responded", False)]
+        
+        if not responded:
+            # No responses = moderate fatigue
+            self.fatigue_index = 0.4
+            return
+        
+        rejected = [n for n in responded if not n.get("accepted", False)]
+        rejection_rate = len(rejected) / len(responded) if responded else 0
+        
+        # Frequency component: high frequency in short time = higher fatigue
+        if len(recent_notifs) >= 3:
+            timestamps = [datetime.fromisoformat(n["timestamp"]) for n in recent_notifs[-3:]]
+            time_span = (timestamps[-1] - timestamps[0]).total_seconds() / 3600  # hours
+            
+            if time_span > 0:
+                frequency_factor = min(3 / time_span, 1.0)  # Ideal: 1 per hour
+            else:
+                frequency_factor = 1.0
+        else:
+            frequency_factor = 0.0
+        
+        # Combined fatigue score
+        self.fatigue_index = np.clip(
+            0.6 * rejection_rate + 0.4 * frequency_factor,
+            0.0,
+            1.0
+        )
+        
+        _LOGGER.debug("Fatigue index updated: %.2f (rejection_rate=%.2f, freq=%.2f)", self.fatigue_index, rejection_rate, frequency_factor)
     
     def _discretize_state(self) -> tuple:
-        """Converts continuous state vector to discrete tuple for Q-table."""
-        if self.state_vector is None:
-            return (0,)
-        # Simplification: use only consumption, anomalies and fatigue
-        power = int(self.state_vector[0] / 100) # Bins of 100W # TODO: Confirm this
-        anomaly = int(self.anomaly_index * 10)
-        fatigue = int(self.fatigue_index * 10)
-
-        # _LOGGER.debug("State discretized: power=%d, anomaly=%d, fatigue=%d", power, anomaly, fatigue)
-
-        return (power, anomaly, fatigue)
+        """
+        Converts continuous state vector to discrete tuple for Q-table.
+        
+        State components:
+        - power_bin: Power consumption in 100W bins
+        - anomaly_bin: Global anomaly level (0-10)
+        - fatigue_bin: Fatigue level (0-10)
+        - area_anomaly_bin: Number of areas with anomalies (0-5+)
+        - time_bin: Time of day (morning/afternoon/evening/night)
+        - occupancy: Occupied or not
+        """
+        if self.state_vector is None or len(self.state_vector) < 13:
+            return (0, 0, 0, 0, 0, 0)
+        
+        # Power in 100W bins
+        power = int(self.state_vector[0] / 100)
+        power_bin = min(power, 50)  # Cap at 5000W for table size
+        
+        # Anomaly level (0-10)
+        anomaly_bin = int(self.anomaly_index * 10)
+        
+        # Fatigue level (0-10)
+        fatigue_bin = int(self.fatigue_index * 10)
+        
+        # Area anomaly count (capped at 5)
+        area_anomaly_count = int(self.state_vector[10])
+        area_anomaly_bin = min(area_anomaly_count, 5)
+        
+        # Time of day (4 bins: 0=night, 1=morning, 2=afternoon, 3=evening)
+        time_of_day = self.state_vector[11]  # 0-1
+        if time_of_day < 0.25:  # 0:00-6:00
+            time_bin = 0
+        elif time_of_day < 0.5:  # 6:00-12:00
+            time_bin = 1
+        elif time_of_day < 0.75:  # 12:00-18:00
+            time_bin = 2
+        else:  # 18:00-24:00
+            time_bin = 3
+        
+        # Occupancy
+        occupancy = int(self.state_vector[6])
+        
+        return (power_bin, anomaly_bin, fatigue_bin, area_anomaly_bin, time_bin, occupancy)
+    
+    async def calculate_area_baselines(self):
+        """
+        Calculate baseline values for each area during the baseline phase.
+        Called at the end of the baseline phase.
+        """
+        areas = self.data_collector.get_all_areas()
+        
+        for area in areas:
+            if area == "No Area":
+                continue
+            
+            baselines = {}
+            
+            # Temperature baseline
+            temp_history = await self.data_collector.get_area_history(area, "temperature", days=14)
+            if temp_history:
+                temp_values = [val for ts, val in temp_history if val is not None]
+                if temp_values:
+                    baselines["temperature"] = np.mean(temp_values)
+            
+            # Power baseline
+            power_history = await self.data_collector.get_area_history(area, "power", days=14)
+            if power_history:
+                power_values = [val for ts, val in power_history if val is not None]
+                if power_values:
+                    baselines["power"] = np.mean(power_values)
+            
+            # Humidity baseline
+            hum_history = await self.data_collector.get_area_history(area, "humidity", days=14)
+            if hum_history:
+                hum_values = [val for ts, val in hum_history if val is not None]
+                if hum_values:
+                    baselines["humidity"] = np.mean(hum_values)
+            
+            if baselines:
+                self.area_baselines[area] = baselines
+        
+        _LOGGER.info("Calculated baselines for %d areas", len(self.area_baselines))
+        
+        # Save baselines
+        if self.storage:
+            await self._save_persistent_state()
     
     async def get_weekly_challenge_status(self, target_percentage: float = 15.0) -> dict:
         """
         Calculates weekly challenge status (consumption reduction goal).
         Tracks energy from the start of the current week (Monday) and compares to baseline.
-        Progress updates dynamically as new data comes in during the week.
         """
         # Use fixed baseline from baseline phase for consistent comparison
         if self.baseline_consumption is None or self.baseline_consumption == 0:
@@ -488,10 +935,10 @@ class DecisionAgent:
         
         status = "completed" if progress < 100 else "in_progress"
 
-        _LOGGER.info(
-            "Weekly challenge calculation: %d readings, current_avg=%.2f, baseline=%.2f, target_pct=%.1f%%",
-            len(power_values), np.mean(power_values), self.baseline_consumption, target_percentage
-        )
+        # _LOGGER.info(
+        #     "Weekly challenge calculation: %d readings, current_avg=%.2f, baseline=%.2f, target_pct=%.1f%%",
+        #     len(power_values), np.mean(power_values), self.baseline_consumption, target_percentage
+        # )
         
         return {
             "status": status,
