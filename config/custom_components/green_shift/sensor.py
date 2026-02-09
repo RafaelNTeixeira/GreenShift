@@ -349,31 +349,43 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
         self._collector = collector
         self._attr_name = "Savings Accumulated"
         self._attr_unique_id = f"{DOMAIN}_savings"
-        self._attr_unit_of_measurement = "EUR"
-        self._attr_icon = "mdi:currency-eur"
+        self._attr_icon = "mdi:cash-check"
         self._attr_native_value = 0
+
+    @property
+    def unit_of_measurement(self):
+        """Dynamic unit based on input_select.currency."""
+        currency_state = self.hass.states.get("input_select.currency")
+        return currency_state.state if currency_state else "EUR"
     
     async def _async_update_state(self):
         """Fetch data asynchronously and calculate state."""
         # Await the async database call
         power_history_data = await self._collector.get_power_history()
-
         power_history = [power for timestamp, power in power_history_data]
         
         if len(power_history) < 10:
             self._attr_native_value = 0
             return
         
+        price_state = self.hass.states.get("input_number.electricity_price")
+        try:
+            price_per_kwh = float(price_state.state) if price_state else 0.25
+        except (ValueError, TypeError):
+            price_per_kwh = 0.25
+        
         avg_consumption = sum(power_history) / len(power_history)
-        saving_kW = self._agent.baseline_consumption - avg_consumption
+        saving_watts = self._agent.baseline_consumption - avg_consumption
         
-        seconds_in_an_hour = 3600
-        hours = len(power_history) / (seconds_in_an_hour / UPDATE_INTERVAL_SECONDS)
+        # Calculate hours covered by history based on update interval
+        readings_per_hour = 3600 / UPDATE_INTERVAL_SECONDS
+        hours = len(power_history) / readings_per_hour
 
-        saving_kwh = (saving_kW * hours)
-        savings_eur = saving_kwh * 0.25
+        # Convert W to kW then to kWh
+        saving_kwh = (saving_watts / 1000.0) * hours
+        savings_total = saving_kwh * price_per_kwh
         
-        self._attr_native_value = round(max(0, savings_eur), 2)
+        self._attr_native_value = round(max(0, savings_total), 2)
 
 
 class CO2SavedSensor(GreenShiftAISensor):
