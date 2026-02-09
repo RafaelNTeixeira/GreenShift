@@ -269,19 +269,24 @@ class DecisionAgent:
             self.behaviour_index,
             self.fatigue_index
         ])
+        _LOGGER.debug("Anomaly index: %.2f, Behaviour index: %.2f, Fatigue index: %.2f", self.anomaly_index, self.behaviour_index, self.fatigue_index)
 
         # 10. Area anomaly count (spatial awareness)
         area_anomaly_count = len([a for a in self.area_anomalies.values() if any(v > 0.3 for v in a.values())])
         state.append(area_anomaly_count)
+        _LOGGER.debug("Area anomaly count: %d", area_anomaly_count)
+        
         
         # 11. Time of day (normalized)
         now = datetime.now()
         time_of_day = (now.hour * 60 + now.minute) / (24 * 60)  # 0 to 1
         state.append(time_of_day)
+        _LOGGER.debug("Time of day (normalized): %.2f", time_of_day)
         
         # 12. Day of week (normalized)
         day_of_week = now.weekday() / 6.0  # 0 (Monday) to 1 (Sunday)
         state.append(day_of_week)
+        _LOGGER.debug("Day of week (normalized): %.2f", day_of_week)
         
         self.state_vector = state
         _LOGGER.debug("State vector built: %s", state)
@@ -403,8 +408,7 @@ class DecisionAgent:
         new_q = current_q + self.learning_rate * (reward + GAMMA * max_next_q - current_q)
         self.q_table[state_key][action] = new_q
         
-        _LOGGER.debug("Q-table updated: state=%s, action=%d, reward=%.2f, Q: %.2f → %.2f", 
-                     state_key[:3], action, reward, current_q, new_q)
+        _LOGGER.debug("Q-table updated: state=%s, action=%d, reward=%.2f, Q: %.2f → %.2f", state_key[:3], action, reward, current_q, new_q)
     
     async def _execute_action(self, action: int):
         """Executes selected action by sending a notification."""
@@ -447,13 +451,14 @@ class DecisionAgent:
                 "timestamp": datetime.now().isoformat(),
                 "action_type": action_name,
                 "notification_id": notification_id,
+                "title": notification["title"],
+                "message": notification["message"],
                 "responded": False
             })
-
-            # Register notification response handler
-            await self._register_notification_handler(notification_id, action_name)
             
             _LOGGER.info("Action executed: %s - %s", action_name, notification["title"])
+
+            async_dispatcher_send(self.hass, GS_AI_UPDATE_SIGNAL)
 
     async def _generate_notification(self, action_type: str) -> dict:
         """
@@ -798,7 +803,7 @@ class DecisionAgent:
         - time_bin: Time of day (morning/afternoon/evening/night)
         - occupancy: Occupied or not
         """
-        if self.state_vector is None or len(self.state_vector) < 13:
+        if self.state_vector is None or len(self.state_vector) < 18:
             return (0, 0, 0, 0, 0, 0)
         
         # Power in 100W bins
@@ -812,11 +817,13 @@ class DecisionAgent:
         fatigue_bin = int(self.fatigue_index * 10)
         
         # Area anomaly count (capped at 5)
-        area_anomaly_count = int(self.state_vector[10])
+        area_anomaly_count = int(self.state_vector[15])
+        _LOGGER.debug("Area anomaly count before capping: %d", area_anomaly_count)
         area_anomaly_bin = min(area_anomaly_count, 5)
         
         # Time of day (4 bins: 0=night, 1=morning, 2=afternoon, 3=evening)
-        time_of_day = self.state_vector[11]  # 0-1
+        time_of_day = self.state_vector[16]  # 0-1 normalized
+        _LOGGER.debug("Time of day (normalized) for discretization: %.2f", time_of_day)
         if time_of_day < 0.25:  # 0:00-6:00
             time_bin = 0
         elif time_of_day < 0.5:  # 6:00-12:00
@@ -827,7 +834,7 @@ class DecisionAgent:
             time_bin = 3
         
         # Occupancy
-        occupancy = int(self.state_vector[6])
+        occupancy = int(self.state_vector[10])
         
         return (power_bin, anomaly_bin, fatigue_bin, area_anomaly_bin, time_bin, occupancy)
     

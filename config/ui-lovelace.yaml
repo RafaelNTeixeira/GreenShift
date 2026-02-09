@@ -326,7 +326,7 @@ views:
                               {% endif %}
 
                       - type: horizontal-stack
-                        cards:
+                        cards:  
                           - type: button
                             name: Too Easy
                             icon: mdi:emoticon-happy-outline
@@ -555,7 +555,7 @@ views:
                       
                       Tasks are verified every 15 minutes, but you can also manually trigger verification by clicking on the "Verify All Tasks" button to see if you've completed any tasks and get real-time feedback on your progress!
 
-# ========== TAB 4: COLLABORATIVE GOAL ==========
+  # ========== TAB 4: COLLABORATIVE GOAL ==========
   - title: Collaborative Goal
     path: collaborative
     icon: mdi:account-group
@@ -700,7 +700,132 @@ views:
                     
                     <small><i>Check the "High" usage areas to see if lights or devices can be turned off!</i></small>
 
-  # ========== TAB 5: USER PROFILE ==========
+  # ========== TAB 5: NOTIFICATIONS ==========
+  - title: Notifications
+    path: notifications
+    icon: mdi:bell
+    type: sidebar
+    cards:
+      # --- SIDEBAR: STATS ---
+      - type: vertical-stack
+        cards:
+          - type: tile
+            entity: sensor.active_notifications
+            name: Active Alerts
+            icon: mdi:bell-ring
+            color: accent
+            
+          - type: entities
+            title: System Status
+            show_header_toggle: false
+            entities:
+              - entity: sensor.behaviour_index
+                name: Engagement Score
+              - entity: sensor.fatigue_index
+                name: Fatigue Level
+
+          - type: markdown
+            content: |
+              ### ℹ️ How to Use
+              1. **Read** the alerts.
+              2. **Select** the ID below.
+              3. **Tap** Accept or Reject.
+
+      # --- MAIN COLUMN ---
+      - type: vertical-stack
+        cards:
+          # --- 1. PENDING INBOX (Simple List) ---
+          - type: markdown
+            title: 📬 Pending Inbox
+            content: |
+              {%- set notifs = state_attr('sensor.active_notifications', 'notifications') -%}
+              {%- set safe_notifs = notifs if notifs else [] -%}
+              {%- set pending = safe_notifs | selectattr('responded', 'equalto', false) | list -%}
+              
+              {%- if pending | length == 0 -%}
+              ### ✅ All Caught Up!
+              No pending alerts at the moment.
+              {%- else -%}
+              
+              {%- for n in pending -%}
+              ---
+              ### 📢 {{ n.title }}
+              **ID:** `{{ n.notification_id }}` • *{{ n.time_ago }}*
+              
+              {{ n.message }}
+              
+              {%- endfor -%}
+              {%- endif -%}
+
+          # --- 2. ACTION PANEL (Entities Style) ---
+          - type: vertical-stack
+            cards:
+              - type: entities
+                title: Take Action
+                show_header_toggle: false
+                entities:
+                  # The Dropdown
+                  - entity: select.notification_selector
+                    name: Select ID to Respond
+
+              # The Buttons (Placed below the dropdown)
+              - type: horizontal-stack
+                cards:
+                  - type: tile
+                    entity: select.notification_selector
+                    name: Accept
+                    icon: mdi:check
+                    color: green
+                    show_entity_picture: false
+                    state_content: []
+                    tap_action:
+                      action: call-service
+                      service: green_shift.respond_to_selection
+                      data:
+                        decision: accept
+                  
+                  - type: tile
+                    entity: select.notification_selector
+                    name: Reject
+                    icon: mdi:close
+                    color: red
+                    show_entity_picture: false
+                    state_content: []
+                    tap_action:
+                      action: call-service
+                      service: green_shift.respond_to_selection
+                      data:
+                        decision: reject
+
+          # --- 3. HISTORY TABLE ---
+          - type: markdown
+            title: 📜 History
+            content: |
+              {%- set ns = state_attr('sensor.active_notifications', 'notifications') -%}
+              {%- if ns -%}
+              <table width="100%">
+                <thead>
+                  <tr>
+                    <th align="left">Time</th>
+                    <th align="left">Type</th>
+                    <th align="center">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                {%- for n in ns[:8] -%}
+                  <tr>
+                    <td>{{ n.time_ago }}</td>
+                    <td>{{ n.action_type | replace('_', ' ') | capitalize }}</td>
+                    <td align="center">{{ n.status_emoji }}</td>
+                  </tr>
+                {%- endfor -%}
+                </tbody>
+              </table>
+              {%- else -%}
+              No history available.
+              {%- endif -%}
+
+  # ========== TAB 6: USER PROFILE ==========
   - title: Profile
     path: profile
     icon: mdi:account-circle
@@ -795,7 +920,7 @@ views:
                     * Offsetting **{{ flights }} short-haul flights** ✈️
                     * Avoiding **{{ km }} km** driven in a gas car 🚗
 
-  # ========== TAB 6: SETTINGS ==========
+  # ========== TAB 7: SETTINGS ==========
   - title: Settings
     path: settings
     icon: mdi:cog

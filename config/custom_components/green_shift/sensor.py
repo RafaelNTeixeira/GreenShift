@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -38,6 +38,7 @@ async def async_setup_entry(
         BehaviourIndexSensor(agent),
         FatigueIndexSensor(agent),
         DailyTasksSensor(storage),
+        ActiveNotificationsSensor(agent)
     ]
 
     async_add_entities(sensors)
@@ -617,3 +618,105 @@ class DailyTasksSensor(GreenShiftAISensor):
             "verified_count": verified_count,
             "total_count": len(self._tasks),
         }
+    
+class ActiveNotificationsSensor(GreenShiftAISensor):
+    """Sensor showing active notifications that need user feedback."""
+    
+    _attr_should_poll = False
+    
+    def __init__(self, agent):
+        self._agent = agent
+        self._attr_name = "Active Notifications"
+        self._attr_unique_id = f"{DOMAIN}_active_notifications"
+        self._attr_icon = "mdi:bell-ring"
+    
+    @property
+    def state(self):
+        """Return count of unresponded notifications."""
+        unresponded = [n for n in self._agent.notification_history if not n.get("responded", False)]
+        return len(unresponded)
+    
+    @property
+    def extra_state_attributes(self):
+        """Return notification details."""
+        
+        # Get all notifications from history
+        all_notifications = []
+        
+        for notif in self._agent.notification_history:
+            # Parse timestamp
+            try:
+                timestamp = datetime.fromisoformat(notif["timestamp"])
+                time_ago = self._get_time_ago(timestamp)
+            except:
+                time_ago = "Unknown"
+            
+            notification_data = {
+                "notification_id": notif["notification_id"],
+                "action_type": notif["action_type"],
+                "title": notif.get("title", "Energy Notification"),
+                "message": notif.get("message", ""),
+                "timestamp": notif["timestamp"],
+                "time_ago": time_ago,
+                "responded": notif.get("responded", False),
+                "accepted": notif.get("accepted", None),
+            }
+            
+            # Add status emoji
+            if notif.get("responded"):
+                if notif.get("accepted"):
+                    notification_data["status"] = "Helpful"
+                    notification_data["status_emoji"] = "✅"
+                else:
+                    notification_data["status"] = "Not useful"
+                    notification_data["status_emoji"] = "❌"
+            else:
+                notification_data["status"] = "Pending"
+                notification_data["status_emoji"] = "⏳"
+            
+            all_notifications.append(notification_data)
+        
+        # Sort by timestamp (newest first)
+        all_notifications.sort(key=lambda x: x["timestamp"], reverse=True)
+        
+        # Count statistics
+        total = len(all_notifications)
+        responded = sum(1 for n in all_notifications if n["responded"])
+        accepted = sum(1 for n in all_notifications if n.get("accepted") == True)
+        rejected = sum(1 for n in all_notifications if n.get("accepted") == False)
+        pending = total - responded
+        
+        return {
+            "notifications": all_notifications,
+            "total_count": total,
+            "pending_count": pending,
+            "accepted_count": accepted,
+            "rejected_count": rejected,
+            "acceptance_rate": round((accepted / responded * 100) if responded > 0 else 0, 1),
+        }
+    
+    def _get_time_ago(self, timestamp):
+        """Convert timestamp to human-readable time ago."""
+        now = datetime.now()
+        
+        # Handle timezone-aware vs naive datetimes
+        if timestamp.tzinfo is not None and now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        elif timestamp.tzinfo is None and now.tzinfo is not None:
+            timestamp = timestamp.replace(tzinfo=now.tzinfo)
+        
+        diff = now - timestamp
+        
+        seconds = diff.total_seconds()
+        
+        if seconds < 60:
+            return "Just now"
+        elif seconds < 3600:
+            minutes = int(seconds / 60)
+            return f"{minutes}m ago"
+        elif seconds < 86400:
+            hours = int(seconds / 3600)
+            return f"{hours}h ago"
+        else:
+            days = int(seconds / 86400)
+            return f"{days}d ago"

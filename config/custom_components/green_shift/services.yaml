@@ -38,3 +38,17 @@ regenerate_tasks:
   name: Regenerate Tasks
   description: Force regeneration of today's tasks (admin use only)
   fields: {}
+
+respond_to_selection:
+  name: Respond to Selection
+  description: Accept or Reject the notification currently selected in the dropdown.
+  fields:
+    decision:
+      name: Decision
+      description: Either 'accept' or 'reject'
+      required: true
+      selector:
+        select:
+          options:
+            - accept
+            - reject

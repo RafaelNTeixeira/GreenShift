@@ -229,11 +229,35 @@ async def async_setup_services(hass: HomeAssistant):
         tasks = await task_manager.generate_daily_tasks()
         _LOGGER.info("Tasks regenerated: %d tasks", len(tasks))
         async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
+
+    async def respond_to_selection(call: ServiceCall):
+        """Service to respond to the notification currently selected in the dropdown."""
+        decision = call.data.get("decision") # 'accept' or 'reject'
+        
+        # Get the state of the selector entity
+        selector_state = hass.states.get("select.notification_selector")
+        if not selector_state:
+            _LOGGER.warning("Notification selector entity not found")
+            return
+
+        notification_id = selector_state.state
+        
+        if notification_id == "No pending notifications" or notification_id in ["unknown", "unavailable"]:
+            _LOGGER.warning("No valid notification selected")
+            return
+
+        agent = hass.data[DOMAIN]["agent"]
+        accepted = (decision == "accept")
+        
+        await agent._handle_notification_feedback(notification_id, accepted=accepted)
+        _LOGGER.info("Notification %s marked as %s via selector", notification_id, decision)
+        async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
     
     # Register services
     hass.services.async_register(DOMAIN, "submit_task_feedback", submit_task_feedback)
     hass.services.async_register(DOMAIN, "verify_tasks", verify_tasks)
     hass.services.async_register(DOMAIN, "regenerate_tasks", regenerate_tasks)
+    hass.services.async_register(DOMAIN, "respond_to_selection", respond_to_selection)
     
     _LOGGER.info("Services registered successfully")
 
@@ -259,7 +283,7 @@ async def trigger_phase_transition_notification(hass, agent, collector):
         f"\n**Target:** We've set a **{target}%** reduction goal for you (you can change this in the Settings tab)\n"
         f"\n---\n"
         f"### Your Potential Impact 🌍\n"
-        f"By hitting your **{summary['target']}% target**, in one year you would save:\n"
+        f"By hitting your **{target}%** reduction goal, in one year you would save:\n"
         f"* **{impact.get('co2_kg', 0)} kg** of CO₂\n"
         f"* The equivalent of planting **{impact.get('trees', 0)}** mature trees\n"
         f"* The carbon offset of **{impact.get('flights', 0)}** short-haul flights\n"
