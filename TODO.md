@@ -42,10 +42,11 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Develop fatigue index
 - [x] Set default MAX_NOTIFICATIONS_PER_DAY value to 5
 - [x] Check why it is still sending notifications when notification count exceeds MAX_NOTIFICATIONS_PER_DAY
+- [ ] Add mechanism that does not use notification timeouts. Must submit notification when most needed and when fatigue is not high.
 - [ ] Check if indices are updating during the intervention
 - [ ] Check adaptive difficulty updates
 - [x] Q-table in JSON with duplicate key entries
-- [ ] Check notification templates that make more sense
+- [c] Check notification templates that make more sense
 - [ ] Store data needed for analysis/results extraction
 - [ ] Test AI-driven features (notifications, recommendations)
 

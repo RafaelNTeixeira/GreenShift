@@ -1,12 +1,13 @@
-# ========== NOTIFICATIONS TAB ==========
+# ========== TAB 5: NOTIFICATIONS ==========
 title: Notifications
 path: notifications
 icon: mdi:bell
-type: sidebar
+type: panel
 cards:
-  # --- SIDEBAR: STATS ---
   - type: vertical-stack
     cards:
+      
+      # --- TOP SECTION (STATS & INSTRUCTIONS) ---
       - type: tile
         entity: sensor.active_notifications
         name: 🔔 Active Alerts
@@ -16,14 +17,11 @@ cards:
       - type: markdown
         content: |
           ### ℹ️ How to Use
-          1. **📖 Read** the alerts.
-          2. **🔽 Select** the ID below.
+          1. **📖 Read** the alerts below.
+          2. **🔽 Select** the ID in the action panel.
           3. **👆 Tap** Accept or Reject.
 
-  # --- MAIN COLUMN ---
-  - type: vertical-stack
-    cards:
-      # --- 1. PENDING INBOX (Simple List) ---
+      # --- INBOX SECTION ---
       - type: markdown
         title: 📬 Pending Inbox
         content: |
@@ -46,18 +44,16 @@ cards:
           {%- endfor -%}
           {%- endif -%}
 
-      # --- 2. ACTION PANEL (Entities Style) ---
+      # --- ACTION PANEL ---
       - type: vertical-stack
         cards:
           - type: entities
             title: 🎬 Take Action
             show_header_toggle: false
             entities:
-              # The Dropdown
               - entity: select.notification_selector
                 name: 🔽 Select ID to Respond
 
-          # The Buttons (Placed below the dropdown)
           - type: horizontal-stack
             cards:
               - type: tile
@@ -86,7 +82,7 @@ cards:
                   data:
                     decision: reject
 
-      # --- 3. HISTORY TABLE ---
+      # --- HISTORY TABLE ---
       - type: markdown
         title: 📜 History
         content: |
