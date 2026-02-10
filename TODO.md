@@ -16,7 +16,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Improve Monitored Devices tab
 - [x] Improve Dashboard tab
 - [x] Add emojis to places where they are missing to make screen more appealing
-- [ ] Add extra attributes to money saved in Profile tab?
+- [x] Add extra attributes to money saved in Profile tab?
 - [x] Update guide from Settings tab
 
 ### 🎮 Gamification

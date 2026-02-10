@@ -352,12 +352,18 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
         self._attr_unique_id = f"{DOMAIN}_savings"
         self._attr_icon = "mdi:cash-check"
         self._attr_native_value = 0
+        self._attr_extra_state_attributes = {}
 
     @property
     def unit_of_measurement(self):
         """Dynamic unit based on input_select.currency."""
         currency_state = self.hass.states.get("input_select.currency")
         return currency_state.state if currency_state else "EUR"
+    
+    @property
+    def extra_state_attributes(self):
+        """Return calculation details."""
+        return self._attr_extra_state_attributes
     
     async def _async_update_state(self):
         """Fetch data asynchronously and calculate state."""
@@ -367,6 +373,12 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
         
         if len(power_history) < 10:
             self._attr_native_value = 0
+            self._attr_extra_state_attributes = {
+                "avg_power_w": 0,
+                "baseline_consumption_w": round(self._agent.baseline_consumption, 2),
+                "saving_watts": 0,
+                "currency": self.unit_of_measurement,
+            }
             return
         
         price_state = self.hass.states.get("input_number.electricity_price")
@@ -387,6 +399,16 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
         savings_total = saving_kwh * price_per_kwh
         
         self._attr_native_value = round(max(0, savings_total), 2)
+        
+        # Update attributes with calculation details
+        self._attr_extra_state_attributes = {
+            "avg_power_w": round(avg_consumption, 2),
+            "baseline_consumption_w": round(self._agent.baseline_consumption, 2),
+            "saving_watts": round(saving_watts, 2),
+            "currency": self.unit_of_measurement,
+            "price_per_kwh": price_per_kwh,
+        }
+        
 
 
 class CO2SavedSensor(GreenShiftAISensor):

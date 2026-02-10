@@ -580,7 +580,7 @@ views:
                   type: button
                   name: "Verify All Tasks"
                   icon: mdi:check-circle
-                  icon_height: 20px
+                  icon_height: 30px
                   tap_action:
                     action: call-service
                     service: green_shift.verify_tasks
