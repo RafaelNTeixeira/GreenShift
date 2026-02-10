@@ -111,7 +111,7 @@ During the initial 14 days, the system is in **learning mode**:
 After baseline learning, the system becomes **active**:
 
 - 🎯 Starts suggesting energy-saving actions
-- 📢 Sends up to 3 notifications per day
+- 📢 Sends up to 5 notifications per day
 - 🎮 **Tasks** and **Collaborative Goal** tabs unlock
 - 😊 Learns from your feedback via reinforcement learning
 - ⚖️ Adapts behaviour to minimize user fatigue
@@ -309,7 +309,7 @@ Configure these parameters:
 
 ### Notification Limits
 
-- **Max notifications per day**: 3 (prevents user fatigue)
+- **Max notifications per day**: 5 (prevents user fatigue)
 - **Min time between notifications**: 1 hour
 - **Fatigue threshold**: 0.7 (notifications pause above this)
 - **Baseline days**: 14 (calibration period before recommendations)

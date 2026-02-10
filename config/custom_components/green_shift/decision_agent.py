@@ -127,6 +127,22 @@ class DecisionAgent:
         if "fatigue_index" in state:
             self.fatigue_index = state["fatigue_index"]
 
+        # Load notification tracking
+        if "notification_count_today" in state:
+            self.notification_count_today = state["notification_count_today"]
+        
+        if "last_notification_date" in state and state["last_notification_date"]:
+            try:
+                self.last_notification_date = datetime.fromisoformat(state["last_notification_date"]).date()
+            except (ValueError, AttributeError):
+                self.last_notification_date = None
+        
+        if "last_notification_time" in state and state["last_notification_time"]:
+            try:
+                self.last_notification_time = datetime.fromisoformat(state["last_notification_time"])
+            except (ValueError, AttributeError):
+                self.last_notification_time = None
+
         # Load notification history
         if "notification_history" in state:
             self.notification_history = deque(state["notification_history"], maxlen=50)
@@ -163,6 +179,9 @@ class DecisionAgent:
             "anomaly_index": float(self.anomaly_index),
             "behaviour_index": float(self.behaviour_index),
             "fatigue_index": float(self.fatigue_index),
+            "notification_count_today": self.notification_count_today,
+            "last_notification_date": self.last_notification_date.isoformat() if self.last_notification_date else None,
+            "last_notification_time": self.last_notification_time.isoformat() if self.last_notification_time else None,
             "notification_history": list(self.notification_history),
             "q_table": serializable_q_table,
         }
@@ -179,8 +198,10 @@ class DecisionAgent:
         # Counter reset of daily notifications
         today = datetime.now().date()
         if self.last_notification_date != today:
+            old_count = self.notification_count_today
             self.notification_count_today = 0
             self.last_notification_date = today
+            _LOGGER.info("Daily notification counter reset (was %d/%d)", old_count, MAX_NOTIFICATIONS_PER_DAY)
         
         # Build state vector from DataCollector's current readings
         await self._build_state_vector()
@@ -341,18 +362,20 @@ class DecisionAgent:
         """Selects action A_t using epsilon-greedy policy with Q-learning.""" 
         # Check notification limits
         if self.notification_count_today >= MAX_NOTIFICATIONS_PER_DAY:
-            _LOGGER.debug("Max notifications reached for today")
+            _LOGGER.info("Max notifications reached for today (%d/%d)", self.notification_count_today, MAX_NOTIFICATIONS_PER_DAY)
             return
         
         # Check fatigue threshold
         if self.fatigue_index > FATIGUE_THRESHOLD:
-            _LOGGER.debug("User fatigue too high (%.2f), skipping notification", self.fatigue_index)
+            _LOGGER.info("User fatigue too high (%.2f > %.2f), skipping notification", self.fatigue_index, FATIGUE_THRESHOLD)
             return
 
         # Minimum time between notifications (1 hour)
         if self.last_notification_time:
             time_since_last = (datetime.now() - self.last_notification_time).total_seconds()
+            minutes_since = time_since_last / 60
             if time_since_last < 3600:  # 1 hour
+                _LOGGER.info("Too soon since last notification (%.1f min / 60 min), waiting", minutes_since)
                 return
             
         # Get current state
@@ -455,7 +478,7 @@ class DecisionAgent:
                 "responded": False
             })
             
-            _LOGGER.info("Action executed: %s - %s", action_name, notification["title"])
+            _LOGGER.info("Notification sent (%d/%d today): %s - %s", self.notification_count_today, MAX_NOTIFICATIONS_PER_DAY, action_name, notification["title"])
 
             async_dispatcher_send(self.hass, GS_AI_UPDATE_SIGNAL)
 

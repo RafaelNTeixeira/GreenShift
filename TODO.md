@@ -40,8 +40,8 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Improve anomaly index
 - [x] Develop behaviour index
 - [x] Develop fatigue index
-- [ ] Set default MAX_NOTIFICATIONS_PER_DAY value to 5
-- [ ] Check why it is still sending notifications when notification count exceeds MAX_NOTIFICATIONS_PER_DAY
+- [x] Set default MAX_NOTIFICATIONS_PER_DAY value to 5
+- [x] Check why it is still sending notifications when notification count exceeds MAX_NOTIFICATIONS_PER_DAY
 - [ ] Check if indices are updating during the intervention
 - [ ] Check adaptive difficulty updates
 - [ ] Q-table in JSON with duplicate key entries

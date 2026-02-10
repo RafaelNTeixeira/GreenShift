@@ -74,12 +74,11 @@ REWARD_WEIGHTS = {
 }
 
 # Notification settings
-MAX_NOTIFICATIONS_PER_DAY = 3
+MAX_NOTIFICATIONS_PER_DAY = 5
 FATIGUE_THRESHOLD = 0.7
 
 # Discount factor for RL
 GAMMA = 0.95
-
 
 # Notification Templates
 NOTIFICATION_TEMPLATES = {
