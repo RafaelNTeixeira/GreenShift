@@ -27,7 +27,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Improve logic of Cooperative Goal
 - [x] Create a service to check if weekly challenge has been completed
 - [x] Implement adaptive difficulty
-- [ ] Need to round sensor values from tasks
+- [x] Need to round sensor values from tasks
 - [ ] Store data needed for analysis/results extraction
 - [ ] EXTRA: Add level system based on XP obtained from task/challenge completion? Or just level based on number of tasks completion
 - [ ] Test gamification logic and UI
@@ -44,6 +44,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [ ] Check why it is still sending notifications when notification count exceeds MAX_NOTIFICATIONS_PER_DAY
 - [ ] Check if indices are updating during the intervention
 - [ ] Check adaptive difficulty updates
+- [ ] Q-table in JSON with duplicate key entries
 - [ ] Check notification templates that make more sense
 - [ ] Store data needed for analysis/results extraction
 - [ ] Test AI-driven features (notifications, recommendations)

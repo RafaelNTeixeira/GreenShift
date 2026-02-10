@@ -555,11 +555,7 @@ class DailyTasksSensor(GreenShiftAISensor):
         """Register the listener when the entity is added to HA."""
         await super().async_added_to_hass()
         self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass, 
-                GS_AI_UPDATE_SIGNAL,
-                self._update_callback
-            )
+            async_dispatcher_connect(self.hass, GS_AI_UPDATE_SIGNAL,self._update_callback)
         )
         # Initial load
         await self._async_update_state()
@@ -591,6 +587,7 @@ class DailyTasksSensor(GreenShiftAISensor):
                 "tasks": [],
                 "completed_count": 0,
                 "verified_count": 0,
+                "total_count": 0
             }
         
         completed_count = sum(1 for t in self._tasks if t['completed'])
@@ -599,13 +596,26 @@ class DailyTasksSensor(GreenShiftAISensor):
         # Format tasks for display
         tasks_display = []
         for task in self._tasks:
+            raw_target = task.get('target_value', 0)
+            raw_baseline = task.get('baseline_value', 0)
+            unit = task.get('target_unit', '')
+
+            if unit == 'W':
+                # Force Integer for Watts
+                formatted_target = int(float(raw_target)) if raw_target is not None else 0
+                formatted_baseline = int(float(raw_baseline)) if raw_baseline is not None else 0
+            else:
+                # Force 1 decimal for Temp/Other
+                formatted_target = round(float(raw_target), 1) if raw_target is not None else 0.0
+                formatted_baseline = round(float(raw_baseline), 1) if raw_baseline is not None else 0.0
+
             task_info = {
                 'task_id': task['task_id'],
                 'title': task['title'],
                 'description': task['description'],
-                'target_value': task['target_value'],
-                'target_unit': task['target_unit'],
-                'baseline_value': task['baseline_value'],
+                'target_value': formatted_target, 
+                'target_unit': unit,
+                'baseline_value': formatted_baseline,
                 'difficulty_level': task['difficulty_level'],
                 'completed': task['completed'],
                 'verified': task['verified'],

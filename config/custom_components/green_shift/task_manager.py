@@ -116,7 +116,7 @@ class TaskManager:
         # Calculate target based on difficulty (reduce by 0.5°C to 2°C)
         base_reduction = 1.0  # Base reduction in °C
         reduction = base_reduction * self.difficulty_multipliers[difficulty]
-        target_temp = baseline_temp - reduction
+        target_temp = round(baseline_temp - reduction, 1)
         
         return {
             'task_id': f"temp_{datetime.now().strftime('%Y%m%d')}",
@@ -125,7 +125,7 @@ class TaskManager:
             'description': f'Keep average temperature below {target_temp:.1f}°C today (current avg: {baseline_temp:.1f}°C)',
             'target_value': target_temp,
             'target_unit': '°C',
-            'baseline_value': baseline_temp,
+            'baseline_value': round(baseline_temp, 1),
             'difficulty_level': difficulty,
             'area_name': None,  # Global task
         }
@@ -146,16 +146,16 @@ class TaskManager:
         # Calculate target based on difficulty (reduce by 3% to 15%)
         base_reduction_pct = 8.0  # Base reduction percentage
         reduction_pct = base_reduction_pct * self.difficulty_multipliers[difficulty]
-        target_power = baseline_power * (1 - reduction_pct / 100)
+        target_power = round(baseline_power * (1 - reduction_pct / 100))
         
         return {
             'task_id': f"power_{datetime.now().strftime('%Y%m%d')}",
             'task_type': 'power_reduction',
             'title': f'Reduce Power by {reduction_pct:.1f}%',
-            'description': f'Keep average power below {target_power:.0f}W today (7-day avg: {baseline_power:.0f}W)',
+            'description': f'Keep average power below {target_power:.0f}W today (7-day avg: {round(baseline_power):.0f}W)',
             'target_value': target_power,
             'target_unit': 'W',
-            'baseline_value': baseline_power,
+            'baseline_value': round(baseline_power),
             'difficulty_level': difficulty,
             'area_name': None,
         }
@@ -179,16 +179,16 @@ class TaskManager:
         # Target: reduce night power by 5% to 25%
         base_reduction_pct = 12.0
         reduction_pct = base_reduction_pct * self.difficulty_multipliers[difficulty]
-        target_power = baseline_night_power * (1 - reduction_pct / 100)
+        target_power = round(baseline_night_power * (1 - reduction_pct / 100))
         
         return {
             'task_id': f"standby_{datetime.now().strftime('%Y%m%d')}",
             'task_type': 'standby_reduction',
             'title': f'Reduce Night Power by {reduction_pct:.1f}%',
-            'description': f'Keep power below {target_power:.0f}W during 00:00-06:00 (avg: {baseline_night_power:.0f}W)',
+            'description': f'Keep power below {target_power:.0f}W during 00:00-06:00 (avg: {round(baseline_night_power):.0f}W)',
             'target_value': target_power,
             'target_unit': 'W',
-            'baseline_value': baseline_night_power,
+            'baseline_value': round(baseline_night_power),
             'difficulty_level': difficulty,
             'area_name': None,
         }
@@ -212,7 +212,7 @@ class TaskManager:
         # Target: reduce daytime power by 4% to 20% (easier because natural light helps)
         base_reduction_pct = 10.0
         reduction_pct = base_reduction_pct * self.difficulty_multipliers[difficulty]
-        target_power = baseline_day_power * (1 - reduction_pct / 100)
+        target_power = round(baseline_day_power * (1 - reduction_pct / 100))
         
         return {
             'task_id': f"daylight_{datetime.now().strftime('%Y%m%d')}",
@@ -221,7 +221,7 @@ class TaskManager:
             'description': f'Keep daytime power (08:00-17:00) below {target_power:.0f}W by using natural light',
             'target_value': target_power,
             'target_unit': 'W',
-            'baseline_value': baseline_day_power,
+            'baseline_value': round(baseline_day_power),
             'difficulty_level': difficulty,
             'area_name': None,
         }
@@ -253,7 +253,7 @@ class TaskManager:
         # Target: reduce power in that area by 10% to 40%
         base_reduction_pct = 20.0
         reduction_pct = base_reduction_pct * self.difficulty_multipliers[difficulty]
-        target_power = max_power * (1 - reduction_pct / 100)
+        target_power = round(max_power * (1 - reduction_pct / 100))
         
         return {
             'task_id': f"unoccupied_{datetime.now().strftime('%Y%m%d')}",
@@ -262,7 +262,7 @@ class TaskManager:
             'description': f'Reduce power in {target_area} to below {target_power:.0f}W when unoccupied',
             'target_value': target_power,
             'target_unit': 'W',
-            'baseline_value': max_power,
+            'baseline_value': round(max_power),
             'difficulty_level': difficulty,
             'area_name': target_area,
         }
@@ -291,7 +291,7 @@ class TaskManager:
         # Target: reduce peak hour power by 8% to 30%
         base_reduction_pct = 15.0
         reduction_pct = base_reduction_pct * self.difficulty_multipliers[difficulty]
-        target_power = peak_power * (1 - reduction_pct / 100)
+        target_power = round(peak_power * (1 - reduction_pct / 100))
         
         return {
             'task_id': f"peak_{datetime.now().strftime('%Y%m%d')}",
@@ -300,7 +300,7 @@ class TaskManager:
             'description': f'Keep power below {target_power:.0f}W during {peak_hour:02d}:00-{(peak_hour+1) % 24:02d}:00',
             'target_value': target_power,
             'target_unit': 'W',
-            'baseline_value': peak_power,
+            'baseline_value': round(peak_power),
             'difficulty_level': difficulty,
             'area_name': None,
         }
