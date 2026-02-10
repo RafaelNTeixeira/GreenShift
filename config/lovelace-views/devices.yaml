@@ -1,0 +1,130 @@
+# ========== DEVICES TAB ==========
+title: Devices
+path: devices
+icon: mdi:power-plug
+type: panel
+cards:
+  - type: vertical-stack
+    cards:
+      - type: markdown
+        content: |
+          # 🔌 Monitored Devices
+          Real-time values from automatically discovered **hardware sensors**.
+
+          ---
+          ### 📘 Quick Guide
+          {%- set p = state_attr('sensor.hardware_sensors', 'power') %}
+          {%- set e = state_attr('sensor.hardware_sensors', 'energy') %}
+          {%- set l = state_attr('sensor.hardware_sensors', 'illuminance') %}
+          {%- set h = state_attr('sensor.hardware_sensors', 'humidity') %}
+
+          {%- if p and p | length > 0 %}
+          **⚡ W (Watts):** *Instant Speed.* 
+          Shows how much electricity is flowing right now. Turning on a device makes this number go up immediately.
+          {%- endif %}
+
+          {%- if e and e | length > 0 %}
+          **🔋 kWh (Kilowatt-hours):** *Accumulated Usage.*
+          This counts the total volume of energy used over time (what you pay for). 
+          *Impact Example:* **1 kWh** is roughly the energy needed to run a **washing machine cycle**.
+          {%- endif %}
+
+          {%- if l and l | length > 0 %}
+          **💡 Lux:** *Brightness.*
+          Measures light intensity. 0 is pitch black, 500 is a bright place.
+          {%- endif %}
+          
+          {%- if h and h | length > 0 %}
+          **💧 Humidity (%):** *Moisture.*
+          How much water is in the air. 40-60% is usually comfortable.
+          {%- endif %}
+
+      # --- GLOBAL OVERVIEW ---
+      - type: horizontal-stack
+        cards:
+          - type: sensor
+            entity: sensor.current_consumption
+            name: ⚡ Total Load
+            graph: line
+          - type: sensor
+            entity: sensor.current_hourly_cost
+            name: 💵 Current Hourly Cost
+            graph: line
+          - type: sensor
+            entity: sensor.daily_cost
+            name: 💰 Current Daily Cost
+            graph: line
+          - type: sensor
+            entity: sensor.daily_co2_estimate
+            name: 🌱 Current Daily CO2 (kg)
+            graph: line
+
+      # --- DYNAMIC AREA DASHBOARD ---
+      - type: vertical-stack
+        cards:
+          - type: markdown
+            content: "### 🏠 Area Snapshot"
+          
+          # The Dropdown Menu
+          - type: entities
+            entities:
+              - entity: select.dashboard_area_filter
+                name: 🔽 Filter by Room
+            style: |
+              ha-card {
+                box-shadow: none;
+                background: none;
+                margin-bottom: -20px; /* Pulls the table up closer */
+              }
+
+          # The filtered table
+          - type: markdown
+            content: >
+              {%- set filter = states('select.dashboard_area_filter') -%}
+              {%- set ns = namespace(areas=[]) -%}
+
+              {%- for cat in ['power', 'energy', 'temperature', 'humidity', 'illuminance', 'occupancy'] -%}
+                {%- set sensors = state_attr('sensor.hardware_sensors', cat) -%}
+                {%- if sensors -%}
+                  {%- for s in sensors -%}
+                    {%- set area_name = s.get('area') -%}
+                    {%- if area_name and area_name not in ns.areas -%}
+                      {%- set ns.areas = ns.areas + [area_name] -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                {%- endif -%}
+              {%- endfor -%}
+
+              {%- if ns.areas | length == 0 -%}
+              ⚠️ **No areas detected.**
+              {%- endif -%}
+              
+              {%- for area in ns.areas | sort -%}
+                {%- if filter in ['All Areas', 'unknown', 'unavailable'] or filter == area -%}
+                  <h3>📍 {{ area }}</h3>
+                  <table width="100%">
+                  {%- for cat in ['power', 'energy', 'temperature', 'humidity', 'illuminance', 'occupancy'] -%}
+                    {%- set sensors = state_attr('sensor.hardware_sensors', cat) -%}
+                    {%- if sensors -%}
+                      {%- for s in sensors -%}
+                        {%- if s.get('area') == area -%}
+                          <tr>
+                            <td width="5%" style="text-align: center;">
+                              <ha-icon icon="{{ 'mdi:lightning-bolt' if cat == 'power' else 'mdi:counter' if cat == 'energy' else 'mdi:thermometer' if cat == 'temperature' else 'mdi:water-percent' if cat == 'humidity' else 'mdi:brightness-5' if cat == 'illuminance' else 'mdi:eye' }}" style="width: 20px; color: var(--secondary-text-color);"></ha-icon>
+                            </td>
+                            <td style="text-align: left;">{{ s.name }}</td>
+                            <td style="text-align: right;">
+                              {%- if cat == 'occupancy' -%}
+                                {{ '🔴' if s.value == 'on' else '🟢' }}
+                              {%- else -%}
+                                <b>{{ s.value }}</b> <small>{{ s.unit }}</small>
+                              {%- endif -%}
+                            </td>
+                          </tr>
+                        {%- endif -%}
+                      {%- endfor -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                  </table>
+                {%- endif -%}
+              {%- endfor -%}

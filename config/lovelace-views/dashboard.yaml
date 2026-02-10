@@ -1,0 +1,123 @@
+# ========== DASHBOARD TAB ==========
+title: Dashboard
+path: dashboard
+icon: mdi:chart-line
+type: panel
+cards:
+  - type: vertical-stack
+    cards:
+      - type: markdown
+        content: |
+          # 📊 Dashboard 
+          Analyze your energy consumption patterns and identify opportunities for savings.
+
+      - type: conditional
+        conditions:
+          - entity: sensor.research_phase
+            state: baseline
+        card:
+          type: markdown
+          content: |
+            ## 📊 Calibration in Progress
+            The system is learning your habits (**{{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining**).
+
+      # --- HISTORY GRAPH ---
+      - type: history-graph
+        title: 📈 Consumption vs Baseline (Last Week)
+        hours_to_show: 168
+        entities:
+          - entity: sensor.current_consumption
+            name: ⚡ Current Consumption
+          - entity: sensor.energy_baseline
+            name: 📊 Baseline
+      
+      # --- AREA CONSUMPTION TABLE ---
+      - type: markdown
+        content: |
+          ### ⚡ Energy by Area
+          
+          {%- set sensors = state_attr('sensor.hardware_sensors', 'energy') -%}
+          {%- set ns = namespace(area_sums={}, total=0) -%}
+
+          {%- if sensors -%}
+            {%- for s in sensors -%}
+              {%- if s.value is not none -%}
+                {%- set ns.total = ns.total + s.value -%}
+                {%- set area = s.area if s.area else 'No Area' -%}
+                {%- set current = ns.area_sums.get(area, 0) -%}
+                {%- set new_dict = {area: current + s.value} -%}
+                {%- set ns.area_sums = dict(ns.area_sums, **new_dict) -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endif -%}
+
+          {%- if ns.total == 0 -%}
+          📭 No energy data collected yet.
+          {%- else -%}
+          
+          <table width="100%">
+            <thead>
+              <tr>
+                <th style="text-align: left;">📍 Area</th>
+                <th style="text-align: right;">⚡ Usage</th>
+                <th style="text-align: right;">📊 Share</th>
+                <th style="text-align: left;">📊 Distribution</th>
+              </tr>
+            </thead>
+            <tbody>
+            {%- for area, kwh in ns.area_sums.items() | sort(attribute='1', reverse=True) -%}
+              {%- set pct = (kwh / ns.total * 100) | round(0) | int -%}
+              {%- set blocks = (pct / 10) | round(0) | int -%}
+              {%- set bar = '▓' * blocks + '░' * (10 - blocks) -%}
+              <tr>
+                <td style="text-align: left;"><b>{{ area }}</b></td>
+                <td style="text-align: right;">{{ kwh | round(2) }} kWh</td>
+                <td style="text-align: right;">{{ pct }}%</td>
+                <td style="text-align: left; color: var(--primary-color);">{{ bar }}</td>
+              </tr>
+            {%- endfor -%}
+            </tbody>
+          </table>
+          {%- endif -%}
+
+      # --- TOP 5 POWER CONSUMERS ---
+      - type: markdown
+        content: |
+          ### 🏆 Top 5 Power Consumers
+          {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
+          {%- if sensors -%}
+          {# 1. Filter valid sensors and sort by highest Watts first #}
+          {%- set top_devices = sensors
+              | selectattr('value', 'ne', None)
+              | sort(attribute='value', reverse=True)
+              | list
+          -%}
+          {# 2. Get the max value to scale the bars relative to the biggest hog #}
+          {%- set max_val = top_devices[0].value if top_devices else 1 -%}
+
+          <table width="100%">
+            <thead>
+              <tr>
+                <th style="text-align: left;">🔌 Device</th>
+                <th style="text-align: right;">⚡ Load</th>
+                <th style="text-align: left; padding-left: 10px;">📊 Impact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {%- for s in top_devices[:5] -%}
+              {%- set pct = (s.value / max_val * 100) | int -%}
+              {%- set blocks = (pct / 10) | round(0) | int -%}
+              {%- set bar = '█' * blocks + '░' * (10 - blocks) -%}
+              <tr>
+                <td style="text-align: left;">{{ s.name }}</td>
+                <td style="text-align: right;"><b>{{ s.value }} W</b></td>
+                <td style="text-align: left; padding-left: 10px; color: var(--primary-color);">
+                  {{ bar }}
+                </td>
+              </tr>
+              {%- endfor -%}
+            </tbody>
+          </table>
+          {%- else -%}
+          😴 No active devices detected.
+          {%- endif -%}

@@ -15,9 +15,9 @@ Checklist to track remaining features, fixes and tests before completion.
  - [x] Display only number of generated tasks 
 - [ ] Improve Monitored Devices tab
 - [ ] Improve Dashboard tab
-- [ ] Add emojis to places where they are missing to make screen more appealing
+- [x] Add emojis to places where they are missing to make screen more appealing
 - [ ] Add extra attributes to money saved in Profile tab?
-- [ ] Update guide from Settings tab
+- [x] Update guide from Settings tab
 
 ### 🎮 Gamification
 - [x] Improve gamification daily tasks

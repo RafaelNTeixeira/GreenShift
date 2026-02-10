@@ -6,6 +6,7 @@ config/*
 !config/input_booleans.yaml 
 !config/input_numbers.yaml 
 !config/input_selects.yaml
+!config/lovelace-views/
 
 config/custom_components/green_shift/__pycache__/
 

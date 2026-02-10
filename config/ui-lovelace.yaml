@@ -1,5 +1,32 @@
+# title: Green Shift
+# views:
+#   # ========== TAB 1: DEVICES ==========
+#   - !include lovelace-views/devices.yaml
+
+#   # ========== TAB 2: DASHBOARD ==========
+#   - !include lovelace-views/dashboard.yaml
+
+#   # ========== TAB 3: CHALLENGES ==========
+#   - !include lovelace-views/challenges.yaml
+
+#   # ========== TAB 4: COLLABORATIVE GOAL ==========
+#   - !include lovelace-views/collaborative.yaml
+
+#   # ========== TAB 5: NOTIFICATIONS ==========
+#   - !include lovelace-views/notifications.yaml
+
+#   # ========== TAB 6: USER PROFILE ==========
+#   - !include lovelace-views/profile.yaml
+
+#   # ========== TAB 7: SETTINGS ==========
+#   - !include lovelace-views/settings.yaml
+
+# Green Shift - Lovelace Dashboard
+# Main configuration file with all views merged for easier editing
+
 title: Green Shift
 views:
+
   # ========== TAB 1: DEVICES ==========
   - title: Devices
     path: devices
@@ -10,7 +37,7 @@ views:
         cards:
           - type: markdown
             content: |
-              # Monitored Devices
+              # 🔌 Monitored Devices
               Real-time values from automatically discovered **hardware sensors**.
 
               ---
@@ -21,8 +48,7 @@ views:
               {%- set h = state_attr('sensor.hardware_sensors', 'humidity') %}
 
               {%- if p and p | length > 0 %}
-              **⚡ W (Watts):** *Instant Speed.* 
-              Shows how much electricity is flowing right now. Turning on a device makes this number go up immediately.
+              **⚡ W (Watts):** *Instant Speed.* Shows how much electricity is flowing right now. Turning on a device makes this number go up immediately.
               {%- endif %}
 
               {%- if e and e | length > 0 %}
@@ -46,19 +72,19 @@ views:
             cards:
               - type: sensor
                 entity: sensor.current_consumption
-                name: Total Load
+                name: ⚡ Total Load
                 graph: line
               - type: sensor
                 entity: sensor.current_hourly_cost
-                name: Current Hourly Cost
+                name: 💵 Current Hourly Cost
                 graph: line
               - type: sensor
                 entity: sensor.daily_cost
-                name: Current Daily Cost
+                name: 💰 Current Daily Cost
                 graph: line
               - type: sensor
                 entity: sensor.daily_co2_estimate
-                name: Current Daily CO2 (kg)
+                name: 🌱 Current Daily CO2 (kg)
                 graph: line
 
           # --- DYNAMIC AREA DASHBOARD ---
@@ -71,7 +97,7 @@ views:
               - type: entities
                 entities:
                   - entity: select.dashboard_area_filter
-                    name: Filter by Room
+                    name: 🔽 Filter by Room
                 style: |
                   ha-card {
                     box-shadow: none;
@@ -103,7 +129,7 @@ views:
                   
                   {%- for area in ns.areas | sort -%}
                     {%- if filter in ['All Areas', 'unknown', 'unavailable'] or filter == area -%}
-                      <h3>{{ area }}</h3>
+                      <h3>📍 {{ area }}</h3>
                       <table width="100%">
                       {%- for cat in ['power', 'energy', 'temperature', 'humidity', 'illuminance', 'occupancy'] -%}
                         {%- set sensors = state_attr('sensor.hardware_sensors', cat) -%}
@@ -141,7 +167,7 @@ views:
         cards:
           - type: markdown
             content: |
-              # Dashboard 
+              # 📊 Dashboard 
               Analyze your energy consumption patterns and identify opportunities for savings.
 
           - type: conditional
@@ -156,13 +182,13 @@ views:
 
           # --- HISTORY GRAPH ---
           - type: history-graph
-            title: Consumption vs Baseline (Last Week)
+            title: 📈 Consumption vs Baseline (Last Week)
             hours_to_show: 168
             entities:
               - entity: sensor.current_consumption
-                name: Current Consumption
+                name: ⚡ Current Consumption
               - entity: sensor.energy_baseline
-                name: Baseline
+                name: 📊 Baseline
           
           # --- AREA CONSUMPTION TABLE ---
           - type: markdown
@@ -185,16 +211,16 @@ views:
               {%- endif -%}
 
               {%- if ns.total == 0 -%}
-              No energy data collected yet.
+              📭 No energy data collected yet.
               {%- else -%}
               
               <table width="100%">
                 <thead>
                   <tr>
-                    <th style="text-align: left;">Area</th>
-                    <th style="text-align: right;">Usage</th>
-                    <th style="text-align: right;">Share</th>
-                    <th style="text-align: left;">Distribution</th>
+                    <th style="text-align: left;">📍 Area</th>
+                    <th style="text-align: right;">⚡ Usage</th>
+                    <th style="text-align: right;">📊 Share</th>
+                    <th style="text-align: left;">📊 Distribution</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -231,9 +257,9 @@ views:
               <table width="100%">
                 <thead>
                   <tr>
-                    <th style="text-align: left;">Device</th>
-                    <th style="text-align: right;">Load</th>
-                    <th style="text-align: left; padding-left: 10px;">Impact</th>
+                    <th style="text-align: left;">🔌 Device</th>
+                    <th style="text-align: right;">⚡ Load</th>
+                    <th style="text-align: left; padding-left: 10px;">📊 Impact</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -252,9 +278,8 @@ views:
                 </tbody>
               </table>
               {%- else -%}
-              No active devices detected.
+              😴 No active devices detected.
               {%- endif -%}
-
 
   # ========== TAB 3: CHALLENGES ==========
   - title: Challenges
@@ -272,7 +297,7 @@ views:
               type: markdown
               content: |
                 ## 🔒 Challenges Locked
-                **{{ state_attr('sensor.research_phase', 'days_remaining') }} days** until unlock
+                **{{ state_attr('sensor.research_phase', 'days_remaining') }} days** until unlock ⏳
 
           - type: conditional
             conditions:
@@ -287,9 +312,9 @@ views:
                     {% set verified = state_attr('sensor.daily_tasks', 'verified_count') | default(0) %}
                     {% set total = state_attr('sensor.daily_tasks', 'total_count') | default(0) %}
                     {% if total > 0 %}
-                    **{{ verified }}/{{ total }}** tasks verified today
+                    ✅ **{{ verified }}/{{ total }}** tasks verified today
                     {% else %}
-                    No tasks available for today.
+                    📭 No tasks available for today.
                     {% endif %}
 
                 # Task 1 Card - Only show if at least 1 task exists
@@ -315,8 +340,8 @@ views:
                               {{ t.description }}
                               
                               **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
-                              **Difficulty:** {{ t.difficulty_display }}  
-                              {% if t.area_name %}**Area:** {{ t.area_name }}{% endif %}
+                              **📊 Difficulty:** {{ t.difficulty_display }}  
+                              {% if t.area_name %}**📍 Area:** {{ t.area_name }}{% endif %}
                               
                               {% if t.verified %}
                               ✅ **VERIFIED!** You achieved the target!
@@ -390,9 +415,9 @@ views:
                               
                               {{ t.description }}
                               
-                              **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
-                              **Difficulty:** {{ t.difficulty_display }}  
-                              {% if t.area_name %}**Area:** {{ t.area_name }}{% endif %}
+                              **🎯 Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
+                              **📊 Difficulty:** {{ t.difficulty_display }}  
+                              {% if t.area_name %}**📍 Area:** {{ t.area_name }}{% endif %}
                               
                               {% if t.verified %}
                               ✅ **VERIFIED!** You achieved the target!
@@ -466,9 +491,9 @@ views:
                               
                               {{ t.description }}
                               
-                              **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
-                              **Difficulty:** {{ t.difficulty_display }}  
-                              {% if t.area_name %}**Area:** {{ t.area_name }}{% endif %}
+                              **🎯 Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
+                              **📊 Difficulty:** {{ t.difficulty_display }}  
+                              {% if t.area_name %}**📍 Area:** {{ t.area_name }}{% endif %}
                               
                               {% if t.verified %}
                               ✅ **VERIFIED!** You achieved the target!
@@ -553,7 +578,7 @@ views:
                       - **😐 Just Right** → Difficulty stays the same
                       - **😰 Too Hard** → Next time will be easier
                       
-                      Tasks are verified every 15 minutes, but you can also manually trigger verification by clicking on the "Verify All Tasks" button to see if you've completed any tasks and get real-time feedback on your progress!
+                      ⏱️ Tasks are verified every 15 minutes, but you can also manually trigger verification by clicking on the "Verify All Tasks" button to see if you've completed any tasks and get real-time feedback on your progress!
 
   # ========== TAB 4: COLLABORATIVE GOAL ==========
   - title: Collaborative Goal
@@ -573,11 +598,11 @@ views:
               content: |
                 ## 🔒 Goal Locked
                 
-                The system is currently learning your building's baseline habits.
+                🔧 The system is currently learning your building's baseline habits.
                 
-                **Time Remaining:** {{ state_attr('sensor.research_phase', 'days_remaining') }} days
+                **⏳ Time Remaining:** {{ state_attr('sensor.research_phase', 'days_remaining') }} days
                 
-                *Once calibration is complete, your weekly energy challenges will appear here.*
+                *Once calibration is complete, your weekly energy challenges will appear here.* 🎯
 
           # --- CASE 2: ACTIVE PHASE (UNLOCKED) ---
           - type: conditional
@@ -598,10 +623,10 @@ views:
                     
                     {% if pct <= 100 %}
                     ### Status: ✅ On Track ({{ pct }}%)
-                    Keep it up! The team is under the energy budget.
+                    Keep it up! The team is under the energy budget. 🎉
                     {% else %}
                     ### Status: ⚠️ At Risk ({{ pct }}%)
-                    Action needed! We are exceeding the target average.
+                    Action needed! We are exceeding the target average. 🚨
                     {% endif %}
 
                 # HERO GAUGE & MOTIVATION STACK
@@ -635,7 +660,7 @@ views:
                         
                         If you hit this target, you could save approximately:
                         
-                        # {{ potential_eur }} {{ currency }}
+                        # 💰 {{ potential_eur }} {{ currency }}
                         
                         *compared to your standard baseline week.*
 
@@ -660,7 +685,7 @@ views:
                 - type: markdown
                   content: |
                     ### 🕵️‍♂️ Live Focus Areas
-                    *Where can the team help right now?*
+                    *Where can the team help right now?* 🤔
                     
                     {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
                     {%- set ns = namespace(area_sums={}) -%}
@@ -679,9 +704,9 @@ views:
                     <table width="100%">
                     <thead>
                       <tr>
-                        <th align="left">Area</th>
-                        <th align="right">Current Load</th>
-                        <th align="center">Status</th>
+                        <th align="left">📍 Area</th>
+                        <th align="right">⚡ Current Load</th>
+                        <th align="center">📊 Status</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -698,7 +723,7 @@ views:
                     </tbody>
                     </table>
                     
-                    <small><i>Check the "High" usage areas to see if lights or devices can be turned off!</i></small>
+                    <small><i>💡 Check the "High" usage areas to see if lights or devices can be turned off!</i></small>
 
   # ========== TAB 5: NOTIFICATIONS ==========
   - title: Notifications
@@ -711,16 +736,16 @@ views:
         cards:
           - type: tile
             entity: sensor.active_notifications
-            name: Active Alerts
+            name: 🔔 Active Alerts
             icon: mdi:bell-ring
             color: accent
 
           - type: markdown
             content: |
               ### ℹ️ How to Use
-              1. **Read** the alerts.
-              2. **Select** the ID below.
-              3. **Tap** Accept or Reject.
+              1. **📖 Read** the alerts.
+              2. **🔽 Select** the ID below.
+              3. **👆 Tap** Accept or Reject.
 
       # --- MAIN COLUMN ---
       - type: vertical-stack
@@ -735,13 +760,13 @@ views:
               
               {%- if pending | length == 0 -%}
               ### ✅ All Caught Up!
-              No pending alerts at the moment.
+              No pending alerts at the moment. 😎
               {%- else -%}
               
               {%- for n in pending -%}
               ---
               ### 📢 {{ n.title }}
-              **ID:** `{{ n.notification_id }}` • *{{ n.time_ago }}*
+              **ID:** `{{ n.notification_id }}` • **⏰ Time:** *{{ n.time_ago }}*
               
               {{ n.message }}
               
@@ -752,12 +777,12 @@ views:
           - type: vertical-stack
             cards:
               - type: entities
-                title: Take Action
+                title: 🎬 Take Action
                 show_header_toggle: false
                 entities:
                   # The Dropdown
                   - entity: select.notification_selector
-                    name: Select ID to Respond
+                    name: 🔽 Select ID to Respond
 
               # The Buttons (Placed below the dropdown)
               - type: horizontal-stack
@@ -797,9 +822,9 @@ views:
               <table width="100%">
                 <thead>
                   <tr>
-                    <th align="left">Time</th>
-                    <th align="left">Type</th>
-                    <th align="center">Status</th>
+                    <th align="left">⏰ Time</th>
+                    <th align="left">📋 Type</th>
+                    <th align="center">📊 Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -813,7 +838,7 @@ views:
                 </tbody>
               </table>
               {%- else -%}
-              No history available.
+              📭 No history available.
               {%- endif -%}
 
   # ========== TAB 6: USER PROFILE ==========
@@ -832,8 +857,8 @@ views:
               type: markdown
               content: |
                 ## 🚧 Profile Building...
-                We are currently calibrating your baseline. 
-                Your personal eco-stats and levels will unlock in **{{ state_attr('sensor.research_phase', 'days_remaining') }} days**.
+                🔧 We are currently calibrating your baseline. 
+                Your personal eco-stats and levels will unlock in **{{ state_attr('sensor.research_phase', 'days_remaining') }} days**. ⏳
 
           - type: conditional
             conditions:
@@ -848,27 +873,27 @@ views:
                     {% set tasks = states('sensor.tasks_completed') | int %}
                     {% if tasks < 5 %}
                     # 🐣 Level 1: Novice
-                    *Complete more daily tasks to evolve!*
+                    *Complete more daily tasks to evolve!* 🌱
                     {% elif tasks < 15 %}
                     # 🌿 Level 2: Eco-Apprentice
-                    *You're getting the hang of this!*
+                    *You're getting the hang of this!* 💪
                     {% elif tasks < 30 %}
                     # 🌳 Level 3: Guardian
-                    *Amazing dedication!*
+                    *Amazing dedication!* ⭐
                     {% else %}
                     # 👑 Level 4: Planet Master
-                    *You are an energy saving legend.*
+                    *You are an energy saving legend.* 🏆
                     {% endif %}
                     
                     ---
-                    **Total Tasks Completed:** {{ tasks }}
+                    **📊 Total Tasks Completed:** {{ tasks }}
 
                 # --- RPG STATS GAUGES ---
                 - type: horizontal-stack
                   cards:
                     - type: gauge
                       entity: sensor.behaviour_index
-                      name: Engagement
+                      name: 💪 Engagement
                       min: 0
                       max: 1
                       severity:
@@ -878,7 +903,7 @@ views:
                     
                     - type: gauge
                       entity: sensor.fatigue_index
-                      name: Fatigue Risk
+                      name: 😴 Fatigue Risk
                       min: 0
                       max: 1
                       severity:
@@ -888,15 +913,15 @@ views:
 
                 # --- TOTAL IMPACT GLANCE ---
                 - type: glance
-                  title: Lifetime Impact
+                  title: 🌟 Lifetime Impact
                   columns: 3
                   entities:
                     - entity: sensor.savings_accumulated
-                      name: Money Saved
+                      name: 💰 Money Saved
                     - entity: sensor.co2_saved
-                      name: CO₂ Avoided
+                      name: 🌱 CO₂ Avoided
                     - entity: sensor.weekly_challenge
-                      name: Current Goal
+                      name: 🎯 Current Goal
 
                 # --- "DID YOU KNOW?" CONTEXT ---
                 - type: markdown
@@ -907,9 +932,9 @@ views:
                     {% set km = state_attr('sensor.co2_saved', 'car_km') %}
                     
                     Your savings so far are equivalent to:
-                    * Planting **{{ trees }} mature trees** 🌲
-                    * Offsetting **{{ flights }} short-haul flights** ✈️
-                    * Avoiding **{{ km }} km** driven in a gas car 🚗
+                    * 🌲 Planting **{{ trees }} mature trees**
+                    * ✈️ Offsetting **{{ flights }} short-haul flights**
+                    * 🚗 Avoiding **{{ km }} km** driven in a gas car
 
   # ========== TAB 7: SETTINGS ==========
   - title: Settings
@@ -922,11 +947,11 @@ views:
           - type: markdown
             content: |
               # ⚙️ System Configuration
-              Manage your preferences, cost settings and view system health.
+              Manage your preferences, cost settings and view system health. 🔧
 
           # --- SYSTEM STATUS (Read-Only) ---
           - type: entities
-            title: System Status
+            title: 📊 System Status
             show_header_toggle: false
             state_color: true
             entities:
@@ -941,12 +966,12 @@ views:
 
           # --- CONFIGURATION (User Inputs) ---
           - type: entities
-            title: Preferences & Costs
+            title: 🎛️ Preferences & Costs
             show_header_toggle: false
             entities:
               # --- SECTION: GOALS ---
               - type: section
-                label: "🎯 Energy Goals"
+                label: "Energy Goals"
               
               - type: conditional
                 conditions:
@@ -956,7 +981,7 @@ views:
                   type: attribute
                   entity: sensor.research_phase
                   attribute: days_remaining
-                  name: "Goals Locked (Calibration)"
+                  name: "🔒 Goals Locked (Calibration)"
                   icon: mdi:lock-clock
                   suffix: "days left"
 
@@ -971,10 +996,10 @@ views:
 
               # --- SECTION: ECONOMICS ---
               - type: section
-                label: "💰 Costs & Currency"
+                label: "Costs & Currency"
               
               - entity: input_select.currency
-                name: Currency
+                name: 💵 Currency
                 icon: mdi:cash-100
               
               - entity: input_number.electricity_price
@@ -985,5 +1010,6 @@ views:
           - type: markdown
             content: |
               ### ℹ️ Quick Guide
-              * **Baseline Phase:** The system learns your normal usage for 14 days.
-              * **Reduction Target:** Once active, the AI will set weekly challenges to reduce your consumption by this percentage.
+              * **🔬 Baseline Phase:** The system learns your normal usage for 14 days.
+              * **📉 Reduction Target:** Once active, the AI will set weekly challenges to reduce your consumption by this percentage.
+              * **💡 Tips:** Adjust settings based on your energy goals and local electricity rates.

@@ -1,0 +1,144 @@
+# ========== COLLABORATIVE GOAL TAB ==========
+title: Collaborative Goal
+path: collaborative
+icon: mdi:account-group
+type: panel
+cards:
+  - type: vertical-stack
+    cards:
+      # --- CASE 1: CALIBRATION PHASE (LOCKED) ---
+      - type: conditional
+        conditions:
+          - entity: sensor.research_phase
+            state: baseline
+        card:
+          type: markdown
+          content: |
+            ## 🔒 Goal Locked
+            
+            🔧 The system is currently learning your building's baseline habits.
+            
+            **⏳ Time Remaining:** {{ state_attr('sensor.research_phase', 'days_remaining') }} days
+            
+            *Once calibration is complete, your weekly energy challenges will appear here.* 🎯
+
+      # --- CASE 2: ACTIVE PHASE (UNLOCKED) ---
+      - type: conditional
+        conditions:
+          - entity: sensor.research_phase
+            state: active
+        card:
+          type: vertical-stack
+          cards:
+            # DYNAMIC HEADER & STATUS
+            - type: markdown
+              content: |
+                # 🎯 Week {{ state_attr('sensor.weekly_challenge', 'week_start') }} Challenge
+                
+                {% set current = state_attr('sensor.weekly_challenge', 'current_avg_w') | float(0) %}
+                {% set target = state_attr('sensor.weekly_challenge', 'target_avg_w') | float(0) %}
+                {% set pct = state_attr('sensor.weekly_challenge', 'progress') | float(0) %}
+                
+                {% if pct <= 100 %}
+                ### Status: ✅ On Track ({{ pct }}%)
+                Keep it up! The team is under the energy budget. 🎉
+                {% else %}
+                ### Status: ⚠️ At Risk ({{ pct }}%)
+                Action needed! We are exceeding the target average. 🚨
+                {% endif %}
+
+            # HERO GAUGE & MOTIVATION STACK
+            - type: horizontal-stack
+              cards:
+                # The Target Gauge
+                - type: gauge
+                  entity: sensor.weekly_challenge
+                  name: Budget Used
+                  min: 0
+                  max: 150
+                  unit: "%"
+                  severity:
+                    green: 0
+                    yellow: 90
+                    red: 105
+                
+                # Calculated Monetary Incentive
+                - type: markdown
+                  content: |
+                    ### 🏆 The Reward
+                    
+                    {% set baseline = state_attr('sensor.weekly_challenge', 'baseline_w') | float(0) %}
+                    {% set target = state_attr('sensor.weekly_challenge', 'target_avg_w') | float(0) %}
+                    {% set price = states('input_number.electricity_price') | float(0.25) %}
+                    {% set currency = states('input_select.currency') %}
+                    
+                    {# Calculate Potential Weekly Savings: (Saved Watts * 24h * 7d / 1000) * Price #}
+                    {% set potential_watts = baseline - target %}
+                    {% set potential_eur = (potential_watts * 24 * 7 / 1000 * price) | round(2) %}
+                    
+                    If you hit this target, you could save approximately:
+                    
+                    # 💰 {{ potential_eur }} {{ currency }}
+                    
+                    *compared to your standard baseline week.*
+
+            # STATS BAR
+            - type: entities
+              show_header_toggle: false
+              entities:
+                - type: attribute
+                  entity: sensor.weekly_challenge
+                  attribute: current_avg_w
+                  name: Current Average Load
+                  icon: mdi:flash
+                  suffix: "W"
+                - type: attribute
+                  entity: sensor.weekly_challenge
+                  attribute: target_avg_w
+                  name: Target Average Load
+                  icon: mdi:target
+                  suffix: "W"
+
+            # LIVE FOCUS AREAS
+            - type: markdown
+              content: |
+                ### 🕵️‍♂️ Live Focus Areas
+                *Where can the team help right now?* 🤔
+                
+                {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
+                {%- set ns = namespace(area_sums={}) -%}
+
+                {# Aggregate Power by Area #}
+                {%- if sensors -%}
+                  {%- for s in sensors -%}
+                    {%- if s.value is not none and s.value > 0 -%}
+                      {%- set area = s.area if s.area else 'Other' -%}
+                      {%- set current = ns.area_sums.get(area, 0) -%}
+                      {%- set ns.area_sums = dict(ns.area_sums, **{area: current + s.value}) -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                {%- endif -%}
+
+                <table width="100%">
+                <thead>
+                  <tr>
+                    <th align="left">📍 Area</th>
+                    <th align="right">⚡ Current Load</th>
+                    <th align="center">📊 Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                {%- for area, watts in ns.area_sums.items() | sort(attribute='1', reverse=True) -%}
+                  {# Only show areas with significant usage #}
+                  {%- if watts > 5 -%}
+                  <tr>
+                    <td><b>{{ area }}</b></td>
+                    <td align="right">{{ watts | int }} W</td>
+                    <td align="center">{% if watts > 500 %}🔴 High{% elif watts > 100 %}🟠 Moderate{% else %}🟢 Low{% endif %}</td>
+                  </tr>
+                  {%- endif -%}
+                {%- endfor -%}
+                </tbody>
+                </table>
+                
+                <small><i>💡 Check the "High" usage areas to see if lights or devices can be turned off!</i></small>
