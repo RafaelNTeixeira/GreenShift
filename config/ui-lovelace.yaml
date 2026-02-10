@@ -1033,5 +1033,5 @@ views:
           content: |
             ### ℹ️ Quick Guide
             * **🔬 Baseline Phase:** The system learns your normal usage for 14 days.
-            * **📉 Reduction Target:** Once active, the AI will set weekly challenges to reduce your consumption by this percentage.
+            * **📉 Reduction Target:** Once active, the system will set weekly challenges to reduce your consumption by this percentage.
             * **💡 Tips:** Adjust settings based on your energy goals and local electricity rates.

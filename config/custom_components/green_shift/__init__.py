@@ -57,12 +57,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     agent = DecisionAgent(hass, discovered_sensors, collector, storage)
     await agent.setup()
 
-    # Initialize task manager
-    task_manager = TaskManager(hass, discovered_sensors, collector, storage)
+    # Initialize task manager (pass agent for phase access)
+    task_manager = TaskManager(hass, discovered_sensors, collector, storage, agent)
 
-    if not await storage.load_state():
-        _LOGGER.debug("Fresh install detected: Saving initial start_date.")
+    # Record initial phase if fresh install
+    state = await storage.load_state()
+    if not state:
+        _LOGGER.debug("Fresh install detected: Recording initial baseline phase")
         await agent._save_persistent_state()
+        await storage.record_phase_change(
+            phase=PHASE_BASELINE,
+            notes="Initial system setup"
+        )
     
     hass.data[DOMAIN]["storage"] = storage
     hass.data[DOMAIN]["collector"] = collector
@@ -104,6 +110,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Calculate area-specific baselines before entering active phase
             await agent.calculate_area_baselines()
             _LOGGER.info("Area baselines calculated for active phase")
+            
+            # Record phase change in research database
+            if storage:
+                await storage.record_phase_change(
+                    phase=PHASE_ACTIVE,
+                    baseline_consumption=agent.baseline_consumption,
+                    notes=f"Transitioned after {days_running} days of baseline monitoring"
+                )
             
             # Trigger the new notification function
             await trigger_phase_transition_notification(hass, agent, collector)
@@ -162,6 +176,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, verify_tasks_callback, timedelta(minutes=VERIFY_TASKS_INTERVAL_MINUTES)
     )
 
+    # Daily aggregation for research data at midnight
+    async def daily_aggregation_callback(now):
+        """Compute daily aggregates for research analysis at midnight."""
+        _LOGGER.info("Computing daily aggregates for research database...")
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        try:
+            await storage.compute_daily_aggregates(date=yesterday, phase=agent.phase)
+            _LOGGER.info("Daily aggregates computed successfully for %s", yesterday)
+        except Exception as e:
+            _LOGGER.error("Failed to compute daily aggregates: %s", e)
+    
+    hass.data[DOMAIN]["daily_aggregation_listener"] = async_track_time_change(
+        hass, daily_aggregation_callback, hour=0, minute=5, second=0
+    )
+
     # Generate tasks immediately if none exist for today (only in active phase)
     if agent.phase == PHASE_ACTIVE:
         today_tasks = await storage.get_today_tasks()
@@ -204,6 +234,9 @@ async def async_setup_services(hass: HomeAssistant):
         success = await storage.save_task_feedback(task_id, feedback)
         
         if success:
+            # Also log to research database
+            await storage.log_task_feedback(task_id, feedback)
+            
             _LOGGER.info("Feedback '%s' saved for task %s (index %d)", feedback, task_id, task_index)
             async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
         else:
@@ -345,6 +378,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         if "task_verification_listener" in hass.data[DOMAIN]:
             hass.data[DOMAIN]["task_verification_listener"]()
+        
+        if "daily_aggregation_listener" in hass.data[DOMAIN]:
+            hass.data[DOMAIN]["daily_aggregation_listener"]()
 
         # Close storage connections
         storage = hass.data[DOMAIN].get("storage")

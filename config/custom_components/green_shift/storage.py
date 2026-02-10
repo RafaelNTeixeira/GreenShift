@@ -1,6 +1,7 @@
 """
 Storage management for Green Shift integration.
-- SQLite: Temporal sensor data (14 days rolling window) with area-based tracking + Daily tasks
+- SQLite sensor_data.db: Temporal sensor data (14 days rolling window) with area-based tracking + Daily tasks
+- SQLite research_data.db: Permanent research data (never purged) for post-intervention analysis
 - JSON: Persistent state (AI configuration, indices, Q-table)
 """
 import logging
@@ -31,17 +32,20 @@ class StorageManager:
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(exist_ok=True)
         
-        self.db_path = self.config_dir / "sensor_data.db"
+        self.db_path = self.config_dir / "sensor_data.db"  # Rolling 14-day data
+        self.research_db_path = self.config_dir / "research_data.db"  # Permanent research data
         self.state_file = self.config_dir / "state.json"
         
         self._conn = None
         self._lock = asyncio.Lock()
         
         _LOGGER.info("Storage initialized at: %s", self.config_dir)
+        _LOGGER.info("Research database: %s", self.research_db_path)
     
     async def setup(self):
         """Setup database schema and load state."""
         await self._init_database()
+        await self._init_research_database()
         await self._cleanup_old_data()
     
     async def _init_database(self):
@@ -140,8 +144,221 @@ class StorageManager:
         
         await self.hass.async_add_executor_job(_create_tables)
     
+    async def _init_research_database(self):
+        """Initialize permanent research database (never purged)."""
+        def _create_research_tables():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            
+            # Phase metadata table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS research_phase_metadata (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    phase TEXT NOT NULL,
+                    start_timestamp REAL NOT NULL,
+                    end_timestamp REAL,
+                    baseline_consumption_kwh REAL,
+                    baseline_occupancy_avg REAL,
+                    notes TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Daily aggregates table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS research_daily_aggregates (
+                    date TEXT PRIMARY KEY,
+                    phase TEXT NOT NULL,
+                    
+                    -- Energy metrics
+                    total_energy_kwh REAL,
+                    avg_power_w REAL,
+                    peak_power_w REAL,
+                    min_power_w REAL,
+                    
+                    -- Occupancy metrics (for normalization)
+                    avg_occupancy_count REAL,
+                    total_occupied_hours REAL,
+                    
+                    -- Environmental context
+                    avg_temperature REAL,
+                    avg_humidity REAL,
+                    avg_illuminance REAL,
+                    
+                    -- Engagement metrics
+                    tasks_generated INTEGER DEFAULT 0,
+                    tasks_completed INTEGER DEFAULT 0,
+                    tasks_verified INTEGER DEFAULT 0,
+                    
+                    -- Nudge metrics
+                    nudges_sent INTEGER DEFAULT 0,
+                    nudges_accepted INTEGER DEFAULT 0,
+                    nudges_dismissed INTEGER DEFAULT 0,
+                    nudges_ignored INTEGER DEFAULT 0,
+                    
+                    -- Indices
+                    avg_anomaly_index REAL,
+                    avg_behaviour_index REAL,
+                    avg_fatigue_index REAL,
+                    
+                    -- For weather normalization (to be filled later)
+                    outdoor_temp_celsius REAL,
+                    hdd_base18 REAL,
+                    
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # RL episodes table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS research_rl_episodes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp REAL NOT NULL,
+                    episode_number INTEGER,
+                    phase TEXT,
+                    
+                    -- RL components
+                    state_vector TEXT,
+                    state_key TEXT,
+                    action INTEGER,
+                    action_name TEXT,
+                    action_source TEXT,
+                    reward REAL,
+                    
+                    -- Q-values at decision time
+                    q_values TEXT,
+                    max_q_value REAL,
+                    epsilon REAL,
+                    
+                    -- Context
+                    current_power REAL,
+                    anomaly_index REAL,
+                    behaviour_index REAL,
+                    fatigue_index REAL,
+                    
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Nudge log table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS research_nudge_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp REAL NOT NULL,
+                    notification_id TEXT UNIQUE,
+                    phase TEXT,
+                    
+                    -- Nudge details
+                    action_type TEXT,
+                    template_index INTEGER,
+                    title TEXT,
+                    message TEXT,
+                    
+                    -- Context at nudge time
+                    state_vector TEXT,
+                    current_power REAL,
+                    anomaly_index REAL,
+                    behaviour_index REAL,
+                    fatigue_index REAL,
+                    
+                    -- User response
+                    responded INTEGER DEFAULT 0,
+                    accepted INTEGER DEFAULT 0,
+                    response_timestamp REAL,
+                    response_time_seconds REAL,
+                    
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Task interactions table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS research_task_interactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    phase TEXT,
+                    
+                    -- Task details
+                    task_type TEXT,
+                    difficulty_level INTEGER,
+                    target_value REAL,
+                    baseline_value REAL,
+                    area_name TEXT,
+                    
+                    -- Engagement tracking
+                    generation_timestamp REAL,
+                    first_view_timestamp REAL,
+                    completion_timestamp REAL,
+                    time_to_view_seconds REAL,
+                    time_to_complete_seconds REAL,
+                    
+                    -- Outcomes
+                    completed INTEGER DEFAULT 0,
+                    verified INTEGER DEFAULT 0,
+                    completion_value REAL,
+                    user_feedback TEXT,
+                    
+                    -- Context at generation
+                    power_at_generation REAL,
+                    occupancy_at_generation INTEGER,
+                    
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Area daily stats table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS research_area_daily_stats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    area_name TEXT NOT NULL,
+                    phase TEXT,
+                    
+                    -- Energy by area
+                    avg_power_w REAL,
+                    max_power_w REAL,
+                    min_power_w REAL,
+                    
+                    -- Environment by area
+                    avg_temperature REAL,
+                    avg_humidity REAL,
+                    avg_illuminance REAL,
+                    
+                    -- Occupancy by area
+                    total_occupied_hours REAL,
+                    occupancy_percentage REAL,
+                    
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    
+                    UNIQUE(date, area_name)
+                )
+            """)
+            
+            # Indices for faster queries
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_rl_episodes_timestamp 
+                ON research_rl_episodes(timestamp)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_nudge_log_timestamp 
+                ON research_nudge_log(timestamp)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_task_interactions_date 
+                ON research_task_interactions(date)
+            """)
+            
+            conn.commit()
+            conn.close()
+            _LOGGER.info("Research database schema initialized (permanent storage)")
+        
+        await self.hass.async_add_executor_job(_create_research_tables)
+    
     async def _cleanup_old_data(self):
-        """Remove data older than 14 days."""
+        """Remove data older than 14 days from sensor_data.db (research_data.db is never purged)."""
         def _cleanup():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -717,6 +934,358 @@ class StorageManager:
         state = await self.load_state()
         state[key] = value
         await self.save_state(state)
+        # ==================== RESEARCH DATA (Permanent SQLite) ====================
+    
+    async def record_phase_change(self, phase: str, baseline_consumption: float = None, baseline_occupancy: float = None, notes: str = None):
+        """Record when system phase changes."""
+        def _insert():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            
+            # End current phase
+            cursor.execute("""
+                UPDATE research_phase_metadata 
+                SET end_timestamp = ?
+                WHERE end_timestamp IS NULL
+            """, (datetime.now().timestamp(),))
+            
+            # Start new phase
+            cursor.execute("""
+                INSERT INTO research_phase_metadata 
+                (phase, start_timestamp, baseline_consumption_kwh, baseline_occupancy_avg, notes)
+                VALUES (?, ?, ?, ?, ?)
+            """, (phase, datetime.now().timestamp(), baseline_consumption, baseline_occupancy, notes))
+            
+            conn.commit()
+            conn.close()
+            _LOGGER.info("Phase changed to: %s", phase)
+        
+        await self.hass.async_add_executor_job(_insert)
+    
+    async def log_rl_decision(self, episode_data: dict):
+        """Log each RL agent decision for convergence analysis."""
+        def _insert():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT INTO research_rl_episodes
+                (timestamp, episode_number, phase, state_vector, state_key,
+                 action, action_name, action_source, reward, q_values,
+                 max_q_value, epsilon, current_power, anomaly_index, 
+                 behaviour_index, fatigue_index)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                datetime.now().timestamp(),
+                episode_data.get('episode'),
+                episode_data.get('phase'),
+                json.dumps(episode_data.get('state_vector', [])),
+                str(episode_data.get('state_key', '')),
+                episode_data.get('action'),
+                episode_data.get('action_name'),
+                episode_data.get('action_source'),
+                episode_data.get('reward'),
+                json.dumps(episode_data.get('q_values', {})),
+                episode_data.get('max_q'),
+                episode_data.get('epsilon'),
+                episode_data.get('power'),
+                episode_data.get('anomaly_index'),
+                episode_data.get('behaviour_index'),
+                episode_data.get('fatigue_index')
+            ))
+            
+            conn.commit()
+            conn.close()
+        
+        await self.hass.async_add_executor_job(_insert)
+    
+    async def log_nudge_sent(self, nudge_data: dict):
+        """Log comprehensive nudge information for acceptance rate analysis."""
+        def _insert():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT INTO research_nudge_log
+                (timestamp, notification_id, phase, action_type, template_index,
+                 title, message, state_vector, current_power, anomaly_index,
+                 behaviour_index, fatigue_index)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                datetime.now().timestamp(),
+                nudge_data.get('notification_id'),
+                nudge_data.get('phase'),
+                nudge_data.get('action_type'),
+                nudge_data.get('template_index'),
+                nudge_data.get('title'),
+                nudge_data.get('message'),
+                json.dumps(nudge_data.get('state_vector', [])),
+                nudge_data.get('current_power'),
+                nudge_data.get('anomaly_index'),
+                nudge_data.get('behaviour_index'),
+                nudge_data.get('fatigue_index')
+            ))
+            
+            conn.commit()
+            conn.close()
+        
+        await self.hass.async_add_executor_job(_insert)
+    
+    async def log_nudge_response(self, notification_id: str, accepted: bool):
+        """Log user response to nudge."""
+        def _update():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            
+            # Get when nudge was sent
+            cursor.execute("""
+                SELECT timestamp FROM research_nudge_log
+                WHERE notification_id = ?
+            """, (notification_id,))
+            result = cursor.fetchone()
+            
+            response_time = None
+            if result:
+                sent_time = result[0]
+                response_time = datetime.now().timestamp() - sent_time
+            
+            cursor.execute("""
+                UPDATE research_nudge_log
+                SET responded = 1,
+                    accepted = ?,
+                    response_timestamp = ?,
+                    response_time_seconds = ?
+                WHERE notification_id = ?
+            """, (1 if accepted else 0, datetime.now().timestamp(),
+                  response_time, notification_id))
+            
+            conn.commit()
+            conn.close()
+        
+        await self.hass.async_add_executor_job(_update)
+    
+    async def log_task_generation(self, task_data: dict):
+        """Log task generation with full context."""
+        def _insert():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT INTO research_task_interactions
+                (task_id, date, phase, task_type, difficulty_level,
+                 target_value, baseline_value, area_name, generation_timestamp,
+                 power_at_generation, occupancy_at_generation)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                task_data.get('task_id'),
+                task_data.get('date'),
+                task_data.get('phase'),
+                task_data.get('task_type'),
+                task_data.get('difficulty_level'),
+                task_data.get('target_value'),
+                task_data.get('baseline_value'),
+                task_data.get('area_name'),
+                datetime.now().timestamp(),
+                task_data.get('power_at_generation'),
+                task_data.get('occupancy_at_generation')
+            ))
+            
+            conn.commit()
+            conn.close()
+        
+        await self.hass.async_add_executor_job(_insert)
+    
+    async def log_task_completion(self, task_id: str, completion_value: float = None):
+        """Log task completion."""
+        def _update():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            
+            # Get generation timestamp
+            cursor.execute("""
+                SELECT generation_timestamp FROM research_task_interactions
+                WHERE task_id = ?
+            """, (task_id,))
+            result = cursor.fetchone()
+            
+            time_to_complete = None
+            if result and result[0]:
+                time_to_complete = datetime.now().timestamp() - result[0]
+            
+            cursor.execute("""
+                UPDATE research_task_interactions
+                SET completed = 1,
+                    completion_timestamp = ?,
+                    time_to_complete_seconds = ?,
+                    completion_value = ?
+                WHERE task_id = ?
+            """, (datetime.now().timestamp(), time_to_complete, completion_value, task_id))
+            
+            conn.commit()
+            conn.close()
+        
+        await self.hass.async_add_executor_job(_update)
+    
+    async def log_task_feedback(self, task_id: str, feedback: str):
+        """Log task difficulty feedback."""
+        def _update():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                UPDATE research_task_interactions
+                SET user_feedback = ?
+                WHERE task_id = ?
+            """, (feedback, task_id))
+            
+            conn.commit()
+            conn.close()
+        
+        await self.hass.async_add_executor_job(_update)
+    
+    async def compute_daily_aggregates(self, date: str = None, phase: str = None):
+        """
+        Compute and store daily aggregates for research analysis.
+        Should be run at midnight or on-demand.
+        """
+        if date is None:
+            date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        # Get all data for the day
+        start_ts = datetime.strptime(date, "%Y-%m-%d").timestamp()
+        end_ts = start_ts + 86400
+        
+        def _compute():
+            # Connect to both databases
+            sensor_conn = sqlite3.connect(str(self.db_path))
+            research_conn = sqlite3.connect(str(self.research_db_path))
+            
+            sensor_cursor = sensor_conn.cursor()
+            research_cursor = research_conn.cursor()
+            
+            # Get energy metrics from sensor database
+            sensor_cursor.execute("""
+                SELECT 
+                    AVG(power) as avg_power,
+                    MAX(power) as peak_power,
+                    MIN(power) as min_power,
+                    AVG(temperature) as avg_temp,
+                    AVG(humidity) as avg_humidity,
+                    AVG(illuminance) as avg_illuminance,
+                    SUM(CASE WHEN occupancy = 1 THEN 1 ELSE 0 END) * ? / 3600.0 as occupied_hours
+                FROM sensor_history
+                WHERE timestamp >= ? AND timestamp < ?
+            """, (5, start_ts, end_ts))  # 5 seconds per reading
+            energy_stats = sensor_cursor.fetchone()
+            
+            # Count occupancy per reading (could be multiple areas)
+            sensor_cursor.execute("""
+                SELECT AVG(occupied_count) FROM (
+                    SELECT timestamp, 
+                           SUM(CASE WHEN occupancy = 1 THEN 1 ELSE 0 END) as occupied_count
+                    FROM area_sensor_history
+                    WHERE timestamp >= ? AND timestamp < ?
+                    GROUP BY timestamp
+                )
+            """, (start_ts, end_ts))
+            occupancy_result = sensor_cursor.fetchone()
+            avg_occupancy = occupancy_result[0] if occupancy_result[0] else 0
+            
+            # Get tasks for the day
+            sensor_cursor.execute("""
+                SELECT 
+                    COUNT(*) as generated,
+                    SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed,
+                    SUM(CASE WHEN verified = 1 THEN 1 ELSE 0 END) as verified
+                FROM daily_tasks
+                WHERE date = ?
+            """, (date,))
+            task_stats = sensor_cursor.fetchone()
+            
+            # Get nudge stats from research database
+            research_cursor.execute("""
+                SELECT 
+                    COUNT(*) as sent,
+                    SUM(CASE WHEN accepted = 1 THEN 1 ELSE 0 END) as accepted,
+                    SUM(CASE WHEN responded = 1 AND accepted = 0 THEN 1 ELSE 0 END) as dismissed,
+                    SUM(CASE WHEN responded = 0 THEN 1 ELSE 0 END) as ignored
+                FROM research_nudge_log
+                WHERE DATE(timestamp, 'unixepoch') = ?
+            """, (date,))
+            nudge_stats = research_cursor.fetchone()
+            if not nudge_stats or nudge_stats[0] is None:
+                nudge_stats = (0, 0, 0, 0)
+            
+            # Get average indices from research RL episodes
+            research_cursor.execute("""
+                SELECT 
+                    AVG(anomaly_index) as avg_anomaly,
+                    AVG(behaviour_index) as avg_behaviour,
+                    AVG(fatigue_index) as avg_fatigue
+                FROM research_rl_episodes
+                WHERE DATE(timestamp, 'unixepoch') = ?
+            """, (date,))
+            indices_stats = research_cursor.fetchone()
+            if not indices_stats or indices_stats[0] is None:
+                indices_stats = (0, 0, 0)
+            
+            # Insert aggregate
+            research_cursor.execute("""
+                INSERT OR REPLACE INTO research_daily_aggregates
+                (date, phase, avg_power_w, peak_power_w, min_power_w,
+                 avg_temperature, avg_humidity, avg_illuminance,
+                 avg_occupancy_count, total_occupied_hours,
+                 tasks_generated, tasks_completed, tasks_verified,
+                 nudges_sent, nudges_accepted, nudges_dismissed, nudges_ignored,
+                 avg_anomaly_index, avg_behaviour_index, avg_fatigue_index)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (date, phase, *energy_stats[:6], avg_occupancy, energy_stats[6],
+                   *task_stats, *nudge_stats, *indices_stats))
+            
+            research_conn.commit()
+            sensor_conn.close()
+            research_conn.close()
+            
+            _LOGGER.info("Daily aggregates computed for %s", date)
+        
+        await self.hass.async_add_executor_job(_compute)
+    
+    async def export_research_data(self, output_dir: str):
+        """Export all research data to CSV files for Python analysis."""
+        
+        tables = [
+            'research_daily_aggregates',
+            'research_rl_episodes',
+            'research_phase_metadata',
+            'research_nudge_log',
+            'research_task_interactions',
+            'research_area_daily_stats'
+        ]
+        
+        def _export():
+            try:
+                import pandas as pd
+            except ImportError:
+                _LOGGER.error("pandas not installed, cannot export to CSV")
+                return False
+            
+            conn = sqlite3.connect(str(self.research_db_path))
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            
+            for table in tables:
+                try:
+                    df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+                    file_path = output_path / f"{table}.csv"
+                    df.to_csv(file_path, index=False)
+                    _LOGGER.info("Exported %d rows to %s", len(df), file_path)
+                except Exception as e:
+                    _LOGGER.error("Failed to export %s: %s", table, e)
+            
+            conn.close()
+            return True
+        
+        return await self.hass.async_add_executor_job(_export)
     
     # ==================== CLEANUP ====================
     
@@ -731,7 +1300,7 @@ class StorageManager:
     async def reset_all_data(self):
         """Reset all data (for testing/debugging)."""
         def _reset():
-            # Clear database
+            # Clear sensor database
             if self.db_path.exists():
                 conn = sqlite3.connect(str(self.db_path))
                 cursor = conn.cursor()  
@@ -742,10 +1311,23 @@ class StorageManager:
                 conn.commit()
                 conn.close()
             
+            # Clear research database
+            if self.research_db_path.exists():
+                conn = sqlite3.connect(str(self.research_db_path))
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM research_phase_metadata")
+                cursor.execute("DELETE FROM research_daily_aggregates")
+                cursor.execute("DELETE FROM research_rl_episodes")
+                cursor.execute("DELETE FROM research_nudge_log")
+                cursor.execute("DELETE FROM research_task_interactions")
+                cursor.execute("DELETE FROM research_area_daily_stats")
+                conn.commit()
+                conn.close()
+            
             # Clear state file
             if self.state_file.exists():
                 self.state_file.unlink()
             
-            _LOGGER.warning("All data reset")
+            _LOGGER.warning("All data reset (sensor DB + research DB + state)")
         
         await self.hass.async_add_executor_job(_reset)

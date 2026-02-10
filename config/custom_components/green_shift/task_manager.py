@@ -16,11 +16,12 @@ _LOGGER = logging.getLogger(__name__)
 class TaskManager:
     """Manages daily energy-saving tasks with automatic verification and difficulty adjustment."""
     
-    def __init__(self, hass: HomeAssistant, sensors: dict, data_collector, storage):
+    def __init__(self, hass: HomeAssistant, sensors: dict, data_collector, storage, decision_agent=None):
         self.hass = hass
         self.sensors = sensors
         self.data_collector = data_collector
         self.storage = storage
+        self.decision_agent = decision_agent  # For accessing phase and other agent state
         
         # Task difficulty adjustments (multipliers for targets)
         self.difficulty_multipliers = {
@@ -95,6 +96,25 @@ class TaskManager:
         # Save to database
         if tasks:
             await self.storage.save_daily_tasks(tasks)
+            
+            # Log task generation to research database
+            current_state = self.data_collector.get_current_state()
+            phase = self.decision_agent.phase if self.decision_agent else "unknown"
+            
+            for task in tasks:
+                await self.storage.log_task_generation({
+                    "task_id": task["task_id"],
+                    "date": task["date"],
+                    "phase": phase,
+                    "task_type": task["task_type"],
+                    "difficulty_level": task["difficulty_level"],
+                    "target_value": task.get("target_value"),
+                    "baseline_value": task.get("baseline_value"),
+                    "area_name": task.get("area_name"),
+                    "power_at_generation": current_state.get("power", 0),
+                    "occupancy_at_generation": 1 if current_state.get("occupancy") else 0
+                })
+            
             _LOGGER.info("Generated %d tasks for %s", len(tasks), today)
         
         return tasks
@@ -346,6 +366,13 @@ class TaskManager:
             
             if verified:
                 await self.storage.mark_task_verified(task['task_id'], True)
+                
+                # Also log completion to research database
+                await self.storage.log_task_completion(
+                    task['task_id'],
+                    completion_value=task.get('target_value')
+                )
+                
                 _LOGGER.info("Task %s verified successfully", task['task_id'])
         
         return results

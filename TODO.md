@@ -19,6 +19,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Add extra attributes to money saved in Profile tab?
 - [x] Update guide from Settings tab
 
+
 ### 🎮 Gamification
 - [x] Improve gamification daily tasks
 - [x] Create a service to check if daily tasks have been completed
@@ -49,5 +50,11 @@ Checklist to track remaining features, fixes and tests before completion.
 - [c] Check notification templates that make more sense
 - [ ] Store data needed for analysis/results extraction
 - [ ] Test AI-driven features (notifications, recommendations)
+
+
+### 📊 Data
+- [x] Build tables required for analysis extraction
+- [x] Store data required for analysis extraction
+- [ ] Build backup daily to prevent data loss
 
 ---

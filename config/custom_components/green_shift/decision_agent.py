@@ -66,6 +66,7 @@ class DecisionAgent:
         self.q_table = {}
         self.learning_rate = 0.1
         self.epsilon = 0.2  # Exploration rate
+        self.episode_number = 0  # Track RL episodes for research logging
         
         # Behaviour indices
         self.anomaly_index = 0.0 
@@ -414,12 +415,15 @@ class DecisionAgent:
             return
 
        # Epsilon-greedy action selection
+        action_source = "explore"
         if random.random() < self.epsilon:
             # Exploration: random action
             action = random.choice(available_actions)
+            action_source = "explore"
             _LOGGER.debug("Exploration: selected random action %d", action)
         else:
             # Exploitation: best known action
+            action_source = "exploit"
             if state_key not in self.q_table:
                 self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
             
@@ -434,6 +438,10 @@ class DecisionAgent:
         # Update Q-table
         reward = await self._calculate_reward()
         await self._update_q_table(state_key, action, reward)
+        
+        # Log RL episode for research analysis
+        self.episode_number += 1
+        await self._log_rl_episode(state_key, action, reward, action_source)
 
     async def _update_q_table(self, state_key: tuple, action: int, reward: float):
         """
@@ -504,6 +512,23 @@ class DecisionAgent:
                 "responded": False
             })
             
+            # Log nudge to research database
+            if self.storage:
+                current_state = self.data_collector.get_current_state()
+                await self.storage.log_nudge_sent({
+                    "notification_id": notification_id,
+                    "phase": self.phase,
+                    "action_type": action_name,
+                    "template_index": notification.get("template_index"),
+                    "title": notification["title"],
+                    "message": notification["message"],
+                    "state_vector": self.state_vector.tolist() if self.state_vector is not None and hasattr(self.state_vector, 'tolist') else [],
+                    "current_power": current_state.get("power", 0),
+                    "anomaly_index": self.anomaly_index,
+                    "behaviour_index": self.behaviour_index,
+                    "fatigue_index": self.fatigue_index
+                })
+            
             _LOGGER.info("Notification sent (%d/%d today): %s - %s", self.notification_count_today, MAX_NOTIFICATIONS_PER_DAY, action_name, notification["title"])
 
             async_dispatcher_send(self.hass, GS_AI_UPDATE_SIGNAL)
@@ -517,7 +542,8 @@ class DecisionAgent:
             return None
         
         # Select template based on context
-        template = random.choice(templates)
+        template_index = random.randint(0, len(templates) - 1)
+        template = templates[template_index]
         
         # Gather context for template
         context = await self._gather_notification_context(action_type)
@@ -532,7 +558,8 @@ class DecisionAgent:
         
         return {
             "title": title,
-            "message": message
+            "message": message,
+            "template_index": template_index
         }
     
     async def _gather_notification_context(self, action_type: str) -> dict:
@@ -658,6 +685,10 @@ class DecisionAgent:
         # Update behaviour index
         self._update_behaviour_index()
         
+        # Log response to research database
+        if self.storage:
+            await self.storage.log_nudge_response(notification_id, accepted)
+        
         _LOGGER.info("Notification feedback received: %s - %s", notification_id, "accepted" if accepted else "rejected")
         
         # Save state
@@ -694,6 +725,41 @@ class DecisionAgent:
         )
         
         return reward
+    
+    async def _log_rl_episode(self, state_key: tuple, action: int, reward: float, action_source: str):
+        """Log RL decision episode to research database for convergence analysis."""
+        if not self.storage:
+            return
+        
+        # Get action name
+        action_name = [k for k, v in ACTIONS.items() if v == action][0]
+        
+        # Get current Q-values for this state
+        q_values = self.q_table.get(state_key, {a: 0.0 for a in ACTIONS.values()})
+        max_q = max(q_values.values()) if q_values else 0.0
+        
+        # Get current power
+        current_state = self.data_collector.get_current_state()
+        
+        episode_data = {
+            "episode": self.episode_number,
+            "phase": self.phase,
+            "state_vector": self.state_vector.tolist() if self.state_vector is not None and hasattr(self.state_vector, 'tolist') else [],
+            "state_key": state_key,
+            "action": action,
+            "action_name": action_name,
+            "action_source": action_source,
+            "reward": reward,
+            "q_values": {int(k): float(v) for k, v in q_values.items()},
+            "max_q": max_q,
+            "epsilon": self.epsilon,
+            "power": current_state.get("power", 0),
+            "anomaly_index": self.anomaly_index,
+            "behaviour_index": self.behaviour_index,
+            "fatigue_index": self.fatigue_index
+        }
+        
+        await self.storage.log_rl_decision(episode_data)
     
     async def _update_anomaly_index(self):
         """
