@@ -44,7 +44,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Check why it is still sending notifications when notification count exceeds MAX_NOTIFICATIONS_PER_DAY
 - [ ] Check if indices are updating during the intervention
 - [ ] Check adaptive difficulty updates
-- [ ] Q-table in JSON with duplicate key entries
+- [x] Q-table in JSON with duplicate key entries
 - [ ] Check notification templates that make more sense
 - [ ] Store data needed for analysis/results extraction
 - [ ] Test AI-driven features (notifications, recommendations)

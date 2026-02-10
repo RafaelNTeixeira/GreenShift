@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+import ast
 from datetime import datetime, timedelta
 from collections import deque
 from homeassistant.core import HomeAssistant
@@ -147,11 +148,32 @@ class DecisionAgent:
         if "notification_history" in state:
             self.notification_history = deque(state["notification_history"], maxlen=50)
         
-        # Load Q-table
-        if "q_table" in state:
-            self.q_table = {eval(k) if isinstance(k, str) else k: v 
-                           for k, v in state["q_table"].items()}
-            _LOGGER.info("Loaded Q-table with %d entries", len(self.q_table))
+        # Load Q-table (convert string keys back to tuples, and ensure action keys are ints)
+        if "q_table" in state and state["q_table"]:
+            try:
+                loaded_count = 0
+                self.q_table = {}
+                for state_key, actions in state["q_table"].items():
+                    try:
+                        # Convert state key from string to tuple (safely)
+                        parsed_key = ast.literal_eval(state_key)
+                        if isinstance(parsed_key, tuple):
+                            # Convert action keys from strings to ints
+                            self.q_table[parsed_key] = {
+                                int(action): float(q_value) 
+                                for action, q_value in actions.items()
+                            }
+                            loaded_count += 1
+                        else:
+                            _LOGGER.warning("Invalid Q-table state key (not a tuple): %s", state_key)
+                    except (ValueError, SyntaxError, TypeError) as e:
+                        _LOGGER.warning("Failed to parse Q-table entry '%s': %s", state_key, e)
+                        continue
+                
+                _LOGGER.info("Loaded Q-table with %d state entries", loaded_count)
+            except Exception as e:
+                _LOGGER.error("Failed to load Q-table: %s", e)
+                self.q_table = {}
 
         _LOGGER.info("Persistent AI state loaded successfully")
 
@@ -167,8 +189,12 @@ class DecisionAgent:
         else:
             safe_start_date = self.start_date.isoformat()
         
-        # Convert Q-table keys to strings for JSON serialization
-        serializable_q_table = {str(k): v for k, v in self.q_table.items()}
+        # Convert Q-table to JSON-serializable format
+        # State keys (tuples) -> strings, Action keys (ints) -> remain as ints (JSON will convert)
+        serializable_q_table = {
+            str(state_key): {int(action): float(q_value) for action, q_value in actions.items()}
+            for state_key, actions in self.q_table.items()
+        }
         
         ai_state = {
             "start_date": safe_start_date,
