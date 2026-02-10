@@ -174,7 +174,7 @@ views:
             > *Warning:* Above **70%** feels "muggy" and risks mold; below **30%** feels very dry.
             {% endif %}
           
-# ========== TAB 2: DASHBOARD ==========
+# ========== DASHBOARD TAB ==========
 - title: Dashboard
   path: dashboard
   icon: mdi:chart-line
@@ -197,15 +197,24 @@ views:
               ## 📊 Calibration in Progress
               The system is learning your habits (**{{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining**).
 
-        # --- HISTORY GRAPH ---
-        - type: history-graph
-          title: 📈 Consumption vs Baseline (Last Week)
-          hours_to_show: 168
-          entities:
-            - entity: sensor.current_consumption
-              name: ⚡ Current Consumption
-            - entity: sensor.energy_baseline
-              name: 📊 Baseline
+        # --- CHART SECTION ---
+        - type: vertical-stack
+          cards:
+            - type: markdown
+              content: |
+                ### 📈 Performance vs. Baseline
+                <div style="background: var(--card-background-color); border: 1px solid var(--divider-color); padding: 10px; border-radius: 6px; font-size: 13px; color: var(--secondary-text-color); margin-bottom: 0px;">
+                  ℹ️ <b>What is "Baseline Consumption"?</b><br>
+                  This line represents your average energy consumption. It will be adjusted overtime.
+                </div>
+            
+            - type: history-graph
+              hours_to_show: 168
+              entities:
+                - entity: sensor.current_consumption
+                  name: Current Usage
+                - entity: sensor.energy_baseline
+                  name: Baseline Consumption
         
         # --- AREA CONSUMPTION TABLE ---
         - type: markdown
