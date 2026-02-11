@@ -56,8 +56,6 @@ Daily rollup of all metrics for time-series analysis.
 | `outdoor_temp_celsius` | REAL | External temperature (for normalization) |
 | `hdd_base18` | REAL | Heating degree days (base 18°C) |
 
-**Backfill Mechanism**: Computed at **00:05** daily. If system was offline, missing dates are detected and computed on next startup.
-
 #### Table: `research_rl_episodes`
 Every RL agent decision with full context.
 

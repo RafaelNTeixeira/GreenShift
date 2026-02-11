@@ -1222,10 +1222,10 @@ class StorageManager:
     async def compute_daily_aggregates(self, date: str = None, phase: str = None):
         """
         Compute and store daily aggregates for research analysis.
-        Should be run at midnight or on-demand.
+        Continuously updates today's aggregate (INSERT OR REPLACE).
         """
         if date is None:
-            date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            date = datetime.now().strftime("%Y-%m-%d")
         
         # Get all data for the day
         start_ts = datetime.strptime(date, "%Y-%m-%d").timestamp()

@@ -176,20 +176,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, verify_tasks_callback, timedelta(minutes=VERIFY_TASKS_INTERVAL_MINUTES)
     )
 
-    # Daily aggregation for research data at midnight
+    # Hourly aggregation for research data (keeps today's aggregate current)
     async def daily_aggregation_callback(now):
-        """Compute daily aggregates for research analysis at midnight."""
-        _LOGGER.info("Computing daily aggregates for research database...")
-        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        """Compute/update daily aggregates for research analysis every hour."""
+        _LOGGER.debug("Updating daily aggregates for research database...")
+        today = datetime.now().strftime("%Y-%m-%d")
         
         try:
-            await storage.compute_daily_aggregates(date=yesterday, phase=agent.phase)
-            _LOGGER.info("Daily aggregates computed successfully for %s", yesterday)
+            await storage.compute_daily_aggregates(date=today, phase=agent.phase)
+            _LOGGER.debug("Daily aggregates updated successfully for %s", today)
         except Exception as e:
-            _LOGGER.error("Failed to compute daily aggregates: %s", e)
+            _LOGGER.error("Failed to update daily aggregates: %s", e)
     
-    hass.data[DOMAIN]["daily_aggregation_listener"] = async_track_time_change(
-        hass, daily_aggregation_callback, hour=0, minute=5, second=0
+    hass.data[DOMAIN]["daily_aggregation_listener"] = async_track_time_interval(
+        hass, daily_aggregation_callback, timedelta(hours=1)
     )
 
     # Generate tasks immediately if none exist for today (only in active phase)
