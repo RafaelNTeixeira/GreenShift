@@ -217,6 +217,10 @@ class CurrentConsumptionSensor(GreenShiftBaseSensor):
         self._attr_unique_id = f"{DOMAIN}_current"
         self._attr_unit_of_measurement = "W"
         self._attr_device_class = "power"
+
+    @property
+    def unit_of_measurement(self):    
+        return "W"
     
     @property
     def state(self):
@@ -322,6 +326,11 @@ class DailyCO2EstimateSensor(GreenShiftBaseSensor):
         self._attr_unique_id = f"{DOMAIN}_daily_co2"
         self._attr_unit_of_measurement = "kg"
         self._attr_icon = "mdi:leaf-circle"
+
+    @property
+    def unit_of_measurement(self):
+        """Dynamic unit based on input_select."""
+        return "kg"
 
     @property
     def state(self):

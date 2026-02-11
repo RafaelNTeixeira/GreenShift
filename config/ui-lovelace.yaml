@@ -118,7 +118,7 @@ views:
                                 <td>{{ s.name }}</td>
                                 <td align="right">
                                   {%- if c == 'occupancy' -%}
-                                    {{ '🔴' if s.value == 'on' else '🟢' }}
+                                    {{ 'Occupied 🔴' if s.value == 'on' else 'Clear 🟢' }}
                                   {%- else -%}
                                     <b>{{ s.value }}</b> <small>{{ s.unit }}</small>
                                   {%- endif -%}
@@ -776,7 +776,7 @@ views:
               # --- TOP SECTION (STATS & INSTRUCTIONS) ---
               - type: tile
                 entity: sensor.active_notifications
-                name: 🔔 Active Alerts
+                name: Active Alerts
                 icon: mdi:bell-ring
                 color: accent
 

@@ -18,6 +18,8 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Add emojis to places where they are missing to make screen more appealing
 - [x] Add extra attributes to money saved in Profile tab?
 - [x] Update guide from Settings tab
+- [x] Add metrics to Devices tab
+- [x] Add presence state in text also, not just an emoji in Devices tab
 
 
 ### 🎮 Gamification
@@ -29,9 +31,8 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Create a service to check if weekly challenge has been completed
 - [x] Implement adaptive difficulty
 - [x] Need to round sensor values from tasks
-- [ ] Store data needed for analysis/results extraction
-- [ ] EXTRA: Add level system based on XP obtained from task/challenge completion? Or just level based on number of tasks completion
-- [ ] Test gamification logic and UI
+- [x] Store data needed for analysis/results extraction
+- [x] Test gamification logic and UI
 
 
 ### 🤖 AI
@@ -43,11 +44,12 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Develop fatigue index
 - [x] Set default MAX_NOTIFICATIONS_PER_DAY value to 5
 - [x] Check why it is still sending notifications when notification count exceeds MAX_NOTIFICATIONS_PER_DAY
-- [ ] Add mechanism that does not use notification timeouts. Must submit notification when most needed and when fatigue is not high.
-- [ ] Check if indices are updating during the intervention
-- [ ] Check adaptive difficulty updates
+- [x] Add mechanism that does not use notification timeouts. Must submit notification when most needed and when fatigue is not high.
+- [x] Check if indices are updating during the intervention
+- [x] Check adaptive difficulty updates
 - [x] Q-table in JSON with duplicate key entries
 - [x] Check notification templates that make more sense
+- [ ] Test anomaly index with anomaly simulated anomaly scenario
 - [ ] Store data needed for analysis/results extraction
 - [ ] Test AI-driven features (notifications, recommendations)
 
@@ -56,6 +58,6 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Build tables required for analysis extraction
 - [x] Store data required for analysis extraction
 - [ ] Build backup daily to prevent data loss
-- [ ] Redundant verified attribute?
+- [ ] Check query 13
  
 ---

@@ -91,7 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         days_running = (datetime.now() - agent.start_date).days
 
-        # days_running = 14 # TEMP: For testing purposes, simulate baseline phase completion after 14 days
+        days_running = 14 # TEMP: For testing purposes, simulate baseline phase completion after 14 days
 
         # During baseline phase: continuously update baseline_consumption
         if agent.phase == PHASE_BASELINE:
@@ -184,6 +184,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         try:
             await storage.compute_daily_aggregates(date=today, phase=agent.phase)
+            await storage.compute_area_daily_aggregates(date=today, phase=agent.phase)
             _LOGGER.debug("Daily aggregates updated successfully for %s", today)
         except Exception as e:
             _LOGGER.error("Failed to update daily aggregates: %s", e)

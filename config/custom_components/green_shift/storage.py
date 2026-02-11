@@ -14,6 +14,7 @@ from typing import List, Tuple, Dict, Optional, Any
 import numpy as np
 import asyncio
 from homeassistant.core import HomeAssistant
+from .const import UPDATE_INTERVAL_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1251,7 +1252,7 @@ class StorageManager:
                     SUM(CASE WHEN occupancy = 1 THEN 1 ELSE 0 END) * ? / 3600.0 as occupied_hours
                 FROM sensor_history
                 WHERE timestamp >= ? AND timestamp < ?
-            """, (5, start_ts, end_ts))  # 5 seconds per reading
+            """, (UPDATE_INTERVAL_SECONDS, start_ts, end_ts))  # 5 seconds per reading
             energy_stats = sensor_cursor.fetchone()
             
             # Count occupancy per reading (could be multiple areas)
@@ -1323,6 +1324,91 @@ class StorageManager:
             research_conn.close()
             
             _LOGGER.info("Daily aggregates computed for %s", date)
+        
+        await self.hass.async_add_executor_job(_compute)
+    
+    async def compute_area_daily_aggregates(self, date: str = None, phase: str = None):
+        """
+        Compute and store area-specific daily aggregates for research analysis.
+        Continuously updates today's aggregate for each area (INSERT OR REPLACE).
+        """
+        if date is None:
+            date = datetime.now().strftime("%Y-%m-%d")
+        
+        # Get all data for the day
+        start_ts = datetime.strptime(date, "%Y-%m-%d").timestamp()
+        end_ts = start_ts + 86400
+        
+        def _compute():
+            # Connect to both databases
+            sensor_conn = sqlite3.connect(str(self.db_path))
+            research_conn = sqlite3.connect(str(self.research_db_path))
+            
+            sensor_cursor = sensor_conn.cursor()
+            research_cursor = research_conn.cursor()
+            
+            # Get all areas from the area_sensor_history table
+            sensor_cursor.execute("""
+                SELECT DISTINCT area_name 
+                FROM area_sensor_history 
+                WHERE timestamp >= ? AND timestamp < ?
+                AND area_name IS NOT NULL
+            """, (start_ts, end_ts))
+            
+            areas = [row[0] for row in sensor_cursor.fetchall()]
+            
+            if not areas:
+                _LOGGER.debug("No areas found for date %s", date)
+                sensor_conn.close()
+                research_conn.close()
+                return
+            
+            # For each area, compute daily statistics
+            for area_name in areas:
+                # Get environmental and energy metrics for this area
+                sensor_cursor.execute("""
+                    SELECT 
+                        AVG(power) as avg_power,
+                        MAX(power) as max_power,
+                        MIN(power) as min_power,
+                        AVG(temperature) as avg_temp,
+                        AVG(humidity) as avg_humidity,
+                        AVG(illuminance) as avg_illuminance,
+                        SUM(CASE WHEN occupancy = 1 THEN 1 ELSE 0 END) * ? / 3600.0 as occupied_hours,
+                        COUNT(*) as total_readings
+                    FROM area_sensor_history
+                    WHERE area_name = ? AND timestamp >= ? AND timestamp < ?
+                """, (UPDATE_INTERVAL_SECONDS, area_name, start_ts, end_ts))
+                
+                area_stats = sensor_cursor.fetchone()
+                
+                if not area_stats or area_stats[7] == 0:  # total_readings
+                    continue
+                
+                occupied_hours = area_stats[6] if area_stats[6] else 0
+                total_hours = 24.0
+                occupancy_percentage = (occupied_hours / total_hours) * 100.0 if total_hours > 0 else 0
+                
+                # Insert or replace area aggregate
+                research_cursor.execute("""
+                    INSERT OR REPLACE INTO research_area_daily_stats
+                    (date, area_name, phase, 
+                     avg_power_w, max_power_w, min_power_w,
+                     avg_temperature, avg_humidity, avg_illuminance,
+                     total_occupied_hours, occupancy_percentage)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    date, area_name, phase,
+                    area_stats[0], area_stats[1], area_stats[2],  # power metrics
+                    area_stats[3], area_stats[4], area_stats[5],  # environmental metrics
+                    occupied_hours, occupancy_percentage
+                ))
+            
+            research_conn.commit()
+            sensor_conn.close()
+            research_conn.close()
+            
+            _LOGGER.info("Area daily aggregates computed for %s (%d areas)", date, len(areas))
         
         await self.hass.async_add_executor_job(_compute)
     

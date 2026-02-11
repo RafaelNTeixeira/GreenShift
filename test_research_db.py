@@ -130,7 +130,45 @@ def main():
         LIMIT 5;
     """, "4. RECENT DAILY AGGREGATES (Last 5 Days)")
     
-    # 5. RL episodes summary
+    # 5. Area daily stats summary
+    run_query(conn, """
+        SELECT 
+            COUNT(DISTINCT area_name) as total_areas,
+            COUNT(DISTINCT date) as days_tracked,
+            COUNT(*) as total_records
+        FROM research_area_daily_stats;
+    """, "5. AREA DAILY STATS SUMMARY")
+    
+    # 6. Recent area daily stats
+    run_query(conn, """
+        SELECT 
+            date,
+            area_name,
+            phase,
+            ROUND(avg_power_w, 2) as avg_power_w,
+            ROUND(avg_temperature, 1) as temp_c,
+            ROUND(avg_humidity, 1) as humidity_pct,
+            ROUND(total_occupied_hours, 1) as occupied_hrs,
+            ROUND(occupancy_percentage, 1) as occupancy_pct
+        FROM research_area_daily_stats
+        ORDER BY date DESC, area_name
+        LIMIT 10;
+    """, "6. RECENT AREA DAILY STATS (Last 10 Records)")
+    
+    # 7. Area power consumption comparison (latest day)
+    run_query(conn, """
+        SELECT 
+            area_name,
+            ROUND(avg_power_w, 2) as avg_power_w,
+            ROUND(max_power_w, 2) as max_power_w,
+            ROUND(occupancy_percentage, 1) as occupancy_pct,
+            ROUND(avg_power_w / NULLIF(occupancy_percentage, 0), 2) as power_per_occupancy_pct
+        FROM research_area_daily_stats
+        WHERE date = (SELECT MAX(date) FROM research_area_daily_stats)
+        ORDER BY avg_power_w DESC;
+    """, "7. AREA POWER COMPARISON (Latest Day)")
+    
+    # 8. RL episodes summary
     run_query(conn, """
         SELECT 
             COUNT(*) as total_episodes,
@@ -139,9 +177,9 @@ def main():
             MAX(datetime(timestamp, 'unixepoch')) as last_episode,
             ROUND(AVG(reward), 4) as avg_reward
         FROM research_rl_episodes;
-    """, "5. RL EPISODES SUMMARY")
+    """, "8. RL EPISODES SUMMARY")
     
-    # 6. Action distribution
+    # 9. Action distribution
     run_query(conn, """
         SELECT 
             action_name,
@@ -152,9 +190,9 @@ def main():
         WHERE action_name IS NOT NULL
         GROUP BY action_name
         ORDER BY times_used DESC;
-    """, "6. ACTION DISTRIBUTION")
+    """, "9. ACTION DISTRIBUTION")
     
-    # 7. Exploration vs Exploitation
+    # 10. Exploration vs Exploitation
     run_query(conn, """
         SELECT 
             action_source,
@@ -164,9 +202,9 @@ def main():
         FROM research_rl_episodes
         WHERE action_source IS NOT NULL
         GROUP BY action_source;
-    """, "7. EXPLORATION VS EXPLOITATION")
+    """, "10. EXPLORATION VS EXPLOITATION")
     
-    # 8. Weekly Challenge Summary
+    # 11. Weekly Challenge Summary
     run_query(conn, """
         SELECT 
             week_start_date,
@@ -179,9 +217,9 @@ def main():
         FROM research_weekly_challenges
         ORDER BY week_start_date DESC
         LIMIT 5;
-    """, "8. WEEKLY CHALLENGE SUMMARY (Last 5)")
+    """, "11. WEEKLY CHALLENGE SUMMARY (Last 5)")
     
-    # 9. Time-of-Day Decision Patterns
+    # 12. Time-of-Day Decision Patterns
     run_query(conn, """
         SELECT 
             time_of_day_hour as hour,
@@ -193,23 +231,23 @@ def main():
         GROUP BY time_of_day_hour
         ORDER BY decisions DESC
         LIMIT 10;
-    """, "9. TIME-OF-DAY DECISION PATTERNS (Top 10 Hours)")
+    """, "12. TIME-OF-DAY DECISION PATTERNS (Top 10 Hours)")
     
-    # 10. Action Constraint Analysis
+    # 13. Action Constraint Analysis
     run_query(conn, """
         SELECT 
             DATE(timestamp, 'unixepoch') as date,
             COUNT(*) as total_decisions,
-            SUM(CASE WHEN action_mask LIKE '%\"noop\": false%' THEN 1 ELSE 0 END) as noop_blocked,
-            SUM(CASE WHEN action_mask LIKE '%\"specific\": false%' THEN 1 ELSE 0 END) as specific_blocked
+            SUM(CASE WHEN action_mask LIKE '%"noop": false%' THEN 1 ELSE 0 END) as noop_blocked,
+            SUM(CASE WHEN action_mask LIKE '%"specific": false%' THEN 1 ELSE 0 END) as specific_blocked
         FROM research_rl_episodes
         WHERE action_mask IS NOT NULL
         GROUP BY date
         ORDER BY date DESC
         LIMIT 5;
-    """, "10. ACTION CONSTRAINT ANALYSIS (Last 5 Days)")
+    """, "13. ACTION CONSTRAINT ANALYSIS (Last 5 Days)")
     
-    # 11. Baseline Comparison Effectiveness
+    # 14. Baseline Comparison Effectiveness
     run_query(conn, """
         SELECT 
             action_name,
@@ -222,9 +260,9 @@ def main():
           AND action_name IS NOT NULL
         GROUP BY action_name
         ORDER BY times_used DESC;
-    """, "11. BASELINE COMPARISON EFFECTIVENESS")
+    """, "14. BASELINE COMPARISON EFFECTIVENESS")
     
-    # 12. Nudge summary
+    # 15. Nudge summary
     run_query(conn, """
         SELECT 
             COUNT(*) as total_nudges,
@@ -233,9 +271,9 @@ def main():
             ROUND(SUM(accepted) * 100.0 / NULLIF(SUM(responded), 0), 2) as acceptance_rate_pct,
             ROUND(AVG(response_time_seconds), 2) as avg_response_sec
         FROM research_nudge_log;
-    """, "12. NUDGE SUMMARY")
+    """, "15. NUDGE SUMMARY")
     
-    # 13. Nudge type distribution
+    # 16. Nudge type distribution
     run_query(conn, """
         SELECT 
             action_type,
@@ -246,9 +284,9 @@ def main():
         FROM research_nudge_log
         GROUP BY action_type
         ORDER BY sent DESC;
-    """, "13. NUDGE TYPE DISTRIBUTION")
+    """, "16. NUDGE TYPE DISTRIBUTION")
     
-    # 14. Task summary
+    # 17. Task summary
     run_query(conn, """
         SELECT 
             COUNT(*) as total_tasks,
@@ -256,9 +294,9 @@ def main():
             SUM(verified) as verified,
             ROUND(SUM(completed) * 100.0 / COUNT(*), 2) as completion_rate_pct
         FROM research_task_interactions;
-    """, "14. TASK SUMMARY")
+    """, "17. TASK SUMMARY")
     
-    # 15. Task type distribution
+    # 18. Task type distribution
     run_query(conn, """
         SELECT 
             task_type,
@@ -268,9 +306,9 @@ def main():
         FROM research_task_interactions
         GROUP BY task_type
         ORDER BY total DESC;
-    """, "15. TASK TYPE DISTRIBUTION")
+    """, "18. TASK TYPE DISTRIBUTION")
     
-    # 16. Energy efficiency by phase
+    # 19. Energy efficiency by phase
     run_query(conn, """
         SELECT 
             phase,
@@ -280,14 +318,19 @@ def main():
         FROM research_daily_aggregates
         WHERE avg_occupancy_count > 0
         GROUP BY phase;
-    """, "16. ENERGY EFFICIENCY BY PHASE")
+    """, "19. ENERGY EFFICIENCY BY PHASE")
     
-    # 17. Last data collection time
+    # 20. Last data collection time
     run_query(conn, """
         SELECT 
             'daily_aggregates' as table_name,
             MAX(date) as last_date
         FROM research_daily_aggregates
+        UNION ALL
+        SELECT 
+            'area_daily_stats',
+            MAX(date)
+        FROM research_area_daily_stats
         UNION ALL
         SELECT 
             'rl_episodes',
@@ -303,7 +346,7 @@ def main():
             'task_interactions',
             MAX(date)
         FROM research_task_interactions;
-    """, "17. LAST DATA COLLECTION TIME")
+    """, "20. LAST DATA COLLECTION TIME")
     
     # Close connection
     conn.close()
