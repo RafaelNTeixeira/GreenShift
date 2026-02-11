@@ -477,31 +477,9 @@ class DecisionAgent:
         notification = await self._generate_notification(action_name)
         
         if notification:
-            # Create actionable notification with feedback buttons
+            # Create notification ID for tracking
             notification_id = f"energy_nudge_{datetime.now().timestamp()}"
             
-            await self.hass.services.async_call(
-                "notify",
-                "persistent_notification",
-                {
-                    "message": notification["message"],
-                    "title": notification["title"],
-                    "data": {
-                        "notification_id": notification_id,
-                        "actions": [
-                            {
-                                "action": f"accept_{notification_id}",
-                                "title": "✓ Helpful"
-                            },
-                            {
-                                "action": f"reject_{notification_id}",
-                                "title": "✗ Not useful"
-                            }
-                        ]
-                    }
-                },
-            )
-
             # Track notification
             self.notification_count_today += 1
             self.last_notification_time = datetime.now()
@@ -531,7 +509,7 @@ class DecisionAgent:
                     "fatigue_index": self.fatigue_index
                 })
             
-            _LOGGER.info("Notification sent (%d/%d today): %s - %s", self.notification_count_today, MAX_NOTIFICATIONS_PER_DAY, action_name, notification["title"])
+            _LOGGER.info("Nudge notification added to dashboard (%d/%d today): %s - %s", self.notification_count_today, MAX_NOTIFICATIONS_PER_DAY, action_name, notification["title"])
 
             async_dispatcher_send(self.hass, GS_AI_UPDATE_SIGNAL)
 
