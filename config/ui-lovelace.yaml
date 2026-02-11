@@ -237,7 +237,8 @@ views:
             {%- endif -%}
 
             {%- if ns.total == 0 -%}
-            📭 No energy data collected yet.
+            </br>
+            📭 No area data collected.
             {%- else -%}
             
             <table width="100%">
@@ -279,7 +280,7 @@ views:
             -%}
             {# 2. Get the max value to scale the bars relative to the biggest hog #}
             {%- set max_val = top_devices[0].value if top_devices else 1 -%}
-
+            </br>
             <table width="100%">
               <thead>
                 <tr>
