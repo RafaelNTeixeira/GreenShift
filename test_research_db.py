@@ -171,10 +171,11 @@ def main():
         SELECT 
             week_start_date,
             target_percentage,
-            ROUND(baseline_avg_w, 2) as baseline_w,
-            ROUND(actual_avg_w, 2) as actual_w,
-            ROUND((actual_avg_w / baseline_avg_w - 1) * 100, 1) as change_pct,
-            CASE WHEN success = 1 THEN 'SUCCESS' ELSE 'FAILED' END as outcome
+            ROUND(baseline_kwh, 2) as baseline_kwh,
+            ROUND(actual_kwh, 2) as actual_kwh,
+            ROUND(savings_kwh, 2) as savings_kwh,
+            ROUND(savings_percentage, 1) as savings_pct,
+            CASE WHEN achieved = 1 THEN 'SUCCESS' ELSE 'FAILED' END as outcome
         FROM research_weekly_challenges
         ORDER BY week_start_date DESC
         LIMIT 5;

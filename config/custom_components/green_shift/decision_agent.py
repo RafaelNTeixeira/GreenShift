@@ -21,7 +21,10 @@ from .const import (
     FATIGUE_THRESHOLD,
     GAMMA,
     NOTIFICATION_TEMPLATES,
-    MAX_NOTIFICATIONS_PER_DAY
+    MAX_NOTIFICATIONS_PER_DAY,
+    MIN_COOLDOWN_MINUTES,
+    HIGH_OPPORTUNITY_THRESHOLD,
+    CRITICAL_OPPORTUNITY_THRESHOLD
 )
 
 _LOGGER = logging.getLogger(f"{__name__}.ai_model")
@@ -392,9 +395,17 @@ class DecisionAgent:
             _LOGGER.info("Max notifications reached for today (%d/%d)", self.notification_count_today, MAX_NOTIFICATIONS_PER_DAY)
             return
         
-        # Check fatigue threshold - primary gating mechanism for notification frequency
-        if self.fatigue_index > FATIGUE_THRESHOLD:
-            _LOGGER.info("User fatigue too high (%.2f > %.2f), skipping notification", self.fatigue_index, FATIGUE_THRESHOLD)
+        # Calculate opportunity score BEFORE cooldown check
+        opportunity_score = await self._calculate_opportunity_score()
+        
+        # Check adaptive cooldown with opportunity-based bypass
+        if not await self._check_cooldown_with_opportunity(opportunity_score):
+            return
+        
+        # Check fatigue threshold - but allow bypass for critical opportunities
+        if self.fatigue_index > FATIGUE_THRESHOLD and opportunity_score < CRITICAL_OPPORTUNITY_THRESHOLD:
+            _LOGGER.info("User fatigue too high (%.2f > %.2f) and opportunity not critical (%.2f), skipping notification", 
+                        self.fatigue_index, FATIGUE_THRESHOLD, opportunity_score)
             return
             
         # Get current state
@@ -714,6 +725,8 @@ class DecisionAgent:
             REWARD_WEIGHTS["beta"] * engagement -
             REWARD_WEIGHTS["delta"] * fatigue_penalty
         )
+        _LOGGER.debug("Reward calculated: Energy saving=%.4f, Engagement=%.4f, Fatigue penalty=%.4f, Total reward=%.4f", 
+                      energy_saving, engagement, fatigue_penalty, reward)
         
         return reward
     
@@ -889,6 +902,7 @@ class DecisionAgent:
         # Frequency component: high frequency in short time = higher fatigue
         if len(recent_notifs) >= 3:
             timestamps = [datetime.fromisoformat(n["timestamp"]) for n in recent_notifs[-3:]]
+            _LOGGER.debug("Timestamps of last 3 notifications for fatigue calculation: %s", timestamps)
             time_span = (timestamps[-1] - timestamps[0]).total_seconds() / 3600  # hours
             
             if time_span > 0:
@@ -965,6 +979,138 @@ class DecisionAgent:
         
         return (power_bin, anomaly_bin, fatigue_bin, area_anomaly_bin, time_bin, occupancy)
     
+    async def _calculate_opportunity_score(self) -> float:
+        """
+        Calculates opportunity score for sending a notification.
+        Combines:
+        - Energy savings potential (0-1)
+        - Urgency/anomaly severity (0-1)
+        - User receptiveness (0-1)
+        - Context appropriateness (0-1)
+        
+        Returns: Combined score 0-1, higher = better opportunity
+        """
+        current_state = self.data_collector.get_current_state()
+        current_power = current_state.get("power", 0)
+        
+        # Component 1: Energy savings potential
+        if self.baseline_consumption > 0 and current_power > self.baseline_consumption:
+            # Higher deviation = higher potential
+            deviation_ratio = (current_power - self.baseline_consumption) / self.baseline_consumption
+            savings_potential = min(deviation_ratio, 1.0)  # Cap at 100% deviation
+        else:
+            savings_potential = 0.0
+        
+        # Component 2: Urgency (anomaly + area anomalies)
+        urgency = self.anomaly_index
+        
+        # Boost urgency if multiple areas have anomalies (spatial urgency)
+        area_anomaly_count = len([a for a in self.area_anomalies.values() if any(v > 0.3 for v in a.values())])
+        if area_anomaly_count > 0:
+            urgency = min(urgency + (area_anomaly_count * 0.1), 1.0)
+        
+        # Component 3: User receptiveness (inverse of fatigue, boosted by good behaviour)
+        receptiveness = (1.0 - self.fatigue_index) * self.behaviour_index
+        
+        # Component 4: Context appropriateness (time of day + occupancy)
+        now = datetime.now()
+        hour = now.hour
+        
+        # Better times: morning (7-9), lunch (12-14), evening (18-21)
+        if 7 <= hour <= 9 or 12 <= hour <= 14 or 18 <= hour <= 21:
+            time_score = 1.0
+        elif 22 <= hour or hour < 7:  # Late night/early morning - poor time
+            time_score = 0.3
+        else:
+            time_score = 0.7
+        
+        # Boost if occupied
+        occupancy = 1.0 if current_state.get("occupancy", False) else 0.5
+        context = (time_score + occupancy) / 2.0
+        
+        # Weighted combination
+        opportunity_score = (
+            0.35 * savings_potential +
+            0.30 * urgency +
+            0.25 * receptiveness +
+            0.10 * context
+        )
+        
+        _LOGGER.debug(
+            "Opportunity score: %.2f (savings=%.2f, urgency=%.2f, receptive=%.2f, context=%.2f)",
+            opportunity_score, savings_potential, urgency, receptiveness, context
+        )
+        
+        return opportunity_score
+    
+    async def _check_cooldown_with_opportunity(self, opportunity_score: float) -> bool:
+        """
+        Checks if notification can be sent based on adaptive cooldown.
+        Allows bypassing cooldown for high-opportunity situations.
+        
+        Returns: True if notification allowed, False if in cooldown
+        """
+        if self.last_notification_time is None:
+            return True  # First notification always allowed
+        
+        time_since_last = (datetime.now() - self.last_notification_time).total_seconds() / 60  # minutes
+        
+        # Calculate adaptive cooldown based on fatigue and time of day
+        base_cooldown = MIN_COOLDOWN_MINUTES
+        
+        # Increase cooldown if fatigue is high
+        fatigue_multiplier = 1.0 + (self.fatigue_index * 2.0)  # 1x to 3x based on fatigue
+        
+        # Decrease cooldown during peak energy usage hours (more opportunities)
+        now = datetime.now()
+        hour = now.hour
+        if 17 <= hour <= 22:  # Evening peak
+            time_multiplier = 0.7
+        elif 7 <= hour <= 9:  # Morning peak
+            time_multiplier = 0.8
+        else:
+            time_multiplier = 1.0
+        
+        adaptive_cooldown = base_cooldown * fatigue_multiplier * time_multiplier
+        
+        # Allow bypass if opportunity is exceptional
+        if opportunity_score >= CRITICAL_OPPORTUNITY_THRESHOLD:
+            # Critical opportunity - immediate notification allowed
+            _LOGGER.info(
+                "Critical opportunity (%.2f) - bypassing cooldown (%.1f min since last)",
+                opportunity_score, time_since_last
+            )
+            return True
+        elif opportunity_score >= HIGH_OPPORTUNITY_THRESHOLD:
+            # High opportunity - reduced cooldown (50% of adaptive)
+            required_cooldown = adaptive_cooldown * 0.5
+            if time_since_last >= required_cooldown:
+                _LOGGER.info(
+                    "High opportunity (%.2f) - reduced cooldown met (%.1f/%.1f min)",
+                    opportunity_score, time_since_last, required_cooldown
+                )
+                return True
+            else:
+                _LOGGER.debug(
+                    "High opportunity but cooldown not met: %.1f/%.1f min (opportunity=%.2f)",
+                    time_since_last, required_cooldown, opportunity_score
+                )
+                return False
+        else:
+            # Normal opportunity - full adaptive cooldown required
+            if time_since_last >= adaptive_cooldown:
+                _LOGGER.debug(
+                    "Standard cooldown met: %.1f/%.1f min (opportunity=%.2f)",
+                    time_since_last, adaptive_cooldown, opportunity_score
+                )
+                return True
+            else:
+                _LOGGER.debug(
+                    "In cooldown: %.1f/%.1f min (opportunity=%.2f, fatigue=%.2f)",
+                    time_since_last, adaptive_cooldown, opportunity_score, self.fatigue_index
+                )
+                return False
+    
     async def calculate_area_baselines(self):
         """
         Calculate baseline values for each area during the baseline phase.
@@ -983,21 +1129,21 @@ class DecisionAgent:
             if temp_history:
                 temp_values = [val for ts, val in temp_history if val is not None]
                 if temp_values:
-                    baselines["temperature"] = np.mean(temp_values)
+                    baselines["temperature"] = round(np.mean(temp_values), 2)
             
             # Power baseline
             power_history = await self.data_collector.get_area_history(area, "power", days=14)
             if power_history:
                 power_values = [val for ts, val in power_history if val is not None]
                 if power_values:
-                    baselines["power"] = np.mean(power_values)
+                    baselines["power"] = round(np.mean(power_values), 2)
             
             # Humidity baseline
             hum_history = await self.data_collector.get_area_history(area, "humidity", days=14)
             if hum_history:
                 hum_values = [val for ts, val in hum_history if val is not None]
                 if hum_values:
-                    baselines["humidity"] = np.mean(hum_values)
+                    baselines["humidity"] = round(np.mean(hum_values), 2)
             
             if baselines:
                 self.area_baselines[area] = baselines

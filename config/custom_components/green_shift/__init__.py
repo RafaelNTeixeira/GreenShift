@@ -91,7 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         days_running = (datetime.now() - agent.start_date).days
 
-        days_running = 14 # TEMP: For testing purposes, simulate baseline phase completion after 14 days
+        # days_running = 14 # TEMP: For testing purposes, simulate baseline phase completion after 14 days
 
         # During baseline phase: continuously update baseline_consumption
         if agent.phase == PHASE_BASELINE:

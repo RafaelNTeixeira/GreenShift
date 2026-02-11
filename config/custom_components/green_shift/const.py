@@ -76,6 +76,9 @@ REWARD_WEIGHTS = {
 # Notification settings
 MAX_NOTIFICATIONS_PER_DAY = 5
 FATIGUE_THRESHOLD = 0.7
+MIN_COOLDOWN_MINUTES = 30  # Base cooldown between notifications
+HIGH_OPPORTUNITY_THRESHOLD = 0.75  # Score needed to bypass cooldown
+CRITICAL_OPPORTUNITY_THRESHOLD = 0.90  # Score for immediate notification
 
 # Discount factor for RL
 GAMMA = 0.95

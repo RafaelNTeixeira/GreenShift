@@ -6,7 +6,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import DOMAIN, GS_UPDATE_SIGNAL, GS_AI_UPDATE_SIGNAL, BASELINE_DAYS, UPDATE_INTERVAL_SECONDS
+from .const import DOMAIN, GS_UPDATE_SIGNAL, GS_AI_UPDATE_SIGNAL, BASELINE_DAYS, UPDATE_INTERVAL_SECONDS, PHASE_BASELINE
+
 from .helpers import get_normalized_value, get_entity_area, get_environmental_impact
 
 _LOGGER = logging.getLogger(__name__)
@@ -491,6 +492,9 @@ class WeeklyChallengeSensor(GreenShiftAISensor):
             return 15.0
     
     async def _async_update_state(self):
+        if self._agent.phase == PHASE_BASELINE:
+            return
+        
         current_target = self._get_target_percentage()
 
         challenge = await self._agent.get_weekly_challenge_status(target_percentage=current_target)
