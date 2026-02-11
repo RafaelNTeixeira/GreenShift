@@ -305,6 +305,7 @@ views:
               </tbody>
             </table>
             {%- else -%}
+            </br>
             😴 No active devices detected.
             {%- endif -%}
 
