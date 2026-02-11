@@ -1412,43 +1412,6 @@ class StorageManager:
         
         await self.hass.async_add_executor_job(_compute)
     
-    async def export_research_data(self, output_dir: str):
-        """Export all research data to CSV files for Python analysis."""
-        
-        tables = [
-            'research_daily_aggregates',
-            'research_rl_episodes',
-            'research_phase_metadata',
-            'research_nudge_log',
-            'research_task_interactions',
-            'research_area_daily_stats',
-            'research_weekly_challenges'
-        ]
-        
-        def _export():
-            try:
-                import pandas as pd
-            except ImportError:
-                _LOGGER.error("pandas not installed, cannot export to CSV")
-                return False
-            
-            conn = sqlite3.connect(str(self.research_db_path))
-            output_path = Path(output_dir)
-            output_path.mkdir(parents=True, exist_ok=True)
-            
-            for table in tables:
-                try:
-                    df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
-                    file_path = output_path / f"{table}.csv"
-                    df.to_csv(file_path, index=False)
-                    _LOGGER.info("Exported %d rows to %s", len(df), file_path)
-                except Exception as e:
-                    _LOGGER.error("Failed to export %s: %s", table, e)
-            
-            conn.close()
-            return True
-        
-        return await self.hass.async_add_executor_job(_export)
     
     # ==================== CLEANUP ====================
     
