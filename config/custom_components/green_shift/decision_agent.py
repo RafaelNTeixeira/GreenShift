@@ -110,7 +110,7 @@ class DecisionAgent:
         
         if "baseline_consumption" in state:
             self.baseline_consumption = state["baseline_consumption"]
-            _LOGGER.info("Loaded baseline consumption: %.2f kW", self.baseline_consumption)
+            _LOGGER.info("Loaded baseline consumption: %.2f W", self.baseline_consumption)
 
         if "area_baselines" in state:
             self.area_baselines = state["area_baselines"]

@@ -209,9 +209,9 @@ views:
         # --- AREA CONSUMPTION TABLE ---
         - type: markdown
           content: |
-            ### ⚡ Energy by Area
+            ### ⚡ Power Usage by Area
             
-            {%- set sensors = state_attr('sensor.hardware_sensors', 'energy') -%}
+            {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
             {%- set ns = namespace(area_sums={}, total=0) -%}
 
             {%- if sensors -%}
@@ -230,6 +230,8 @@ views:
             </br>
             📭 No area data collected.
             {%- else -%}
+            
+            </br>
             
             <table width="100%">
               <thead>

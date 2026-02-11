@@ -198,9 +198,13 @@ class EnergyBaselineSensor(GreenShiftAISensor):
         self._agent = agent
         self._attr_name = "Energy Baseline"
         self._attr_unique_id = f"{DOMAIN}_baseline"
-        self._attr_unit_of_measurement = "kW"
+        self._attr_unit_of_measurement = "W"
         self._attr_device_class = "power"
         self._attr_icon = "mdi:chart-line"
+
+    @property
+    def unit_of_measurement(self):    
+        return "W"
     
     @property
     def state(self):

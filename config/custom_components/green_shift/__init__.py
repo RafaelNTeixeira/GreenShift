@@ -91,7 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         days_running = (datetime.now() - agent.start_date).days
 
-        days_running = 14 # TEMP: For testing purposes, simulate baseline phase completion after 14 days
+        # days_running = 14 # TEMP: For testing purposes, simulate baseline phase completion after 14 days
 
         # During baseline phase: continuously update baseline_consumption
         if agent.phase == PHASE_BASELINE:
@@ -100,12 +100,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             if len(power_values) > 0:
                 agent.baseline_consumption = np.mean(power_values)
-                _LOGGER.debug("Baseline consumption updated: %.2f kW", agent.baseline_consumption)
+                _LOGGER.debug("Baseline consumption updated: %.2f W", agent.baseline_consumption)
         
         # Verify if the baseline phase is complete
         if days_running >= BASELINE_DAYS and agent.phase == PHASE_BASELINE:
             agent.phase = PHASE_ACTIVE
-            _LOGGER.info("System entered active phase after %d days with baseline: %.2f kW", days_running, agent.baseline_consumption)
+            _LOGGER.info("System entered active phase after %d days with baseline: %.2f W", days_running, agent.baseline_consumption)
 
             # Calculate area-specific baselines before entering active phase
             await agent.calculate_area_baselines()
