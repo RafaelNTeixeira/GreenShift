@@ -46,6 +46,7 @@ ENVIRONMENTS = {
         "name": "FEUP Lab Environment",
         "sensors": [
             ("hub_feup", "Ambient Temperature", "temperature", "°C", HUB_BASE, "temp", "measurement", "sensor", "No Area"),
+            ("hub_feup", "Luminosity", "illuminance", "lx", HUB_BASE, "lux", "measurement", "sensor", "No Area"),
             ("hub_feup", "Presence", "occupancy", None, HUB_BASE, "presence", None, "binary_sensor", "No Area"),
             ("plug_fridge", "Fridge Energy", "energy", "kWh", {"name": "Fridge Smart Plug", **PLUG_DEV}, "energy", "total_increasing", "sensor", "No Area"),
             ("plug_coffee", "Coffee Machine Energy", "energy", "kWh", {"name": "Coffee Machine Smart Plug", **PLUG_DEV}, "energy", "total_increasing", "sensor", "No Area")

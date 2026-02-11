@@ -84,7 +84,9 @@ def main():
         UNION ALL
         SELECT 'research_phase_metadata', COUNT(*) FROM research_phase_metadata
         UNION ALL
-        SELECT 'research_area_daily_stats', COUNT(*) FROM research_area_daily_stats;
+        SELECT 'research_area_daily_stats', COUNT(*) FROM research_area_daily_stats
+        UNION ALL
+        SELECT 'research_weekly_challenges', COUNT(*) FROM research_weekly_challenges;
     """, "1. TABLE ROW COUNTS")
     
     # 2. Phase metadata
@@ -157,13 +159,71 @@ def main():
         SELECT 
             action_source,
             COUNT(*) as count,
-            ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM research_rl_episodes WHERE action_source IS NOT NULL), 2) as percentage
+            ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM research_rl_episodes WHERE action_source IS NOT NULL), 2) as percentage,
+            ROUND(AVG(reward), 4) as avg_reward
         FROM research_rl_episodes
         WHERE action_source IS NOT NULL
         GROUP BY action_source;
-    """, "7. EXPLORATION vs EXPLOITATION")
+    """, "7. EXPLORATION VS EXPLOITATION")
     
-    # 8. Nudge summary
+    # 8. Weekly Challenge Summary
+    run_query(conn, """
+        SELECT 
+            week_start_date,
+            target_percentage,
+            ROUND(baseline_avg_w, 2) as baseline_w,
+            ROUND(actual_avg_w, 2) as actual_w,
+            ROUND((actual_avg_w / baseline_avg_w - 1) * 100, 1) as change_pct,
+            CASE WHEN success = 1 THEN 'SUCCESS' ELSE 'FAILED' END as outcome
+        FROM research_weekly_challenges
+        ORDER BY week_start_date DESC
+        LIMIT 5;
+    """, "8. WEEKLY CHALLENGE SUMMARY (Last 5)")
+    
+    # 9. Time-of-Day Decision Patterns
+    run_query(conn, """
+        SELECT 
+            time_of_day_hour as hour,
+            COUNT(*) as decisions,
+            SUM(CASE WHEN action_name != 'noop' THEN 1 ELSE 0 END) as notifications,
+            ROUND(AVG(CASE WHEN action_name != 'noop' THEN reward END), 4) as avg_reward
+        FROM research_rl_episodes
+        WHERE time_of_day_hour IS NOT NULL
+        GROUP BY time_of_day_hour
+        ORDER BY decisions DESC
+        LIMIT 10;
+    """, "9. TIME-OF-DAY DECISION PATTERNS (Top 10 Hours)")
+    
+    # 10. Action Constraint Analysis
+    run_query(conn, """
+        SELECT 
+            DATE(timestamp, 'unixepoch') as date,
+            COUNT(*) as total_decisions,
+            SUM(CASE WHEN action_mask LIKE '%\"noop\": false%' THEN 1 ELSE 0 END) as noop_blocked,
+            SUM(CASE WHEN action_mask LIKE '%\"specific\": false%' THEN 1 ELSE 0 END) as specific_blocked
+        FROM research_rl_episodes
+        WHERE action_mask IS NOT NULL
+        GROUP BY date
+        ORDER BY date DESC
+        LIMIT 5;
+    """, "10. ACTION CONSTRAINT ANALYSIS (Last 5 Days)")
+    
+    # 11. Baseline Comparison Effectiveness
+    run_query(conn, """
+        SELECT 
+            action_name,
+            COUNT(*) as times_used,
+            ROUND(AVG(current_power), 2) as avg_power,
+            ROUND(AVG(baseline_power_reference), 2) as avg_baseline,
+            ROUND(AVG(current_power - baseline_power_reference), 2) as avg_diff
+        FROM research_rl_episodes
+        WHERE baseline_power_reference IS NOT NULL
+          AND action_name IS NOT NULL
+        GROUP BY action_name
+        ORDER BY times_used DESC;
+    """, "11. BASELINE COMPARISON EFFECTIVENESS")
+    
+    # 12. Nudge summary
     run_query(conn, """
         SELECT 
             COUNT(*) as total_nudges,
@@ -172,9 +232,9 @@ def main():
             ROUND(SUM(accepted) * 100.0 / NULLIF(SUM(responded), 0), 2) as acceptance_rate_pct,
             ROUND(AVG(response_time_seconds), 2) as avg_response_sec
         FROM research_nudge_log;
-    """, "8. NUDGE SUMMARY")
+    """, "12. NUDGE SUMMARY")
     
-    # 9. Nudge type distribution
+    # 13. Nudge type distribution
     run_query(conn, """
         SELECT 
             action_type,
@@ -185,9 +245,9 @@ def main():
         FROM research_nudge_log
         GROUP BY action_type
         ORDER BY sent DESC;
-    """, "9. NUDGE TYPE DISTRIBUTION")
+    """, "13. NUDGE TYPE DISTRIBUTION")
     
-    # 10. Task summary
+    # 14. Task summary
     run_query(conn, """
         SELECT 
             COUNT(*) as total_tasks,
@@ -195,9 +255,9 @@ def main():
             SUM(verified) as verified,
             ROUND(SUM(completed) * 100.0 / COUNT(*), 2) as completion_rate_pct
         FROM research_task_interactions;
-    """, "10. TASK SUMMARY")
+    """, "14. TASK SUMMARY")
     
-    # 11. Task type distribution
+    # 15. Task type distribution
     run_query(conn, """
         SELECT 
             task_type,
@@ -207,9 +267,9 @@ def main():
         FROM research_task_interactions
         GROUP BY task_type
         ORDER BY total DESC;
-    """, "11. TASK TYPE DISTRIBUTION")
+    """, "15. TASK TYPE DISTRIBUTION")
     
-    # 12. Energy efficiency by phase
+    # 16. Energy efficiency by phase
     run_query(conn, """
         SELECT 
             phase,
@@ -219,9 +279,9 @@ def main():
         FROM research_daily_aggregates
         WHERE avg_occupancy_count > 0
         GROUP BY phase;
-    """, "12. ENERGY EFFICIENCY BY PHASE")
+    """, "16. ENERGY EFFICIENCY BY PHASE")
     
-    # 13. Last data collection time
+    # 17. Last data collection time
     run_query(conn, """
         SELECT 
             'daily_aggregates' as table_name,
@@ -242,7 +302,7 @@ def main():
             'task_interactions',
             MAX(date)
         FROM research_task_interactions;
-    """, "13. LAST DATA COLLECTION TIME")
+    """, "17. LAST DATA COLLECTION TIME")
     
     # Close connection
     conn.close()

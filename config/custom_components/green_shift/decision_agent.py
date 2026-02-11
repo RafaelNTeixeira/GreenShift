@@ -392,18 +392,10 @@ class DecisionAgent:
             _LOGGER.info("Max notifications reached for today (%d/%d)", self.notification_count_today, MAX_NOTIFICATIONS_PER_DAY)
             return
         
-        # Check fatigue threshold
+        # Check fatigue threshold - primary gating mechanism for notification frequency
         if self.fatigue_index > FATIGUE_THRESHOLD:
             _LOGGER.info("User fatigue too high (%.2f > %.2f), skipping notification", self.fatigue_index, FATIGUE_THRESHOLD)
             return
-
-        # Minimum time between notifications (1 hour)
-        if self.last_notification_time:
-            time_since_last = (datetime.now() - self.last_notification_time).total_seconds()
-            minutes_since = time_since_last / 60
-            if time_since_last < 3600:  # 1 hour
-                _LOGGER.info("Too soon since last notification (%.1f min / 60 min), waiting", minutes_since)
-                return
             
         # Get current state
         state_key = self._discretize_state()
@@ -473,7 +465,6 @@ class DecisionAgent:
         # Get appropriate notification template
         notification = await self._generate_notification(action_name)
         
-        # TODO: Feedback buttons don't appear. Might need to include a separate tab for notifications in the frontend
         if notification:
             # Create actionable notification with feedback buttons
             notification_id = f"energy_nudge_{datetime.now().timestamp()}"
@@ -741,6 +732,13 @@ class DecisionAgent:
         # Get current power
         current_state = self.data_collector.get_current_state()
         
+        # Serialize action mask
+        action_mask_dict = {int(k): bool(v) for k, v in self.action_mask.items()}
+        
+        # Get time of day
+        now = datetime.now()
+        time_of_day_hour = now.hour
+        
         episode_data = {
             "episode": self.episode_number,
             "phase": self.phase,
@@ -753,10 +751,13 @@ class DecisionAgent:
             "q_values": {int(k): float(v) for k, v in q_values.items()},
             "max_q": max_q,
             "epsilon": self.epsilon,
+            "action_mask": action_mask_dict,
             "power": current_state.get("power", 0),
             "anomaly_index": self.anomaly_index,
             "behaviour_index": self.behaviour_index,
-            "fatigue_index": self.fatigue_index
+            "fatigue_index": self.fatigue_index,
+            "time_of_day_hour": time_of_day_hour,
+            "baseline_power_reference": self.baseline_consumption
         }
         
         await self.storage.log_rl_decision(episode_data)
@@ -866,7 +867,8 @@ class DecisionAgent:
     async def _update_fatigue_index(self):
         """
         Calculates user fatigue based on recent notification patterns.
-        Considers rejection rate, frequency of notifications and time since last interaction.
+        Considers rejection rate, frequency of notifications, and time decay.
+        Lower fatigue = more receptive to notifications.
         """
         if len(self.notification_history) == 0:
             self.fatigue_index = 0.0
@@ -896,14 +898,25 @@ class DecisionAgent:
         else:
             frequency_factor = 0.0
         
-        # Combined fatigue score
+        # Time decay component: fatigue naturally decreases over time
+        # If more than 2 hours since last notification, reduce fatigue
+        time_decay_factor = 1.0
+        if self.last_notification_time:
+            hours_since_last = (datetime.now() - self.last_notification_time).total_seconds() / 3600
+            if hours_since_last > 2:
+                # Decay factor: approaches 0.5 as time passes (never goes to 0)
+                time_decay_factor = max(0.5, 1.0 - (hours_since_last - 2) * 0.1)
+        
+        # Combined fatigue score with time decay
+        base_fatigue = 0.6 * rejection_rate + 0.4 * frequency_factor
         self.fatigue_index = np.clip(
-            0.6 * rejection_rate + 0.4 * frequency_factor,
+            base_fatigue * time_decay_factor,
             0.0,
             1.0
         )
         
-        _LOGGER.debug("Fatigue index updated: %.2f (rejection_rate=%.2f, freq=%.2f)", self.fatigue_index, rejection_rate, frequency_factor)
+        _LOGGER.debug("Fatigue index updated: %.2f (rejection=%.2f, freq=%.2f, decay=%.2f)", 
+                     self.fatigue_index, rejection_rate, frequency_factor, time_decay_factor)
     
     def _discretize_state(self) -> tuple:
         """
@@ -1061,6 +1074,26 @@ class DecisionAgent:
         #     "Weekly challenge calculation: %d readings, current_avg=%.2f, baseline=%.2f, target_pct=%.1f%%",
         #     len(power_values), np.mean(power_values), self.baseline_consumption, target_percentage
         # )
+        
+        # Log to research database when week ends (Sunday)
+        if today.weekday() == 6 and days_in_current_week >= 7:  # Sunday and full week complete
+            # Check if we've already logged this week
+            week_key = self.current_week_start_date.isoformat()
+            if not hasattr(self, '_logged_weeks'):
+                self._logged_weeks = set()
+            
+            if week_key not in self._logged_weeks and self.storage:
+                success = progress < 100
+                await self.storage.log_weekly_challenge(
+                    week_start=self.current_week_start_date,
+                    target_percentage=target_percentage,
+                    baseline_avg=self.baseline_consumption,
+                    actual_avg=current_avg,
+                    success=success
+                )
+                self._logged_weeks.add(week_key)
+                _LOGGER.info("Logged weekly challenge: week=%s, success=%s, progress=%.1f%%", 
+                           week_key, success, progress)
         
         return {
             "status": status,

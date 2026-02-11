@@ -230,11 +230,16 @@ class StorageManager:
                     max_q_value REAL,
                     epsilon REAL,
                     
+                    -- Action availability
+                    action_mask TEXT,
+                    
                     -- Context
                     current_power REAL,
                     anomaly_index REAL,
                     behaviour_index REAL,
                     fatigue_index REAL,
+                    time_of_day_hour INTEGER,
+                    baseline_power_reference REAL,
                     
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
@@ -349,6 +354,25 @@ class StorageManager:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_task_interactions_date 
                 ON research_task_interactions(date)
+            """)
+            
+            # Weekly challenges tracking table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS research_weekly_challenges (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    week_start_date TEXT NOT NULL,
+                    week_end_date TEXT NOT NULL,
+                    phase TEXT,
+                    target_percentage REAL,
+                    baseline_kwh REAL,
+                    actual_kwh REAL,
+                    savings_kwh REAL,
+                    savings_percentage REAL,
+                    achieved INTEGER DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    
+                    UNIQUE(week_start_date)
+                )
             """)
             
             conn.commit()
@@ -715,7 +739,7 @@ class StorageManager:
         return await self.hass.async_add_executor_job(_query)
     
     async def get_total_completed_tasks_count(self) -> int:
-        """Get the total count of all completed tasks across all time."""
+        """Get the total count of completed tasks in the last 30 days (rolling window)."""
         def _query():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -724,6 +748,25 @@ class StorageManager:
                 SELECT COUNT(*) 
                 FROM daily_tasks 
                 WHERE completed = 1 OR verified = 1
+            """)
+            
+            count = cursor.fetchone()[0]
+            conn.close()
+            
+            return count
+        
+        return await self.hass.async_add_executor_job(_query)
+    
+    async def get_total_completed_tasks_count_alltime(self) -> int:
+        """Get the total count of all completed tasks across all time from research database."""
+        def _query():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM research_task_interactions 
+                WHERE completed = 1
             """)
             
             count = cursor.fetchone()[0]
@@ -934,7 +977,9 @@ class StorageManager:
         state = await self.load_state()
         state[key] = value
         await self.save_state(state)
-        # ==================== RESEARCH DATA (Permanent SQLite) ====================
+
+
+    # ==================== RESEARCH DATA (Permanent SQLite) ====================
     
     async def record_phase_change(self, phase: str, baseline_consumption: float = None, baseline_occupancy: float = None, notes: str = None):
         """Record when system phase changes."""
@@ -972,9 +1017,9 @@ class StorageManager:
                 INSERT INTO research_rl_episodes
                 (timestamp, episode_number, phase, state_vector, state_key,
                  action, action_name, action_source, reward, q_values,
-                 max_q_value, epsilon, current_power, anomaly_index, 
-                 behaviour_index, fatigue_index)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 max_q_value, epsilon, action_mask, current_power, anomaly_index, 
+                 behaviour_index, fatigue_index, time_of_day_hour, baseline_power_reference)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 datetime.now().timestamp(),
                 episode_data.get('episode'),
@@ -988,10 +1033,13 @@ class StorageManager:
                 json.dumps(episode_data.get('q_values', {})),
                 episode_data.get('max_q'),
                 episode_data.get('epsilon'),
+                json.dumps(episode_data.get('action_mask', {})),
                 episode_data.get('power'),
                 episode_data.get('anomaly_index'),
                 episode_data.get('behaviour_index'),
-                episode_data.get('fatigue_index')
+                episode_data.get('fatigue_index'),
+                episode_data.get('time_of_day_hour'),
+                episode_data.get('baseline_power_reference')
             ))
             
             conn.commit()
@@ -1143,6 +1191,34 @@ class StorageManager:
         
         await self.hass.async_add_executor_job(_update)
     
+    async def log_weekly_challenge(self, challenge_data: dict):
+        """Log weekly challenge progress for gamification analysis."""
+        def _insert():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT OR REPLACE INTO research_weekly_challenges
+                (week_start_date, week_end_date, phase, target_percentage,
+                 baseline_kwh, actual_kwh, savings_kwh, savings_percentage, achieved)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                challenge_data.get('week_start_date'),
+                challenge_data.get('week_end_date'),
+                challenge_data.get('phase'),
+                challenge_data.get('target_percentage'),
+                challenge_data.get('baseline_kwh'),
+                challenge_data.get('actual_kwh'),
+                challenge_data.get('savings_kwh'),
+                challenge_data.get('savings_percentage'),
+                1 if challenge_data.get('achieved', False) else 0
+            ))
+            
+            conn.commit()
+            conn.close()
+        
+        await self.hass.async_add_executor_job(_insert)
+    
     async def compute_daily_aggregates(self, date: str = None, phase: str = None):
         """
         Compute and store daily aggregates for research analysis.
@@ -1259,7 +1335,8 @@ class StorageManager:
             'research_phase_metadata',
             'research_nudge_log',
             'research_task_interactions',
-            'research_area_daily_stats'
+            'research_area_daily_stats',
+            'research_weekly_challenges'
         ]
         
         def _export():

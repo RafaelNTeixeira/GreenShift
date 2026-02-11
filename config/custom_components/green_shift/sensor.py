@@ -453,11 +453,11 @@ class CO2SavedSensor(GreenShiftAISensor):
 
 
 class TasksCompletedSensor(GreenShiftAISensor):
-    """Sensor with the number of completed tasks."""
+    """Sensor with the number of completed tasks (30-day rolling window)."""
     
     def __init__(self, storage):
         self._storage = storage
-        self._attr_name = "Tasks Completed"
+        self._attr_name = "Tasks Completed (30 days)"
         self._attr_unique_id = f"{DOMAIN}_tasks"
         self._attr_icon = "mdi:check-circle"
         self._completed_count = 0

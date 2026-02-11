@@ -19,7 +19,9 @@ SELECT 'research_task_interactions', COUNT(*) FROM research_task_interactions
 UNION ALL
 SELECT 'research_phase_metadata', COUNT(*) FROM research_phase_metadata
 UNION ALL
-SELECT 'research_area_daily_stats', COUNT(*) FROM research_area_daily_stats;
+SELECT 'research_area_daily_stats', COUNT(*) FROM research_area_daily_stats
+UNION ALL
+SELECT 'research_weekly_challenges', COUNT(*) FROM research_weekly_challenges;
 
 -- =============================================================================
 -- 2. PHASE METADATA VERIFICATION
@@ -113,7 +115,7 @@ FROM research_rl_episodes
 WHERE action_source IS NOT NULL
 GROUP BY action_source;
 
--- Check recent RL episodes (last 10)
+-- Check recent RL episodes (last 10) with new context fields
 SELECT 
     datetime(timestamp, 'unixepoch') as time,
     episode_number,
@@ -122,7 +124,10 @@ SELECT
     ROUND(reward, 4) as reward,
     ROUND(epsilon, 2) as epsilon,
     ROUND(max_q_value, 4) as max_q,
-    ROUND(current_power, 2) as power_w
+    ROUND(current_power, 2) as power_w,
+    time_of_day_hour,
+    ROUND(baseline_power_reference, 2) as baseline_ref,
+    action_mask
 FROM research_rl_episodes
 ORDER BY timestamp DESC
 LIMIT 10;
@@ -454,6 +459,54 @@ FROM research_rl_episodes
 WHERE episode_number IS NOT NULL
 GROUP BY episode_number
 ORDER BY episode_number;
+
+-- Weekly challenge tracking
+SELECT 
+    week_start_date,
+    target_percentage,
+    ROUND(baseline_avg_w, 2) as baseline_w,
+    ROUND(actual_avg_w, 2) as actual_w,
+    ROUND((actual_avg_w / baseline_avg_w - 1) * 100, 1) as change_pct,
+    CASE WHEN success = 1 THEN 'SUCCESS' ELSE 'FAILED' END as outcome
+FROM research_weekly_challenges
+ORDER BY week_start_date DESC;
+
+-- Action constraint analysis (action_mask usage)
+SELECT 
+    DATE(timestamp, 'unixepoch') as date,
+    COUNT(*) as total_decisions,
+    SUM(CASE WHEN action_mask LIKE '%"noop": false%' THEN 1 ELSE 0 END) as noop_blocked,
+    SUM(CASE WHEN action_mask LIKE '%"specific": false%' THEN 1 ELSE 0 END) as specific_blocked,
+    SUM(CASE WHEN action_mask LIKE '%"anomaly": false%' THEN 1 ELSE 0 END) as anomaly_blocked
+FROM research_rl_episodes
+WHERE action_mask IS NOT NULL
+GROUP BY date
+ORDER BY date DESC
+LIMIT 7;
+
+-- Time-of-day decision patterns
+SELECT 
+    time_of_day_hour as hour,
+    COUNT(*) as decisions,
+    SUM(CASE WHEN action_name != 'noop' THEN 1 ELSE 0 END) as notifications_sent,
+    ROUND(AVG(CASE WHEN action_name != 'noop' THEN reward END), 4) as avg_reward_when_notified
+FROM research_rl_episodes
+WHERE time_of_day_hour IS NOT NULL
+GROUP BY time_of_day_hour
+ORDER BY time_of_day_hour;
+
+-- Baseline comparison effectiveness
+SELECT 
+    action_name,
+    COUNT(*) as times_used,
+    ROUND(AVG(current_power), 2) as avg_power_at_decision,
+    ROUND(AVG(baseline_power_reference), 2) as avg_baseline_ref,
+    ROUND(AVG(current_power - baseline_power_reference), 2) as avg_power_diff
+FROM research_rl_episodes
+WHERE baseline_power_reference IS NOT NULL
+  AND action_name IS NOT NULL
+GROUP BY action_name
+ORDER BY times_used DESC;
 
 -- =============================================================================
 -- END OF TEST QUERIES

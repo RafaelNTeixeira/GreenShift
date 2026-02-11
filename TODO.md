@@ -47,7 +47,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [ ] Check if indices are updating during the intervention
 - [ ] Check adaptive difficulty updates
 - [x] Q-table in JSON with duplicate key entries
-- [c] Check notification templates that make more sense
+- [x] Check notification templates that make more sense
 - [ ] Store data needed for analysis/results extraction
 - [ ] Test AI-driven features (notifications, recommendations)
 
@@ -56,5 +56,6 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Build tables required for analysis extraction
 - [x] Store data required for analysis extraction
 - [ ] Build backup daily to prevent data loss
-
+- [ ] Redundant verified attribute?
+ 
 ---
