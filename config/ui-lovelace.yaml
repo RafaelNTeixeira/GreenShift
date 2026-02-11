@@ -1025,7 +1025,7 @@ views:
                 type: attribute
                 entity: sensor.research_phase
                 attribute: days_remaining
-                name: "🔒 Goals Locked (Calibration)"
+                name: "Goals Locked (Calibration)"
                 icon: mdi:lock-clock
                 suffix: "days left"
 
