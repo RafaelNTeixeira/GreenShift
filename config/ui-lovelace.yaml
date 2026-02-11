@@ -614,7 +614,7 @@ views:
   cards:
     - type: vertical-stack
       cards:
-        # --- CASE 1: CALIBRATION PHASE (LOCKED) ---
+        # --- CALIBRATION PHASE (LOCKED) ---
         - type: conditional
           conditions:
             - entity: sensor.research_phase
@@ -630,7 +630,7 @@ views:
               
               *Once calibration is complete, your weekly energy challenges will appear here.* 🎯
 
-        # --- CASE 2: ACTIVE PHASE (UNLOCKED) ---
+        # --- ACTIVE PHASE (UNLOCKED) ---
         - type: conditional
           conditions:
             - entity: sensor.research_phase
@@ -760,108 +760,129 @@ views:
     - type: vertical-stack
       cards:
         
-        # --- TOP SECTION (STATS & INSTRUCTIONS) ---
-        - type: tile
-          entity: sensor.active_notifications
-          name: 🔔 Active Alerts
-          icon: mdi:bell-ring
-          color: accent
+        # --- LOCKED STATE (BASELINE) ---
+        - type: conditional
+          conditions:
+            - entity: sensor.research_phase
+              state: baseline
+          card:
+            type: markdown
+            content: |
+              ## 🔒 Notifications Locked
+              
+              We are currently learning your baseline habits.
+              Smart alerts and nudges will be enabled in **{{ state_attr('sensor.research_phase', 'days_remaining') }} days**. ⏳
 
-        - type: markdown
-          content: |
-            ### ℹ️ How to Use
-            1. **📖 Read** the alerts below.
-            2. **🔽 Select** the ID in the action panel.
-            3. **👆 Tap** Accept or Reject.
+        # --- ACTIVE STATE (FULL UI) ---
+        - type: conditional
+          conditions:
+            - entity: sensor.research_phase
+              state: active
+          card:
+            type: vertical-stack
+            cards:
+              # --- TOP SECTION (STATS & INSTRUCTIONS) ---
+              - type: tile
+                entity: sensor.active_notifications
+                name: 🔔 Active Alerts
+                icon: mdi:bell-ring
+                color: accent
 
-        # --- INBOX SECTION ---
-        - type: markdown
-          title: 📬 Pending Inbox
-          content: |
-            {%- set notifs = state_attr('sensor.active_notifications', 'notifications') -%}
-            {%- set safe_notifs = notifs if notifs else [] -%}
-            {%- set pending = safe_notifs | selectattr('responded', 'equalto', false) | list -%}
-            
-            {%- if pending | length == 0 -%}
-            ### ✅ All Caught Up!
-            No pending alerts at the moment. 😎
-            {%- else -%}
-            
-            {%- for n in pending -%}
-            ---
-            ### 📢 {{ n.title }}
-            **ID:** `{{ n.notification_id }}` • **⏰ Time:** *{{ n.time_ago }}*
-            
-            {{ n.message }}
-            
-            {%- endfor -%}
-            {%- endif -%}
+              - type: markdown
+                content: |
+                  ### ℹ️ How to Use
+                  1. **📖 Read** the alerts below.
+                  2. **🔽 Select** the ID in the action panel.
+                  3. **👆 Tap** Accept or Reject.
 
-        # --- ACTION PANEL ---
-        - type: vertical-stack
-          cards:
-            - type: entities
-              title: 🎬 Take Action
-              show_header_toggle: false
-              entities:
-                - entity: select.notification_selector
-                  name: 🔽 Select ID to Respond
+              # --- INBOX SECTION ---
+              - type: markdown
+                title: 📬 Pending Inbox
+                content: |
+                  {%- set notifs = state_attr('sensor.active_notifications', 'notifications') -%}
+                  {%- set safe_notifs = notifs if notifs else [] -%}
+                  {%- set pending = safe_notifs | selectattr('responded', 'equalto', false) | list -%}
+                  
+                  {%- if pending | length == 0 -%}
+                  ### ✅ All Caught Up!
+                  No pending alerts at the moment. 😎
+                  {%- else -%}
+                  
+                  {%- for n in pending -%}
+                  ---
+                  ### 📢 {{ n.title }}
+                  **ID:** `{{ n.notification_id }}` • **⏰ Time:** *{{ n.time_ago }}*
+                  
+                  {{ n.message }}
+                  
+                  {%- endfor -%}
+                  {%- endif -%}
 
-            - type: horizontal-stack
-              cards:
-                - type: tile
-                  entity: select.notification_selector
-                  name: Accept
-                  icon: mdi:check
-                  color: green
-                  show_entity_picture: false
-                  state_content: []
-                  tap_action:
-                    action: call-service
-                    service: green_shift.respond_to_selection
-                    data:
-                      decision: accept
-                
-                - type: tile
-                  entity: select.notification_selector
-                  name: Reject
-                  icon: mdi:close
-                  color: red
-                  show_entity_picture: false
-                  state_content: []
-                  tap_action:
-                    action: call-service
-                    service: green_shift.respond_to_selection
-                    data:
-                      decision: reject
+              # --- ACTION PANEL ---
+              - type: vertical-stack
+                cards:
+                  - type: entities
+                    title: 🎬 Take Action
+                    show_header_toggle: false
+                    entities:
+                      - entity: select.notification_selector
+                        name: 🔽 Select ID to Respond
 
-        # --- HISTORY TABLE ---
-        - type: markdown
-          title: 📜 History
-          content: |
-            {%- set ns = state_attr('sensor.active_notifications', 'notifications') -%}
-            {%- if ns -%}
-            <table width="100%">
-              <thead>
-                <tr>
-                  <th align="left">⏰ Time</th>
-                  <th align="left">📋 Type</th>
-                  <th align="center">📊 Status</th>
-                </tr>
-              </thead>
-              <tbody>
-              {%- for n in ns[:8] -%}
-                <tr>
-                  <td>{{ n.time_ago }}</td>
-                  <td>{{ n.action_type | replace('_', ' ') | capitalize }}</td>
-                  <td align="center">{{ n.status_emoji }}</td>
-                </tr>
-              {%- endfor -%}
-              </tbody>
-            </table>
-            {%- else -%}
-            📭 No history available.
-            {%- endif -%}
+                  - type: horizontal-stack
+                    cards:
+                      - type: tile
+                        entity: select.notification_selector
+                        name: Accept
+                        icon: mdi:check
+                        color: green
+                        show_entity_picture: false
+                        state_content: []
+                        tap_action:
+                          action: call-service
+                          service: green_shift.respond_to_selection
+                          data:
+                            decision: accept
+                      
+                      - type: tile
+                        entity: select.notification_selector
+                        name: Reject
+                        icon: mdi:close
+                        color: red
+                        show_entity_picture: false
+                        state_content: []
+                        tap_action:
+                          action: call-service
+                          service: green_shift.respond_to_selection
+                          data:
+                            decision: reject
+
+              # --- HISTORY TABLE ---
+              - type: markdown
+                title: 📜 History
+                content: |
+                  {%- set ns = state_attr('sensor.active_notifications', 'notifications') -%}
+                  {%- if ns -%}
+                  <table width="100%">
+                    <thead>
+                      <tr>
+                        <th align="left">⏰ Time</th>
+                        <th align="left">📋 Type</th>
+                        <th align="center">📊 Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                    {%- for n in ns[:8] -%}
+                      <tr>
+                        <td>{{ n.time_ago }}</td>
+                        <td>{{ n.action_type | replace('_', ' ') | capitalize }}</td>
+                        <td align="center">{{ n.status_emoji }}</td>
+                      </tr>
+                    {%- endfor -%}
+                    </tbody>
+                  </table>
+                  {%- else -%}
+                  📭 No history available.
+                  {%- endif -%}
 
 # ========== TAB 6: USER PROFILE ==========
 - title: Profile
