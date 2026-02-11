@@ -187,16 +187,6 @@ views:
             # 📊 Dashboard 
             Analyze your energy consumption patterns and identify opportunities for savings.
 
-        - type: conditional
-          conditions:
-            - entity: sensor.research_phase
-              state: baseline
-          card:
-            type: markdown
-            content: |
-              ## 📊 Calibration in Progress
-              The system is learning your habits (**{{ state_attr('sensor.research_phase', 'days_remaining') }} days remaining**).
-
         # --- CHART SECTION ---
         - type: vertical-stack
           cards:
