@@ -362,7 +362,7 @@ async def async_setup_services(hass: HomeAssistant):
             # Add realistic noise and variations
             noise = random.gauss(0, 150)
             power = max(50, base_power + noise)  # Never below 50W
-            power = 1500
+            # power = 1500
             
             # Temperature varies slightly
             base_temp = 21
