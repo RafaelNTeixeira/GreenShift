@@ -326,7 +326,6 @@ class DecisionAgent:
         state.append(area_anomaly_count)
         _LOGGER.debug("Area anomaly count: %d", area_anomaly_count)
         
-        
         # 11. Time of day (normalized)
         now = datetime.now()
         time_of_day = (now.hour * 60 + now.minute) / (24 * 60)  # 0 to 1
@@ -760,11 +759,13 @@ class DecisionAgent:
         power_history_data = await self.data_collector.get_power_history(hours=1) # Last hour
         power_values = [power for timestamp, power in power_history_data]
         
-        # Calculate anomaly index based on last hour of data
-        readings_per_hour = int(3600 / UPDATE_INTERVAL_SECONDS)
+        readings_per_hour = int((3600 / UPDATE_INTERVAL_SECONDS) * 0.8)  # Require at least 80% of expected readings for reliability
+        
+        _LOGGER.debug(f"Anomaly detection: {len(power_values)} readings available, {readings_per_hour} needed for 1 hour")
         
         if len(power_values) < readings_per_hour:
             self.anomaly_index = 0.0
+            _LOGGER.debug(f"Not enough data for anomaly detection ({len(power_values)}/{readings_per_hour}), setting to 0")
             return
 
         recent = power_values[-readings_per_hour:]
@@ -772,13 +773,16 @@ class DecisionAgent:
         std = np.std(recent)
         current = recent[-1]
         
+        _LOGGER.debug(f"Anomaly stats: mean={mean:.2f}W, std={std:.2f}W, current={current:.2f}W")
+        
         # Z-score normalized to [0,1]
         if std > 0:
-            z_score = abs((current - mean) / std)
+            z_score = max((current - mean) / std, 0) # Consider only positive deviations (consumption above mean)
             self.anomaly_index = min(z_score / 3.0, 1.0)
-            _LOGGER.debug("Anomaly index updated: %.2f", self.anomaly_index)
+            _LOGGER.debug("Anomaly index updated: %.2f (z-score: %.2f)", self.anomaly_index, z_score)
         else:
             self.anomaly_index = 0.0
+            _LOGGER.debug("No variance in data, anomaly index set to 0")
     
     async def _update_area_anomalies(self):
         """Detects anomalies in each area for spatial awareness."""
@@ -1146,7 +1150,7 @@ class DecisionAgent:
         today = datetime.now().date()
         days_since_monday = today.weekday()  # 0 = Monday, 6 = Sunday
         current_week_monday = today - timedelta(days=days_since_monday)
-        
+
         # Check if we need to initialize or if we've moved to a new week
         if self.current_week_start_date is None or self.current_week_start_date != current_week_monday:
             self.current_week_start_date = current_week_monday
@@ -1199,7 +1203,6 @@ class DecisionAgent:
         #     len(power_values), np.mean(power_values), self.baseline_consumption, target_percentage
         # )
         
-        # Log to research database when week ends (Sunday)
         if today.weekday() == 6 and days_in_current_week >= 7:  # Sunday and full week complete
             # Check if we've already logged this week
             week_key = self.current_week_start_date.isoformat()
@@ -1208,16 +1211,23 @@ class DecisionAgent:
             
             if week_key not in self._logged_weeks and self.storage:
                 success = progress < 100
-                await self.storage.log_weekly_challenge(
-                    week_start=self.current_week_start_date,
-                    target_percentage=target_percentage,
-                    baseline_avg=self.baseline_consumption,
-                    actual_avg=current_avg,
-                    success=success
-                )
+
+                challenge_payload = {
+                    'week_start_date': self.current_week_start_date.isoformat(),
+                    'week_end_date': today.isoformat(),
+                    'phase': PHASE_ACTIVE,
+                    'target_percentage': target_percentage,
+                    'baseline_W': self.baseline_consumption, 
+                    'actual_W': current_avg,                 
+                    'savings_W': self.baseline_consumption - current_avg,
+                    'savings_percentage': progress,
+                    'achieved': success                        
+                }
+                
+                await self.storage.log_weekly_challenge(challenge_data=challenge_payload)
+
                 self._logged_weeks.add(week_key)
-                _LOGGER.info("Logged weekly challenge: week=%s, success=%s, progress=%.1f%%", 
-                           week_key, success, progress)
+                _LOGGER.info("Logged weekly challenge: week=%s, success=%s, progress=%.1f%%", week_key, success, progress)
         
         return {
             "status": status,

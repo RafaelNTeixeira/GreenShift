@@ -52,3 +52,71 @@ respond_to_selection:
           options:
             - accept
             - reject
+
+
+# ========================================
+# ========     FOR DEBUGGING     =========
+# ========================================
+
+force_ai_process:
+  name: Force AI Processing
+  description: Manually trigger AI model processing (for testing)
+  fields: {}
+  
+force_notification:
+  name: Force Notification
+  description: Bypass cooldowns and force a notification decision
+  fields: {}
+  
+inject_test_data:
+  name: Inject Test Data
+  description: Generate synthetic historical data for testing. Note - 1 hour = 720 data points, so large values may take time.
+  fields:
+    hours:
+      name: Hours of data
+      description: How many hours of data to generate (1 hour = 720 readings)
+      required: true
+      example: 2
+      selector:
+        number:
+          min: 1
+          max: 336  # 14 days
+          mode: box
+
+set_test_indices:
+  name: Set Test Indices
+  description: Manually set AI indices (fatigue, behavior, anomaly) for testing
+  fields:
+    fatigue:
+      name: Fatigue Index
+      description: Fatigue index (0.0 to 1.0)
+      required: false
+      example: 0.5
+      selector:
+        number:
+          min: 0.0
+          max: 1.0
+          step: 0.1
+          mode: slider
+    behavior:
+      name: Behavior Index
+      description: Behavior index (0.0 to 1.0)
+      required: false
+      example: 0.7
+      selector:
+        number:
+          min: 0.0
+          max: 1.0
+          step: 0.1
+          mode: slider
+    anomaly:
+      name: Anomaly Index
+      description: Anomaly index (0.0 to 1.0)
+      required: false
+      example: 0.3
+      selector:
+        number:
+          min: 0.0
+          max: 1.0
+          step: 0.1
+          mode: slider

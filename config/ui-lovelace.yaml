@@ -678,7 +678,7 @@ views:
                       {% set potential_watts = baseline - target %}
                       {% set potential_eur = (potential_watts * 24 * 7 / 1000 * price) | round(2) %}
                       
-                      If you hit this target, you could save approximately:
+                      If you hit this target, you could save this week approximately:
                       
                       # 💰 {{ potential_eur }} {{ currency }}
                       

@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 import numpy as np
+import random
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import entity_registry as er
@@ -286,7 +287,143 @@ async def async_setup_services(hass: HomeAssistant):
         await agent._handle_notification_feedback(notification_id, accepted=accepted)
         _LOGGER.info("Notification %s marked as %s via selector", notification_id, decision)
         async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
+
+
     
+    # ========================================
+    # ========     FOR DEBUGGING     =========
+    # ========================================
+
+    async def force_ai_process(call: ServiceCall):
+        """Force AI processing immediately (for testing)."""
+        agent = hass.data[DOMAIN]["agent"]
+        _LOGGER.info("Manual AI processing triggered")
+        await agent.process_ai_model()
+        _LOGGER.info("Manual AI processing complete")
+    
+    async def force_notification(call: ServiceCall):
+        """Force notification decision, bypassing cooldowns (for testing)."""
+        agent = hass.data[DOMAIN]["agent"]
+        
+        # Temporarily override cooldown
+        original_time = agent.last_notification_time
+        agent.last_notification_time = None
+        
+        _LOGGER.info("Forcing notification decision (cooldown bypassed)")
+        await agent._decide_action()
+        
+        # Restore original time or set to now if notification was sent
+        if len(agent.notification_history) > 0 and agent.last_notification_time is not None:
+            # Notification was sent, keep the new time
+            pass
+        else:
+            # No notification sent, restore original
+            agent.last_notification_time = original_time
+        
+        _LOGGER.info("Forced notification decision complete")
+    
+    async def inject_test_data(call: ServiceCall):
+        """Inject synthetic test data for testing."""
+        import random
+        from .const import UPDATE_INTERVAL_SECONDS
+        
+        hours = call.data.get("hours", 24)
+        collector = hass.data[DOMAIN]["collector"]
+        storage = hass.data[DOMAIN]["storage"]
+        
+        _LOGGER.info(f"Injecting {hours} hours of synthetic test data...")
+        
+        # Generate realistic data at the same frequency as real data collection
+        now = datetime.now()
+        data_points = int(hours * 3600 / UPDATE_INTERVAL_SECONDS)  # Every UPDATE_INTERVAL_SECONDS
+        
+        _LOGGER.info(f"Creating {data_points} data points (1 every {UPDATE_INTERVAL_SECONDS}s)")
+        
+        # Warn if this will take a while
+        if data_points > 10000:
+            _LOGGER.warning(f"Injecting {data_points} data points may take several seconds...")
+        
+        for i in range(data_points):
+            timestamp = now - timedelta(seconds=i * UPDATE_INTERVAL_SECONDS)
+            
+            # Realistic pattern: higher during day, lower at night
+            hour = timestamp.hour
+            
+            # Base power varies by time of day
+            if 7 <= hour <= 9:  # Morning peak
+                base_power = 1200
+            elif 10 <= hour <= 16:  # Midday
+                base_power = 800
+            elif 17 <= hour <= 22:  # Evening peak
+                base_power = 1500
+            else:  # Night
+                base_power = 300
+            
+            # Add realistic noise and variations
+            noise = random.gauss(0, 150)
+            power = max(50, base_power + noise)  # Never below 50W
+            power = 1500
+            
+            # Temperature varies slightly
+            base_temp = 21
+            temp_variation = random.gauss(0, 1.5)
+            if hour < 6 or hour > 23:  # Cooler at night
+                base_temp = 19
+            temperature = base_temp + temp_variation
+            
+            # Humidity
+            humidity = 50 + random.gauss(0, 8)
+            humidity = max(30, min(70, humidity))
+            
+            # Illuminance (lights on during day if occupied, off at night)
+            if 7 <= hour <= 22:
+                illuminance = random.uniform(200, 600)
+            else:
+                illuminance = random.uniform(0, 50)
+            
+            # Occupancy
+            occupancy = 7 <= hour <= 23 and random.random() > 0.3
+            
+            # Store data
+            await storage.store_sensor_snapshot(
+                timestamp=timestamp,
+                power=power,
+                temperature=temperature,
+                humidity=humidity,
+                illuminance=illuminance,
+                occupancy=occupancy
+            )
+        
+        _LOGGER.info(f"Successfully injected {data_points} data points ({hours} hours)")
+    
+    async def set_test_indices(call: ServiceCall):
+        """Set AI indices for testing."""
+        agent = hass.data[DOMAIN]["agent"]
+        
+        if "fatigue" in call.data:
+            agent.fatigue_index = float(call.data["fatigue"])
+            _LOGGER.info(f"Fatigue index set to: {agent.fatigue_index}")
+        
+        if "behavior" in call.data:
+            agent.behaviour_index = float(call.data["behavior"])
+            _LOGGER.info(f"Behavior index set to: {agent.behaviour_index}")
+        
+        if "anomaly" in call.data:
+            agent.anomaly_index = float(call.data["anomaly"])
+            _LOGGER.info(f"Anomaly index set to: {agent.anomaly_index}")
+        
+        # Trigger update
+        async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
+    
+    # Register debug services
+    hass.services.async_register(DOMAIN, "force_ai_process", force_ai_process)
+    hass.services.async_register(DOMAIN, "force_notification", force_notification)
+    hass.services.async_register(DOMAIN, "inject_test_data", inject_test_data)
+    hass.services.async_register(DOMAIN, "set_test_indices", set_test_indices)
+
+    # ===========================================================================================
+
+
     # Register services
     hass.services.async_register(DOMAIN, "submit_task_feedback", submit_task_feedback)
     hass.services.async_register(DOMAIN, "verify_tasks", verify_tasks)
@@ -434,3 +571,5 @@ async def async_discover_sensors(hass: HomeAssistant) -> dict:
     _LOGGER.info("Discovery complete: %s", discovered)
 
     return discovered
+
+

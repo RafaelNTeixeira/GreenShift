@@ -398,6 +398,7 @@ class TaskManager:
                 if not temp_history:
                     return False
                 avg_temp = np.mean([temp for _, temp in temp_history])
+                _LOGGER.debug("Average temperature for verification: %.1f°C, target: %.1f°C", avg_temp, target_value)
                 return avg_temp <= target_value
             
             elif task_type in ['power_reduction', 'daylight_usage']:
@@ -414,6 +415,7 @@ class TaskManager:
                     return False
                 
                 avg_power = np.mean([power for _, power in power_history])
+                _LOGGER.debug("Average power for verification: %.2fW, target: %.2fW", avg_power, target_value)
                 return avg_power <= target_value
             
             elif task_type == 'standby_reduction':
@@ -425,6 +427,7 @@ class TaskManager:
                     return False  # Can only verify after 6am
                 
                 avg_night_power = np.mean(night_powers)
+                _LOGGER.debug("Average night power for verification: %.2fW, target: %.2fW", avg_night_power, target_value)
                 return avg_night_power <= target_value
             
             elif task_type == 'unoccupied_power':
@@ -439,6 +442,7 @@ class TaskManager:
                     return False
                 
                 avg_area_power = np.mean([power for _, power in area_history])
+                _LOGGER.debug("Average power in area %s for verification: %.2fW, target: %.2fW", area_name, avg_area_power, target_value)
                 return avg_area_power <= target_value
             
             elif task_type == 'peak_avoidance':
@@ -459,8 +463,10 @@ class TaskManager:
                 # Check all hours
                 for hour_powers in hourly_powers.values():
                     if np.mean(hour_powers) > target_value:
+                        _LOGGER.debug("Peak avoidance task failed due to hour with average power %.2fW exceeding target %.2fW", np.mean(hour_powers), target_value)
                         return False
                 
+                _LOGGER.debug("Peak avoidance task verified successfully with all hours below target %.2fW", target_value)
                 return True
             
         except Exception as e:

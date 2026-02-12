@@ -39,7 +39,11 @@ async def async_setup_entry(
         BehaviourIndexSensor(agent),
         FatigueIndexSensor(agent),
         DailyTasksSensor(storage),
-        ActiveNotificationsSensor(agent)
+        ActiveNotificationsSensor(agent),
+        # Debug sensors
+        OpportunityScoreSensor(agent),
+        AnomalyIndexSensor(agent),
+        ActionMaskSensor(agent)
     ]
 
     async_add_entities(sensors)
@@ -769,3 +773,105 @@ class ActiveNotificationsSensor(GreenShiftAISensor):
         else:
             days = int(seconds / 86400)
             return f"{days}d ago"
+
+
+# ========================================
+# ========     DEBUG SENSORS     =========
+# ========================================
+
+class OpportunityScoreSensor(GreenShiftAISensor):
+    """Debug sensor showing current opportunity score for notifications."""
+    
+    _attr_name = "AI Opportunity Score"
+    _attr_unique_id = f"{DOMAIN}_opportunity_score"
+    _attr_icon = "mdi:bullseye-arrow"
+    _attr_native_unit_of_measurement = None
+    
+    def __init__(self, agent):
+        super().__init__()
+        self._agent = agent
+    
+    async def _async_update_state(self):
+        try:
+            score = await self._agent._calculate_opportunity_score()
+            self._attr_native_value = round(score, 3)
+            
+            # Add breakdown as attributes
+            self._attr_extra_state_attributes = {
+                "score": round(score, 3),
+                "description": "Opportunity score for sending notification (0-1, higher = better)",
+                "threshold_high": 0.75,
+                "threshold_critical": 0.90
+            }
+        except Exception as e:
+            _LOGGER.error("Error calculating opportunity score: %s", e)
+            self._attr_native_value = 0
+
+
+class AnomalyIndexSensor(GreenShiftAISensor):
+    """Debug sensor showing current anomaly index."""
+    
+    _attr_name = "AI Anomaly Index"
+    _attr_unique_id = f"{DOMAIN}_anomaly_index"
+    _attr_icon = "mdi:alert-circle-outline"
+    _attr_native_unit_of_measurement = None
+    
+    def __init__(self, agent):
+        super().__init__()
+        self._agent = agent
+    
+    async def _async_update_state(self):
+        self._attr_native_value = round(self._agent.anomaly_index, 3)
+        
+        # Add area anomalies as attributes
+        area_anomalies = {}
+        for area, metrics in self._agent.area_anomalies.items():
+            area_anomalies[area] = {k: round(v, 3) for k, v in metrics.items()}
+        
+        self._attr_extra_state_attributes = {
+            "global_anomaly": round(self._agent.anomaly_index, 3),
+            "area_anomalies": area_anomalies,
+            "description": "Anomaly detection index (0-1, higher = more anomalous)"
+        }
+
+
+class ActionMaskSensor(GreenShiftAISensor):
+    """Debug sensor showing current action mask."""
+    
+    _attr_name = "AI Action Mask"
+    _attr_unique_id = f"{DOMAIN}_action_mask"
+    _attr_icon = "mdi:filter-variant"
+    _attr_native_unit_of_measurement = None
+    
+    def __init__(self, agent):
+        super().__init__()
+        self._agent = agent
+    
+    async def _async_update_state(self):
+        if self._agent.action_mask is None:
+            self._attr_native_value = "Not initialized"
+            return
+        
+        # Count available actions
+        available = sum(1 for v in self._agent.action_mask.values() if v)
+        total = len(self._agent.action_mask)
+        self._attr_native_value = f"{available}/{total} available"
+        
+        # Map action IDs to names
+        action_names = {v: k for k, v in self._agent.hass.data[DOMAIN].get("agent").hass.data.get(DOMAIN, {}).items() if isinstance(v, int)}
+        
+        # Add detailed mask as attributes
+        mask_details = {}
+        for action_id, available in self._agent.action_mask.items():
+            # Find action name from ACTIONS const
+            from .const import ACTIONS
+            action_name = [k for k, v in ACTIONS.items() if v == action_id]
+            if action_name:
+                mask_details[action_name[0]] = available
+        
+        self._attr_extra_state_attributes = {
+            "action_mask": mask_details,
+            "available_actions": available,
+            "total_actions": total,
+            "description": "Available actions for AI agent"
+        }

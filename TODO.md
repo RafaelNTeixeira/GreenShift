@@ -50,7 +50,8 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Check adaptive difficulty updates
 - [x] Q-table in JSON with duplicate key entries
 - [x] Check notification templates that make more sense
-- [ ] Test anomaly index with anomaly simulated anomaly scenario
+- [x] Test anomaly index with anomaly simulated anomaly scenario
+- [ ] Test nudge selection based on current environment and priority
 - [ ] Store data needed for analysis/results extraction
 - [ ] Test AI-driven features (notifications, recommendations)
 
