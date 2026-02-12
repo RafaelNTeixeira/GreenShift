@@ -20,6 +20,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Update guide from Settings tab
 - [x] Add metrics to Devices tab
 - [x] Add presence state in text also, not just an emoji in Devices tab
+- [ ] Translations to Portuguese in the interface
 
 
 ### 🎮 Gamification

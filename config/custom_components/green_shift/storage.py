@@ -1386,7 +1386,8 @@ class StorageManager:
                     continue
                 
                 occupied_hours = area_stats[6] if area_stats[6] else 0
-                total_hours = 24.0
+                total_readings = area_stats[7]
+                total_hours = total_readings * (UPDATE_INTERVAL_SECONDS / 3600.0)
                 occupancy_percentage = (occupied_hours / total_hours) * 100.0 if total_hours > 0 else 0
                 
                 # Insert or replace area aggregate
