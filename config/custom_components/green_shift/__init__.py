@@ -258,9 +258,10 @@ async def async_setup_services(hass: HomeAssistant):
         task_manager = hass.data[DOMAIN]["task_manager"]
         
         # Delete today's tasks first
-        # today = datetime.now().strftime("%Y-%m-%d")
-        # This would require a new storage method, for now just generate new ones
+        _LOGGER.info("Deleting today's tasks before regeneration")
+        await storage.delete_today_tasks()
         
+        # Generate new tasks
         tasks = await task_manager.generate_daily_tasks()
         _LOGGER.info("Tasks regenerated: %d tasks", len(tasks))
         async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)

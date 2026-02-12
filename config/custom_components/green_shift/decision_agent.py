@@ -848,16 +848,22 @@ class DecisionAgent:
     def _update_behaviour_index(self):
         """
         Updates behaviour index based on user engagement history.
-        Uses exponential moving average for recent behavior.
+        Uses exponential moving average for recent behavior with smoothing.
         """
-        if len(self.engagement_history) > 0:
-            # Weighted towards recent interactions
-            weights = np.exp(np.linspace(-2, 0, len(self.engagement_history)))
-            weights /= weights.sum()
-            
-            weighted_engagement = np.average(self.engagement_history, weights=weights)
-            self.behaviour_index = np.clip(weighted_engagement, 0, 1)
-            _LOGGER.debug("Behaviour index updated: %.2f", self.behaviour_index)
+        if len(self.engagement_history) == 0:
+            return
+        
+        # Weighted towards recent interactions, but not too aggressively
+        weights = np.exp(np.linspace(-1, 0, len(self.engagement_history)))
+        weights /= weights.sum()
+        
+        weighted_engagement = np.average(self.engagement_history, weights=weights)
+        
+        # Smooth update to avoid volatility: new index is 60% new engagement, 40% old index
+        new_index = np.clip(weighted_engagement, 0, 1)
+        self.behaviour_index = 0.6 * new_index + 0.4 * self.behaviour_index
+        
+        _LOGGER.debug("Behaviour index updated: %.2f (raw: %.2f, history size: %d)", self.behaviour_index, weighted_engagement, len(self.engagement_history))
     
     async def _update_fatigue_index(self):
         """

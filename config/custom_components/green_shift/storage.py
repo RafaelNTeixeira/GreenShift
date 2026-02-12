@@ -861,6 +861,42 @@ class StorageManager:
         
         return await self.hass.async_add_executor_job(_update)
     
+    async def delete_today_tasks(self) -> bool:
+        """Delete today's tasks from both sensor and research databases."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        
+        def _delete():
+            # Delete from sensor database
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                DELETE FROM daily_tasks WHERE date = ?
+            """, (today,))
+            
+            deleted_count = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            # Delete from research database
+            res_conn = sqlite3.connect(str(self.research_db_path))
+            res_cursor = res_conn.cursor()
+            
+            res_cursor.execute("""
+                DELETE FROM research_task_interactions WHERE date = ?
+            """, (today,))
+            
+            res_deleted_count = res_cursor.rowcount
+            res_conn.commit()
+            res_conn.close()
+            
+            _LOGGER.info("Deleted %d tasks from sensor DB and %d from research DB for %s", 
+                        deleted_count, res_deleted_count, today)
+            
+            return True
+        
+        return await self.hass.async_add_executor_job(_delete)
+    
     async def get_task_difficulty_stats(self, task_type: str) -> Dict:
         """Get difficulty statistics for a task type to adjust future difficulty."""
         def _query():
@@ -912,6 +948,8 @@ class StorageManager:
                     stats['suggested_adjustment'] = 1  # Increase difficulty
                 elif stats['too_hard_count'] > stats['too_easy_count'] * 2:
                     stats['suggested_adjustment'] = -1  # Decrease difficulty
+
+            _LOGGER.debug("Difficulty stats for task type '%s': %s", task_type, stats)
             
             return stats
         

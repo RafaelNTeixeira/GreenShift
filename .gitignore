@@ -17,3 +17,4 @@ config/*.log
 config/backups/
 
 commands.MD
+TESTING_GUIDE.MD

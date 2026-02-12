@@ -33,6 +33,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Implement adaptive difficulty
 - [x] Need to round sensor values from tasks
 - [x] Store data needed for analysis/results extraction
+- [x] Test adaptive difficulty
 - [x] Test gamification logic and UI
 
 
