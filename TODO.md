@@ -52,7 +52,8 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Q-table in JSON with duplicate key entries
 - [x] Check notification templates that make more sense
 - [x] Test anomaly index with anomaly simulated anomaly scenario
-- [ ] Test nudge selection based on current environment and priority
+- [x] Test nudge selection based on current environment and priority
+- [ ] Consider if 50 bins of power consumption is enough for intervention (decrease, keep or increase)
 - [ ] Store data needed for analysis/results extraction
 - [ ] Test AI-driven features (notifications, recommendations)
 

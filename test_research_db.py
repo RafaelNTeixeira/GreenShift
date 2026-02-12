@@ -238,14 +238,22 @@ def main():
         SELECT 
             DATE(timestamp, 'unixepoch') as date,
             COUNT(*) as total_decisions,
-            SUM(CASE WHEN action_mask LIKE '%"noop": false%' THEN 1 ELSE 0 END) as noop_blocked,
-            SUM(CASE WHEN action_mask LIKE '%"specific": false%' THEN 1 ELSE 0 END) as specific_blocked
+            SUM(CASE WHEN action_mask LIKE '%"1": false%' THEN 1 ELSE 0 END) as specific_blocked,
+            SUM(CASE WHEN action_mask LIKE '%"2": false%' THEN 1 ELSE 0 END) as anomaly_blocked,
+            SUM(CASE WHEN action_mask LIKE '%"3": false%' THEN 1 ELSE 0 END) as behavioural_blocked,
+            SUM(CASE WHEN action_mask LIKE '%"4": false%' THEN 1 ELSE 0 END) as normative_blocked,
+            ROUND(AVG(
+                CAST((action_mask LIKE '%"1": true%') AS INTEGER) +
+                CAST((action_mask LIKE '%"2": true%') AS INTEGER) +
+                CAST((action_mask LIKE '%"3": true%') AS INTEGER) +
+                CAST((action_mask LIKE '%"4": true%') AS INTEGER)
+            ), 1) as avg_available_actions
         FROM research_rl_episodes
         WHERE action_mask IS NOT NULL
         GROUP BY date
         ORDER BY date DESC
         LIMIT 5;
-    """, "13. ACTION CONSTRAINT ANALYSIS (Last 5 Days)")
+    """, "13. ACTION CONSTRAINT ANALYSIS (Last 5 Days - only logged decisions)")
     
     # 14. Baseline Comparison Effectiveness
     run_query(conn, """

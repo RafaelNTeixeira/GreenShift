@@ -361,9 +361,6 @@ class DecisionAgent:
     async def _update_action_mask(self):
         """Updates the action mask M_t based on context and sensor availability."""
         mask = {action: False for action in ACTIONS.values()}
-        
-        # noop: always available
-        mask[ACTIONS["noop"]] = True
 
         # specific: requires individual power sensors
         power_sensors = self.sensors.get("power", [])
@@ -410,10 +407,11 @@ class DecisionAgent:
         # Get current state
         state_key = self._discretize_state()
 
-        # Available actions based on mask
-        available_actions = [a for a, available in self.action_mask.items() if available and a != ACTIONS["noop"]]
+        # Available actions based on mask (all non-noop actions)
+        available_actions = [a for a, available in self.action_mask.items() if available]
 
         if not available_actions:
+            _LOGGER.debug("No notification actions available based on current context")
             return
 
        # Epsilon-greedy action selection
