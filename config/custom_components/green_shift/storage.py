@@ -365,9 +365,9 @@ class StorageManager:
                     week_end_date TEXT NOT NULL,
                     phase TEXT,
                     target_percentage REAL,
-                    baseline_kwh REAL,
-                    actual_kwh REAL,
-                    savings_kwh REAL,
+                    baseline_W REAL,
+                    actual_W REAL,
+                    savings_W REAL,
                     savings_percentage REAL,
                     achieved INTEGER DEFAULT 0,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1239,16 +1239,16 @@ class StorageManager:
             cursor.execute("""
                 INSERT OR REPLACE INTO research_weekly_challenges
                 (week_start_date, week_end_date, phase, target_percentage,
-                 baseline_kwh, actual_kwh, savings_kwh, savings_percentage, achieved)
+                 baseline_W, actual_W, savings_W, savings_percentage, achieved)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 challenge_data.get('week_start_date'),
                 challenge_data.get('week_end_date'),
                 challenge_data.get('phase'),
                 challenge_data.get('target_percentage'),
-                challenge_data.get('baseline_kwh'),
-                challenge_data.get('actual_kwh'),
-                challenge_data.get('savings_kwh'),
+                challenge_data.get('baseline_W'),
+                challenge_data.get('actual_W'),
+                challenge_data.get('savings_W'),
                 challenge_data.get('savings_percentage'),
                 1 if challenge_data.get('achieved', False) else 0
             ))

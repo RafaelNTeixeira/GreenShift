@@ -785,9 +785,10 @@ views:
               - type: markdown
                 content: |
                   ### ℹ️ How to Use
-                  1. **📖 Read** the alerts below.
-                  2. **🔽 Select** the ID in the action panel.
-                  3. **👆 Tap** Accept or Reject.
+                  1. **📖 Read** the alert details below.
+                  2. **🏃 Act** to verify or fix the issue in your home.
+                  3. **🔽 Select** the ID in the panel.
+                  4. **👆 Tap** Accept only *after* you have acted.
 
               # --- INBOX SECTION ---
               - type: markdown

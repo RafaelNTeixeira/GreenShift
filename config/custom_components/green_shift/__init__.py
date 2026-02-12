@@ -363,7 +363,6 @@ async def async_setup_services(hass: HomeAssistant):
             # Add realistic noise and variations
             noise = random.gauss(0, 150)
             power = max(50, base_power + noise)  # Never below 50W
-            # power = 1500
             
             # Temperature varies slightly
             base_temp = 21
@@ -416,11 +415,150 @@ async def async_setup_services(hass: HomeAssistant):
         # Trigger update
         async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
     
+    async def inspect_q_table(call: ServiceCall):
+        """Inspect Q-table contents and state space usage."""
+        agent = hass.data[DOMAIN]["agent"]
+        from .const import ACTIONS
+        
+        _LOGGER.info("="*60)
+        _LOGGER.info("Q-TABLE INSPECTION")
+        _LOGGER.info("="*60)
+        
+        # Basic stats
+        total_states = len(agent.q_table)
+        _LOGGER.info(f"Total states in Q-table: {total_states}")
+        _LOGGER.info(f"Theoretical max states: 51*4*3*2*4*2 = 9,792")
+        _LOGGER.info(f"State space usage: {total_states/9792*100:.2f}%")
+        
+        # Current state
+        current_state_key = agent._discretize_state()
+        anomaly_labels = ['none', 'low', 'medium', 'high']
+        fatigue_labels = ['low', 'medium', 'high']
+        time_labels = ['night', 'morning', 'afternoon', 'evening']
+        
+        _LOGGER.info(f"\nCurrent discretized state: {current_state_key}")
+        _LOGGER.info(f"  power_bin={current_state_key[0]} (~{current_state_key[0]*100}-{(current_state_key[0]+1)*100}W)")
+        _LOGGER.info(f"  anomaly_level={current_state_key[1]} ({anomaly_labels[current_state_key[1]]})")
+        _LOGGER.info(f"  fatigue_level={current_state_key[2]} ({fatigue_labels[current_state_key[2]]})")
+        _LOGGER.info(f"  has_area_anomaly={current_state_key[3]} ({'yes' if current_state_key[3] else 'no'})")
+        _LOGGER.info(f"  time_period={current_state_key[4]} ({time_labels[current_state_key[4]]})")
+        _LOGGER.info(f"  is_occupied={current_state_key[5]} ({'yes' if current_state_key[5] else 'no'})")
+        
+        # Q-values for current state
+        if current_state_key in agent.q_table:
+            _LOGGER.info(f"\nQ-values for current state:")
+            for action, q_val in sorted(agent.q_table[current_state_key].items(), key=lambda x: x[1], reverse=True):
+                action_name = [k for k, v in ACTIONS.items() if v == action][0]
+                _LOGGER.info(f"  Action {action} ({action_name}): Q={q_val:.4f}")
+        else:
+            _LOGGER.info(f"\nCurrent state NOT in Q-table (will be initialized on next action)")
+        
+        # Top 10 states by max Q-value
+        if agent.q_table:
+            _LOGGER.info(f"\nTop 10 learned states (by max Q-value):")
+            state_max_q = [(state, max(q_vals.values())) for state, q_vals in agent.q_table.items()]
+            state_max_q.sort(key=lambda x: x[1], reverse=True)
+            
+            for i, (state, max_q) in enumerate(state_max_q[:10], 1):
+                _LOGGER.info(f"  {i}. State {state}: max_Q={max_q:.4f}")
+        
+        # State distribution analysis
+        if agent.q_table:
+            _LOGGER.info(f"\nState component distribution:")
+            power_bins = [s[0] for s in agent.q_table.keys()]
+            anomaly_bins = [s[1] for s in agent.q_table.keys()]
+            fatigue_bins = [s[2] for s in agent.q_table.keys()]
+            area_bins = [s[3] for s in agent.q_table.keys()]
+            time_bins = [s[4] for s in agent.q_table.keys()]
+            occupancy_bins = [s[5] for s in agent.q_table.keys()]
+            
+            _LOGGER.info(f"  Power bins used: {len(set(power_bins))} / 51 (range: {min(power_bins) if power_bins else 0}-{max(power_bins) if power_bins else 0})")
+            _LOGGER.info(f"  Anomaly levels used: {len(set(anomaly_bins))} / 4")
+            _LOGGER.info(f"  Fatigue levels used: {len(set(fatigue_bins))} / 3")
+            _LOGGER.info(f"  Area anomaly states used: {len(set(area_bins))} / 2")
+            _LOGGER.info(f"  Time periods used: {len(set(time_bins))} / 4")
+            _LOGGER.info(f"  Occupancy values used: {len(set(occupancy_bins))} / 2")
+        
+        # Learning progress
+        _LOGGER.info(f"\nLearning parameters:")
+        _LOGGER.info(f"  Episode number: {agent.episode_number}")
+        _LOGGER.info(f"  Epsilon (exploration rate): {agent.epsilon}")
+        _LOGGER.info(f"  Learning rate: {agent.learning_rate}")
+        
+        _LOGGER.info("="*60)
+    
+    async def test_q_learning(call: ServiceCall):
+        """Test Q-learning update logic with a simulated episode."""
+        agent = hass.data[DOMAIN]["agent"]
+        
+        _LOGGER.info("="*60)
+        _LOGGER.info("Q-LEARNING TEST")
+        _LOGGER.info("="*60)
+        
+        # Get current state
+        state_before = agent._discretize_state()
+        _LOGGER.info(f"State before: {state_before}")
+        
+        # Check if state exists in Q-table
+        if state_before not in agent.q_table:
+            from .const import ACTIONS
+            agent.q_table[state_before] = {a: 0.0 for a in ACTIONS.values()}
+            _LOGGER.info(f"State initialized in Q-table")
+        
+        # Show Q-values before
+        _LOGGER.info(f"\nQ-values BEFORE update:")
+        for action, q_val in agent.q_table[state_before].items():
+            _LOGGER.info(f"  Action {action}: Q={q_val:.4f}")
+        
+        # Simulate a test action (action 1 with positive reward)
+        test_action = 1
+        test_reward = 0.5
+        
+        _LOGGER.info(f"\nSimulating: action={test_action}, reward={test_reward:.4f}")
+        
+        # Manually perform Q-learning update
+        from .const import ACTIONS, GAMMA
+        current_q = agent.q_table[state_before].get(test_action, 0.0)
+        
+        # Get next state (same as current for this test)
+        next_state = state_before
+        if next_state not in agent.q_table:
+            agent.q_table[next_state] = {a: 0.0 for a in ACTIONS.values()}
+        
+        max_next_q = max(agent.q_table[next_state].values())
+        
+        # Q-learning formula: Q(s,a) ← Q(s,a) + α[R + γ max Q(s',a') - Q(s,a)]
+        new_q = current_q + agent.learning_rate * (test_reward + GAMMA * max_next_q - current_q)
+        
+        _LOGGER.info(f"\nQ-learning calculation:")
+        _LOGGER.info(f"  current_q = {current_q:.4f}")
+        _LOGGER.info(f"  max_next_q = {max_next_q:.4f}")
+        _LOGGER.info(f"  learning_rate = {agent.learning_rate}")
+        _LOGGER.info(f"  gamma = {GAMMA}")
+        _LOGGER.info(f"  td_target = {test_reward + GAMMA * max_next_q:.4f}")
+        _LOGGER.info(f"  td_error = {test_reward + GAMMA * max_next_q - current_q:.4f}")
+        _LOGGER.info(f"  new_q = {current_q:.4f} + {agent.learning_rate} * {test_reward + GAMMA * max_next_q - current_q:.4f} = {new_q:.4f}")
+        
+        # Apply update
+        agent.q_table[state_before][test_action] = new_q
+        
+        # Show Q-values after
+        _LOGGER.info(f"\nQ-values AFTER update:")
+        for action, q_val in agent.q_table[state_before].items():
+            change = " ← UPDATED" if action == test_action else ""
+            _LOGGER.info(f"  Action {action}: Q={q_val:.4f}{change}")
+        
+        _LOGGER.info(f"\n✓ Q-learning update completed successfully!")
+        _LOGGER.info(f"  Action {test_action} Q-value: {current_q:.4f} → {new_q:.4f} (Δ = {new_q - current_q:+.4f})")
+        _LOGGER.info("="*60)
+    
     # Register debug services
     hass.services.async_register(DOMAIN, "force_ai_process", force_ai_process)
     hass.services.async_register(DOMAIN, "force_notification", force_notification)
     hass.services.async_register(DOMAIN, "inject_test_data", inject_test_data)
     hass.services.async_register(DOMAIN, "set_test_indices", set_test_indices)
+    hass.services.async_register(DOMAIN, "inspect_q_table", inspect_q_table)
+    hass.services.async_register(DOMAIN, "test_q_learning", test_q_learning)
 
     # ===========================================================================================
 

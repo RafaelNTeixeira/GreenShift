@@ -859,9 +859,9 @@ class DecisionAgent:
         
         weighted_engagement = np.average(self.engagement_history, weights=weights)
         
-        # Smooth update to avoid volatility: new index is 60% new engagement, 40% old index
+        # Smooth update to avoid volatility: new index is 40% new engagement, 60% old index
         new_index = np.clip(weighted_engagement, 0, 1)
-        self.behaviour_index = 0.6 * new_index + 0.4 * self.behaviour_index
+        self.behaviour_index = 0.4 * new_index + 0.6 * self.behaviour_index
         
         _LOGGER.debug("Behaviour index updated: %.2f (raw: %.2f, history size: %d)", self.behaviour_index, weighted_engagement, len(self.engagement_history))
     
@@ -901,13 +901,13 @@ class DecisionAgent:
             frequency_factor = 0.0
         
         # Time decay component: fatigue naturally decreases over time
-        # If more than 2 hours since last notification, reduce fatigue
+        # If more than 1 hour since last notification, reduce fatigue
         time_decay_factor = 1.0
         if self.last_notification_time:
             hours_since_last = (datetime.now() - self.last_notification_time).total_seconds() / 3600
-            if hours_since_last > 2:
+            if hours_since_last > 1:
                 # Decay factor: approaches 0.5 as time passes (never goes to 0)
-                time_decay_factor = max(0.5, 1.0 - (hours_since_last - 2) * 0.1)
+                time_decay_factor = max(0.5, 1.0 - (hours_since_last - 1) * 0.1)
         
         # Combined fatigue score with time decay
         base_fatigue = 0.6 * rejection_rate + 0.4 * frequency_factor
@@ -924,48 +924,60 @@ class DecisionAgent:
         """
         Converts continuous state vector to discrete tuple for Q-table.
         
+        State Space: ~9,792 possible states (51x4x3x2x4x2)
+        
         State components:
-        - power_bin: Power consumption in 100W bins
-        - anomaly_bin: Global anomaly level (0-10)
-        - fatigue_bin: Fatigue level (0-10)
-        - area_anomaly_bin: Number of areas with anomalies (0-5+)
-        - time_bin: Time of day (morning/afternoon/evening/night)
-        - occupancy: Occupied or not
+        - power_bin: Power consumption in 100W bins (adaptive, 0-50)
+        - anomaly_level: 0=none(<0.25), 1=low(0.25-0.5), 2=medium(0.5-0.75), 3=high(>0.75)
+        - fatigue_level: 0=low(<0.33), 1=medium(0.33-0.66), 2=high(>0.66)
+        - has_area_anomaly: 0=no area anomalies, 1=area anomalies present
+        - time_period: 0=night, 1=morning, 2=afternoon, 3=evening
+        - is_occupied: 0=not occupied, 1=occupied
         """
         if self.state_vector is None or len(self.state_vector) < 18:
             return (0, 0, 0, 0, 0, 0)
         
         # Power in 100W bins
         power = int(self.state_vector[0] / 100)
-        power_bin = min(power, 50)  # Cap at 5000W for table size
+        power_bin = min(power, 50) # Cap at 5000W for table size
         
-        # Anomaly level (0-10)
-        anomaly_bin = int(self.anomaly_index * 10)
+        # Anomaly level
+        if self.anomaly_index < 0.25:
+            anomaly_level = 0  # None
+        elif self.anomaly_index < 0.5:
+            anomaly_level = 1  # Low
+        elif self.anomaly_index < 0.75:
+            anomaly_level = 2  # Medium
+        else:
+            anomaly_level = 3  # High
         
-        # Fatigue level (0-10)
-        fatigue_bin = int(self.fatigue_index * 10)
+        # Fatigue level
+        if self.fatigue_index < 0.33:
+            fatigue_level = 0  # Low
+        elif self.fatigue_index < 0.66:
+            fatigue_level = 1  # Medium
+        else:
+            fatigue_level = 2  # High
         
-        # Area anomaly count (capped at 5)
+        # Area anomaly
         area_anomaly_count = int(self.state_vector[15])
-        _LOGGER.debug("Area anomaly count before capping: %d", area_anomaly_count)
-        area_anomaly_bin = min(area_anomaly_count, 5)
+        has_area_anomaly = 1 if area_anomaly_count > 0 else 0
         
-        # Time of day (4 bins: 0=night, 1=morning, 2=afternoon, 3=evening)
+        # Time of day (0=night, 1=morning, 2=afternoon, 3=evening)
         time_of_day = self.state_vector[16]  # 0-1 normalized
-        _LOGGER.debug("Time of day (normalized) for discretization: %.2f", time_of_day)
         if time_of_day < 0.25:  # 0:00-6:00
-            time_bin = 0
+            time_period = 0
         elif time_of_day < 0.5:  # 6:00-12:00
-            time_bin = 1
+            time_period = 1
         elif time_of_day < 0.75:  # 12:00-18:00
-            time_bin = 2
+            time_period = 2
         else:  # 18:00-24:00
-            time_bin = 3
+            time_period = 3
         
-        # Occupancy
-        occupancy = int(self.state_vector[10])
+        # Occupancy (binary)
+        is_occupied = int(self.state_vector[10])
         
-        return (power_bin, anomaly_bin, fatigue_bin, area_anomaly_bin, time_bin, occupancy)
+        return (power_bin, anomaly_level, fatigue_level, has_area_anomaly, time_period, is_occupied)
     
     async def _calculate_opportunity_score(self) -> float:
         """
@@ -1019,8 +1031,8 @@ class DecisionAgent:
         # Weighted combination
         opportunity_score = (
             0.35 * savings_potential +
-            0.30 * urgency +
-            0.25 * receptiveness +
+            0.35 * urgency +
+            0.20 * receptiveness +
             0.10 * context
         )
         
@@ -1041,13 +1053,13 @@ class DecisionAgent:
         if self.last_notification_time is None:
             return True  # First notification always allowed
         
-        time_since_last = (datetime.now() - self.last_notification_time).total_seconds() / 60  # minutes
+        time_since_last = (datetime.now() - self.last_notification_time).total_seconds() / 60 # minutes
         
         # Calculate adaptive cooldown based on fatigue and time of day
         base_cooldown = MIN_COOLDOWN_MINUTES
         
         # Increase cooldown if fatigue is high
-        fatigue_multiplier = 1.0 + (self.fatigue_index * 2.0)  # 1x to 3x based on fatigue
+        fatigue_multiplier = 1.0 + (self.fatigue_index * 2.0) # 1x to 3x based on fatigue
         
         # Decrease cooldown during peak energy usage hours (more opportunities)
         now = datetime.now()
@@ -1208,8 +1220,11 @@ class DecisionAgent:
         #     "Weekly challenge calculation: %d readings, current_avg=%.2f, baseline=%.2f, target_pct=%.1f%%",
         #     len(power_values), np.mean(power_values), self.baseline_consumption, target_percentage
         # )
+
+        # days_in_current_week = 7
         
         if today.weekday() == 6 and days_in_current_week >= 7:  # Sunday and full week complete
+        # if days_in_current_week >= 7:
             # Check if we've already logged this week
             week_key = self.current_week_start_date.isoformat()
             if not hasattr(self, '_logged_weeks'):

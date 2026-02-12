@@ -95,7 +95,7 @@ def main():
             phase,
             datetime(start_timestamp, 'unixepoch') as start_date,
             datetime(end_timestamp, 'unixepoch') as end_date,
-            ROUND(baseline_consumption_kwh, 2) as baseline_kwh,
+            ROUND(baseline_consumption_W, 2) as baseline_W,
             notes
         FROM research_phase_metadata
         ORDER BY start_timestamp;
@@ -209,9 +209,9 @@ def main():
         SELECT 
             week_start_date,
             target_percentage,
-            ROUND(baseline_kwh, 2) as baseline_kwh,
-            ROUND(actual_kwh, 2) as actual_kwh,
-            ROUND(savings_kwh, 2) as savings_kwh,
+            ROUND(baseline_W, 2) as baseline_W,
+            ROUND(actual_W, 2) as actual_W,
+            ROUND(savings_W, 2) as savings_W,
             ROUND(savings_percentage, 1) as savings_pct,
             CASE WHEN achieved = 1 THEN 'SUCCESS' ELSE 'FAILED' END as outcome
         FROM research_weekly_challenges
