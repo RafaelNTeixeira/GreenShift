@@ -922,10 +922,10 @@ class DecisionAgent:
         """
         Converts continuous state vector to discrete tuple for Q-table.
         
-        State Space: ~9,792 possible states (51x4x3x2x4x2)
+        State Space: ~19,584 possible states (101x4x3x2x4x2)
         
         State components:
-        - power_bin: Power consumption in 100W bins (adaptive, 0-50)
+        - power_bin: Power consumption in 100W bins (adaptive, 0-100)
         - anomaly_level: 0=none(<0.25), 1=low(0.25-0.5), 2=medium(0.5-0.75), 3=high(>0.75)
         - fatigue_level: 0=low(<0.33), 1=medium(0.33-0.66), 2=high(>0.66)
         - has_area_anomaly: 0=no area anomalies, 1=area anomalies present
@@ -937,7 +937,7 @@ class DecisionAgent:
         
         # Power in 100W bins
         power = int(self.state_vector[0] / 100)
-        power_bin = min(power, 50) # Cap at 5000W for table size
+        power_bin = min(power, 100) # Cap at 10000W for table size
         
         # Anomaly level
         if self.anomaly_index < 0.25:
