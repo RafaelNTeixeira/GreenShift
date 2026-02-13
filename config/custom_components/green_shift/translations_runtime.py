@@ -289,7 +289,8 @@ def get_language(hass) -> str:
             # Normalize to 2-letter ISO code
             if lang and len(lang) >= 2:
                 lang_code = lang[:2].lower()
-                if lang_code in ['pt']:
+                # Check if we have translations for this language
+                if lang_code in NOTIFICATION_TEMPLATES:
                     return lang_code
         return "en"
     except Exception:

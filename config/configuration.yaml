@@ -13,8 +13,8 @@ logger:
 
 homeassistant:
   # Choose ONE customize file based on your language:
-  customize: !include customize_en.yaml
-  # customize: !include customize_pt.yaml
+  # customize: !include customize_en.yaml
+  customize: !include customize_pt.yaml
 
 # Lovelace UI configuration (YAML mode)
 lovelace:
@@ -23,8 +23,8 @@ lovelace:
   dashboards:
     lovelace-green-shift:
       mode: yaml
-      filename: ui-lovelace-en.yaml
-      # filename: ui-lovelace-pt.yaml
+      # filename: ui-lovelace-en.yaml
+      filename: ui-lovelace-pt.yaml
       title: Green Shift
       icon: mdi:leaf
 
