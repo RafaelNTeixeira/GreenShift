@@ -1,0 +1,1026 @@
+# Green Shift - Dashboard em Português
+title: Green Shift
+views:
+
+# ========== TAB 1: DISPOSITIVOS ==========
+- title: Dispositivos
+  path: devices
+  icon: mdi:power-plug
+  type: panel
+  cards:
+    - type: vertical-stack
+      cards:
+        - type: markdown
+          content: |
+            # 🔌 Dispositivos Monitorizados
+            Valores em tempo real dos **sensores de hardware** descobertos automaticamente.
+        # --- VISÃO GLOBAL ---
+        - type: grid
+          columns: 2
+          square: false
+          cards:
+            - type: sensor
+              entity: sensor.current_consumption
+              name: ⚡ Carga Total
+              graph: line
+            - type: sensor
+              entity: sensor.current_hourly_cost
+              name: 💵 Custo por Hora
+              graph: line
+            - type: sensor
+              entity: sensor.daily_cost
+              name: 💰 Custo Diário
+              graph: line
+            - type: sensor
+              entity: sensor.daily_co2_estimate
+              name: 🌱 CO2 Diário
+              graph: line
+
+        # --- DASHBOARD DINÂMICO POR ÁREA ---
+        - type: vertical-stack
+          cards:
+            # Filtro de Entrada
+            - type: entities
+              entities:
+                - entity: select.dashboard_area_filter
+                  name: Filtrar por Divisão
+                  icon: mdi:filter-variant
+              style: |
+                ha-card {
+                  box-shadow: none;
+                  background: none;
+                  margin-bottom: -15px;
+                }
+
+            - type: markdown
+              content: |
+                {%- set filter = states('select.dashboard_area_filter') -%}
+                {%- set ns = namespace(areas=[]) -%}
+                {%- set cats = ['power', 'energy', 'temperature', 'humidity', 'illuminance', 'occupancy'] -%}
+
+                {# --- 1. Coletar Áreas Únicas --- #}
+                {%- for c in cats -%}
+                  {%- set sensors = state_attr('sensor.hardware_sensors', c) -%}
+                  {%- if sensors and sensors is iterable -%}
+                    {%- for s in sensors -%}
+                      {%- set area = s.get('area', 'Sem Atribuição') -%}
+                      {%- if area and area not in ns.areas -%}
+                        {%- set ns.areas = ns.areas + [area] -%}
+                      {%- endif -%}
+                    {%- endfor -%}
+                  {%- endif -%}
+                {%- endfor -%}
+
+                {# --- 2. Renderizar Tabelas por Área --- #}
+                {%- if ns.areas | length == 0 -%}
+                  <p style="text-align: center;">⚠️ <b>Nenhum sensor ou área detetada.</b></p>
+                {%- else -%}
+                  {%- for area in ns.areas | sort -%}
+                    {# Verificar Filtro #}
+                    {%- if filter in ['All Areas', 'Todas as Áreas', 'unknown', 'unavailable', 'None'] or filter == area -%}
+                      
+                      <h3>📍 {{ area }}</h3>
+                      <table width="100%">
+                      {%- for c in cats -%}
+                        {%- set sensors = state_attr('sensor.hardware_sensors', c) -%}
+                        {%- if sensors and sensors is iterable -%}
+                          {%- for s in sensors -%}
+                            {%- if s.get('area', 'Sem Atribuição') == area -%}
+                              <tr>
+                                <td width="30px">
+                                  <ha-icon icon="{{ 'mdi:lightning-bolt' if c == 'power' else 'mdi:counter' if c == 'energy' else 'mdi:thermometer' if c == 'temperature' else 'mdi:water-percent' if c == 'humidity' else 'mdi:brightness-5' if c == 'illuminance' else 'mdi:eye' }}" style="width: 20px; color: var(--secondary-text-color);"></ha-icon>
+                                </td>
+                                <td>{{ s.name }}</td>
+                                <td align="right">
+                                  {%- if c == 'occupancy' -%}
+                                    {{ 'Ocupado 🔴' if s.value == 'on' else 'Livre 🟢' }}
+                                  {%- else -%}
+                                    <b>{{ s.value }}</b> <small>{{ s.unit }}</small>
+                                  {%- endif -%}
+                                </td>
+                              </tr>
+                            {%- endif -%}
+                          {%- endfor -%}
+                        {%- endif -%}
+                      {%- endfor -%}
+                      </table>
+                      <hr style="border: 0; border-bottom: 1px solid var(--divider-color); margin: 15px 0;">
+                      
+                    {%- endif -%}
+                  {%- endfor -%}
+                {%- endif -%}
+
+        # --- LEGENDA ---
+        - type: markdown
+          content: |
+            ### 📘 Guia Rápido
+            {% set p = state_attr('sensor.hardware_sensors', 'power') %}
+            {% set e = state_attr('sensor.hardware_sensors', 'energy') %}
+            {% set l = state_attr('sensor.hardware_sensors', 'illuminance') %}
+            {% set h = state_attr('sensor.hardware_sensors', 'humidity') %}
+
+            {% if p and p | length > 0 %}
+            **⚡ Potência (Watts):** *O "Velocímetro"*
+            > Mostra quanta eletricidade está a usar **neste momento**. 
+            > *Dica:* Se este valor estiver alto, um aparelho "pesado" como o Forno ou AC está ligado.
+            
+            ---
+            {% endif %}
+
+            {% if e and e | length > 0 %}
+            **🔋 Energia (kWh):** *O "Contador"*
+            > A quantidade total usada ao longo do tempo. Isto é o que aparece na sua **Conta de Luz**.
+            > *Escala:* **1 unidade (kWh)** equivale aproximadamente a uma carga completa de roupa.
+            
+            ---
+            {% endif %}
+
+            {% if l and l | length > 0 %}
+            **💡 Luz (Lux):** *Luminosidade*
+            > Mede o quão brilhante está a divisão.
+            > *Escala:* **0** (Escuro Total) → **150** (Sala Típica) → **500+** (Escritório Luminoso).
+            
+            ---
+            {% endif %}
+
+            {% if h and h | length > 0 %}
+            **💧 Humidade:** *Humidade do Ar*
+            > **40-60%** é a "Zona de Conforto."
+            > *Aviso:* Acima de **70%** sente-se "abafado" e há risco de bolor; abaixo de **30%** sente-se muito seco.
+            {% endif %}
+          
+# ========== TAB 2: DASHBOARD ==========
+- title: Dashboard
+  path: dashboard
+  icon: mdi:chart-line
+  type: panel
+  cards:
+    - type: vertical-stack
+      cards:
+        - type: markdown
+          content: |
+            # 📊 Dashboard 
+            Analise os seus padrões de consumo de energia e identifique oportunidades de poupança.
+
+        # --- SECÇÃO DE GRÁFICO ---
+        - type: vertical-stack
+          cards:
+            - type: markdown
+              content: |
+                ### 📈 Desempenho vs. Baseline
+                <div style="background: var(--card-background-color); border: 1px solid var(--divider-color); padding: 10px; border-radius: 6px; font-size: 13px; color: var(--secondary-text-color); margin-bottom: 0px;">
+                  ℹ️ <b>O que é "Consumo Baseline"?</b><br>
+                  Esta linha representa o seu consumo médio de energia. Será ajustada ao longo do tempo.
+                </div>
+            
+            - type: history-graph
+              hours_to_show: 168
+              entities:
+                - entity: sensor.current_consumption
+                  name: Uso Atual
+                - entity: sensor.energy_baseline
+                  name: Consumo Baseline
+        
+        # --- TABELA DE CONSUMO POR ÁREA ---
+        - type: markdown
+          content: |
+            ### ⚡ Uso de Energia por Área
+            
+            {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
+            {%- set ns = namespace(area_sums={}, total=0) -%}
+
+            {%- if sensors -%}
+              {%- for s in sensors -%}
+                {%- if s.value is not none -%}
+                  {%- set ns.total = ns.total + s.value -%}
+                  {%- set area = s.area if s.area else 'Sem Área' -%}
+                  {%- set current = ns.area_sums.get(area, 0) -%}
+                  {%- set new_dict = {area: current + s.value} -%}
+                  {%- set ns.area_sums = dict(ns.area_sums, **new_dict) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endif -%}
+
+            {%- if ns.total == 0 -%}
+            </br>
+            📭 Nenhum dado de área recolhido.
+            {%- else -%}
+            
+            </br>
+            
+            <table width="100%">
+              <thead>
+                <tr>
+                  <th style="text-align: left;">📍 Área</th>
+                  <th style="text-align: right;">⚡ Uso</th>
+                  <th style="text-align: right;">📊 Quota</th>
+                  <th style="text-align: left;">📊 Distribuição</th>
+                </tr>
+              </thead>
+              <tbody>
+              {%- for area, w in ns.area_sums.items() | sort(attribute='1', reverse=True) -%}
+                {%- set pct = (w / ns.total * 100) | round(0) | int -%}
+                {%- set blocks = (pct / 10) | round(0) | int -%}
+                {%- set bar = '█' * blocks + '░' * (10 - blocks) -%}
+                <tr>
+                  <td style="text-align: left;"><b>{{ area }}</b></td>
+                  <td style="text-align: right;">{{ w | round(2) }} W</td>
+                  <td style="text-align: right;">{{ pct }}%</td>
+                  <td style="text-align: left; color: var(--primary-color);">{{ bar }}</td>
+                </tr>
+              {%- endfor -%}
+              </tbody>
+            </table>
+            {%- endif -%}
+
+        # --- TOP 5 CONSUMIDORES ---
+        - type: markdown
+          content: |
+            ### 🏆 Top 5 Consumidores de Energia
+            {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
+            {%- if sensors -%}
+            {%- set top_devices = sensors
+                | selectattr('value', 'ne', None)
+                | sort(attribute='value', reverse=True)
+                | list
+            -%}
+            {%- set max_val = top_devices[0].value if top_devices else 1 -%}
+            </br>
+            <table width="100%">
+              <thead>
+                <tr>
+                  <th style="text-align: left;">🔌 Dispositivo</th>
+                  <th style="text-align: right;">⚡ Carga</th>
+                  <th style="text-align: left; padding-left: 10px;">📊 Impacto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {%- for s in top_devices[:5] -%}
+                {%- set pct = (s.value / max_val * 100) | int -%}
+                {%- set blocks = (pct / 10) | round(0) | int -%}
+                {%- set bar = '█' * blocks + '░' * (10 - blocks) -%}
+                <tr>
+                  <td style="text-align: left;">{{ s.name }}</td>
+                  <td style="text-align: right;"><b>{{ s.value }} W</b></td>
+                  <td style="text-align: left; padding-left: 10px; color: var(--primary-color);">
+                    {{ bar }}
+                  </td>
+                </tr>
+                {%- endfor -%}
+              </tbody>
+            </table>
+            {%- else -%}
+            </br>
+            😴 Nenhum dispositivo ativo detetado.
+            {%- endif -%}
+
+# ========== TAB 3: DESAFIOS ==========
+- title: Desafios
+  path: tasks
+  icon: mdi:clipboard-check
+  type: panel
+  cards:
+    - type: vertical-stack
+      cards:
+        - type: conditional
+          conditions:
+            - entity: sensor.research_phase
+              state: baseline
+          card:
+            type: markdown
+            content: |
+              ## 🔒 Desafios Bloqueados
+              **{{ state_attr('sensor.research_phase', 'days_remaining') }} dias** até desbloquear ⏳
+
+        - type: conditional
+          conditions:
+            - entity: sensor.research_phase
+              state: active
+          card:
+            type: vertical-stack
+            cards:
+              - type: markdown
+                content: |
+                  # 📅 Desafios Diários de Energia
+                  {% set verified = state_attr('sensor.daily_tasks', 'verified_count') | default(0) %}
+                  {% set total = state_attr('sensor.daily_tasks', 'total_count') | default(0) %}
+                  {% if total > 0 %}
+                  ✅ **{{ verified }}/{{ total }}** tarefas verificadas hoje
+                  {% else %}
+                  📭 Sem tarefas disponíveis para hoje.
+                  {% endif %}
+
+              # Card Tarefa 1
+              - type: conditional
+                conditions:
+                  - condition: numeric_state
+                    entity: sensor.daily_tasks
+                    attribute: total_count
+                    above: 0
+                card:
+                  type: vertical-stack
+                  cards:
+                    - type: horizontal-stack
+                      cards:
+                        - type: markdown
+                          content: |
+                            {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                            {% if tasks and tasks | length > 0 %}
+                            {% set t = tasks[0] %}
+                            
+                            ### {{ t.status_emoji }} Tarefa 1: {{ t.title }}
+                            
+                            {{ t.description }}
+                            
+                            **Meta:** {{ t.target_value }}{{ t.target_unit }} (de {{ t.baseline_value }}{{ t.target_unit }})  
+                            **📊 Dificuldade:** {{ t.difficulty_display }}  
+                            {% if t.area_name %}**📍 Área:** {{ t.area_name }}{% endif %}
+                            
+                            {% if t.verified %}
+                            ✅ **VERIFICADA!** Atingiu a meta!
+                            {% else %}
+                            🎯 **Ativa** - Complete hoje!
+                            {% endif %}
+                            {% endif %}
+
+                    - type: horizontal-stack
+                      cards:  
+                        - type: button
+                          name: Muito Fácil
+                          icon: mdi:emoticon-happy-outline
+                          icon_height: 30px
+                          tap_action:
+                            action: call-service
+                            service: green_shift.submit_task_feedback
+                            data:
+                              task_index: 0
+                              feedback: too_easy
+                          entity: sensor.daily_tasks
+                          show_state: false
+                        
+                        - type: button
+                          name: Adequada
+                          icon: mdi:emoticon-neutral-outline
+                          icon_height: 30px
+                          tap_action:
+                            action: call-service
+                            service: green_shift.submit_task_feedback
+                            data:
+                              task_index: 0
+                              feedback: just_right
+                          entity: sensor.daily_tasks
+                          show_state: false
+                        
+                        - type: button
+                          name: Muito Difícil
+                          icon: mdi:emoticon-sad-outline
+                          icon_height: 30px
+                          tap_action:
+                            action: call-service
+                            service: green_shift.submit_task_feedback
+                            data:
+                              task_index: 0
+                              feedback: too_hard
+                          entity: sensor.daily_tasks
+                          show_state: false
+
+              # Card Tarefa 2
+              - type: conditional
+                conditions:
+                  - condition: numeric_state
+                    entity: sensor.daily_tasks
+                    attribute: total_count
+                    above: 1
+                card:
+                  type: vertical-stack
+                  cards:
+                    - type: horizontal-stack
+                      cards:
+                        - type: markdown
+                          content: |
+                            {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                            {% if tasks and tasks | length > 1 %}
+                            {% set t = tasks[1] %}
+
+                            ---
+
+                            ### {{ t.status_emoji }} Tarefa 2: {{ t.title }}
+                            
+                            {{ t.description }}
+                            
+                            **🎯 Meta:** {{ t.target_value }}{{ t.target_unit }} (de {{ t.baseline_value }}{{ t.target_unit }})  
+                            **📊 Dificuldade:** {{ t.difficulty_display }}  
+                            {% if t.area_name %}**📍 Área:** {{ t.area_name }}{% endif %}
+                            
+                            {% if t.verified %}
+                            ✅ **VERIFICADA!** Atingiu a meta!
+                            {% else %}
+                            🎯 **Ativa** - Complete hoje!
+                            {% endif %}
+                            {% endif %}
+
+                    - type: horizontal-stack
+                      cards:
+                        - type: button
+                          name: Muito Fácil
+                          icon: mdi:emoticon-happy-outline
+                          icon_height: 30px
+                          tap_action:
+                            action: call-service
+                            service: green_shift.submit_task_feedback
+                            data:
+                              task_index: 1
+                              feedback: too_easy
+                          entity: sensor.daily_tasks
+                          show_state: false
+                        
+                        - type: button
+                          name: Adequada
+                          icon: mdi:emoticon-neutral-outline
+                          icon_height: 30px
+                          tap_action:
+                            action: call-service
+                            service: green_shift.submit_task_feedback
+                            data:
+                              task_index: 1
+                              feedback: just_right
+                          entity: sensor.daily_tasks
+                          show_state: false
+                        
+                        - type: button
+                          name: Muito Difícil
+                          icon: mdi:emoticon-sad-outline
+                          icon_height: 30px
+                          tap_action:
+                            action: call-service
+                            service: green_shift.submit_task_feedback
+                            data:
+                              task_index: 1
+                              feedback: too_hard
+                          entity: sensor.daily_tasks
+                          show_state: false
+
+              # Card Tarefa 3
+              - type: conditional
+                conditions:
+                  - condition: numeric_state
+                    entity: sensor.daily_tasks
+                    attribute: total_count
+                    above: 2
+                card:
+                  type: vertical-stack
+                  cards:
+                    - type: horizontal-stack
+                      cards:
+                        - type: markdown
+                          content: |
+                            {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
+                            {% if tasks and tasks | length > 2 %}
+                            {% set t = tasks[2] %}
+
+                            ---
+
+                            ### {{ t.status_emoji }} Tarefa 3: {{ t.title }}
+                            
+                            {{ t.description }}
+                            
+                            **🎯 Meta:** {{ t.target_value }}{{ t.target_unit }} (de {{ t.baseline_value }}{{ t.target_unit }})  
+                            **📊 Dificuldade:** {{ t.difficulty_display }}  
+                            {% if t.area_name %}**📍 Área:** {{ t.area_name }}{% endif %}
+                            
+                            {% if t.verified %}
+                            ✅ **VERIFICADA!** Atingiu a meta!
+                            {% else %}
+                            🎯 **Ativa** - Complete hoje!
+                            {% endif %}
+                            {% endif %}
+
+                    - type: horizontal-stack
+                      cards:
+                        - type: button
+                          name: Muito Fácil
+                          icon: mdi:emoticon-happy-outline
+                          icon_height: 30px
+                          tap_action:
+                            action: call-service
+                            service: green_shift.submit_task_feedback
+                            data:
+                              task_index: 2
+                              feedback: too_easy
+                          entity: sensor.daily_tasks
+                          show_state: false
+                        
+                        - type: button
+                          name: Adequada
+                          icon: mdi:emoticon-neutral-outline
+                          icon_height: 30px
+                          tap_action:
+                            action: call-service
+                            service: green_shift.submit_task_feedback
+                            data:
+                              task_index: 2
+                              feedback: just_right
+                          entity: sensor.daily_tasks
+                          show_state: false
+                       
+                        - type: button
+                          name: Muito Difícil
+                          icon: mdi:emoticon-sad-outline
+                          icon_height: 30px
+                          tap_action:
+                            action: call-service
+                            service: green_shift.submit_task_feedback
+                            data:
+                              task_index: 2
+                              feedback: too_hard
+                          entity: sensor.daily_tasks
+                          show_state: false
+
+              # Botão Verificar Todas as Tarefas
+              - type: conditional
+                conditions:
+                  - condition: numeric_state
+                    entity: sensor.daily_tasks
+                    attribute: total_count
+                    above: 0
+                card:
+                  type: button
+                  name: "Verificar Todas as Tarefas"
+                  icon: mdi:check-circle
+                  icon_height: 30px
+                  tap_action:
+                    action: call-service
+                    service: green_shift.verify_tasks
+                  show_state: false
+
+              # Resumo
+              - type: conditional
+                conditions:
+                  - condition: numeric_state
+                    entity: sensor.daily_tasks
+                    attribute: total_count
+                    above: 0
+                card:
+                  type: markdown
+                  content: |
+                    ---
+                    ### 💡 Como Funciona o Feedback
+                    
+                    Avalie a dificuldade de cada tarefa para ajudar o sistema a ajustar desafios futuros:
+                    - **😊 Muito Fácil** → Próxima vez será mais difícil
+                    - **😐 Adequada** → Dificuldade mantém-se igual
+                    - **😰 Muito Difícil** → Próxima vez será mais fácil
+                    
+                    ⏱️ As tarefas são verificadas de 15 em 15 minutos, mas também pode acionar manualmente a verificação clicando no botão "Verificar Todas as Tarefas" para ver se completou alguma tarefa e obter feedback em tempo real!
+
+# ========== TAB 4: META COLABORATIVA ==========
+- title: Meta Colaborativa
+  path: collaborative
+  icon: mdi:account-group
+  type: panel
+  cards:
+    - type: vertical-stack
+      cards:
+        # --- FASE DE CALIBRAÇÃO (BLOQUEADA) ---
+        - type: conditional
+          conditions:
+            - entity: sensor.research_phase
+              state: baseline
+          card:
+            type: markdown
+            content: |
+              ## 🔒 Meta Bloqueada
+              
+              🔧 O sistema está atualmente a aprender os hábitos baseline do edifício.
+              
+              **⏳ Tempo Restante:** {{ state_attr('sensor.research_phase', 'days_remaining') }} dias
+              
+              *Assim que a calibração estiver completa, os seus desafios semanais de energia aparecerão aqui.* 🎯
+
+        # --- FASE ATIVA (DESBLOQUEADA) ---
+        - type: conditional
+          conditions:
+            - entity: sensor.research_phase
+              state: active
+          card:
+            type: vertical-stack
+            cards:
+              # CABEÇALHO DINÂMICO & ESTADO
+              - type: markdown
+                content: |
+                  # 🎯 Desafio Semana {{ state_attr('sensor.weekly_challenge', 'week_start') }}
+                  
+                  {% set current = state_attr('sensor.weekly_challenge', 'current_avg_w') | float(0) %}
+                  {% set target = state_attr('sensor.weekly_challenge', 'target_avg_w') | float(0) %}
+                  {% set pct = state_attr('sensor.weekly_challenge', 'progress') | float(0) %}
+                  
+                  {% if pct <= 100 %}
+                  ### Estado: ✅ No Caminho Certo ({{ pct }}%)
+                  Continue assim! A equipa está abaixo do orçamento de energia. 🎉
+                  {% else %}
+                  ### Estado: ⚠️ Em Risco ({{ pct }}%)
+                  Ação necessária! Estamos a exceder a média alvo. 🚨
+                  {% endif %}
+
+              # INDICADOR & MOTIVAÇÃO
+              - type: horizontal-stack
+                cards:
+                  # Indicador da Meta
+                  - type: gauge
+                    entity: sensor.weekly_challenge
+                    name: Orçamento Usado
+                    min: 0
+                    max: 150
+                    unit: "%"
+                    severity:
+                      green: 0
+                      yellow: 90
+                      red: 105
+                  
+                  # Incentivo Monetário Calculado
+                  - type: markdown
+                    content: |
+                      ### 🏆 A Recompensa
+                      
+                      {% set baseline = state_attr('sensor.weekly_challenge', 'baseline_w') | float(0) %}
+                      {% set target = state_attr('sensor.weekly_challenge', 'target_avg_w') | float(0) %}
+                      {% set price = states('input_number.electricity_price') | float(0.25) %}
+                      {% set currency = states('input_select.currency') %}
+                      
+                      {# Calcular Poupanças Semanais Potenciais: (Watts Poupados * 24h * 7d / 1000) * Preço #}
+                      {% set potential_watts = baseline - target %}
+                      {% set potential_eur = (potential_watts * 24 * 7 / 1000 * price) | round(2) %}
+                      
+                      Se atingir esta meta, poderá poupar esta semana aproximadamente:
+                      
+                      # 💰 {{ potential_eur }} {{ currency }}
+                      
+                      *comparado com a sua semana baseline padrão.*
+
+              # BARRA DE ESTATÍSTICAS
+              - type: entities
+                show_header_toggle: false
+                entities:
+                  - type: attribute
+                    entity: sensor.weekly_challenge
+                    attribute: current_avg_w
+                    name: Carga Média Atual
+                    icon: mdi:flash
+                    suffix: "W"
+                  - type: attribute
+                    entity: sensor.weekly_challenge
+                    attribute: target_avg_w
+                    name: Carga Média Alvo
+                    icon: mdi:target
+                    suffix: "W"
+
+              # ÁREAS DE FOCO AO VIVO
+              - type: markdown
+                content: |
+                  ### 🕵️‍♂️ Áreas de Foco ao Vivo
+                  *Onde a equipa pode ajudar agora?* 🤔
+                  
+                  {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
+                  {%- set ns = namespace(area_sums={}) -%}
+
+                  {# Agregar Potência por Área #}
+                  {%- if sensors -%}
+                    {%- for s in sensors -%}
+                      {%- if s.value is not none and s.value > 0 -%}
+                        {%- set area = s.area if s.area else 'Outro' -%}
+                        {%- set current = ns.area_sums.get(area, 0) -%}
+                        {%- set ns.area_sums = dict(ns.area_sums, **{area: current + s.value}) -%}
+                      {%- endif -%}
+                    {%- endfor -%}
+                  {%- endif -%}
+
+                  <table width="100%">
+                  <thead>
+                    <tr>
+                      <th align="left">📍 Área</th>
+                      <th align="right">⚡ Carga Atual</th>
+                      <th align="center">📊 Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                  {%- for area, watts in ns.area_sums.items() | sort(attribute='1', reverse=True) -%}
+                    {# Mostrar apenas áreas com uso significativo #}
+                    {%- if watts > 5 -%}
+                    <tr>
+                      <td><b>{{ area }}</b></td>
+                      <td align="right">{{ watts | int }} W</td>
+                      <td align="center">{% if watts > 500 %}🔴 Alto{% elif watts > 100 %}🟠 Moderado{% else %}🟢 Baixo{% endif %}</td>
+                    </tr>
+                    {%- endif -%}
+                  {%- endfor -%}
+                  </tbody>
+                  </table>
+                  
+                  <small><i>💡 Verifique as áreas com uso "Alto" para ver se pode desligar luzes ou dispositivos!</i></small>
+
+# ========== TAB 5: NOTIFICAÇÕES ==========
+- title: Notificações
+  path: notifications
+  icon: mdi:bell
+  type: panel
+  cards:
+    - type: vertical-stack
+      cards:
+        
+        # --- ESTADO BLOQUEADO (BASELINE) ---
+        - type: conditional
+          conditions:
+            - entity: sensor.research_phase
+              state: baseline
+          card:
+            type: markdown
+            content: |
+              ## 🔒 Notificações Bloqueadas
+              
+              Estamos atualmente a aprender os seus hábitos baseline.
+              Alertas inteligentes e nudges serão ativados em **{{ state_attr('sensor.research_phase', 'days_remaining') }} dias**. ⏳
+
+        # --- ESTADO ATIVO (UI COMPLETA) ---
+        - type: conditional
+          conditions:
+            - entity: sensor.research_phase
+              state: active
+          card:
+            type: vertical-stack
+            cards:
+              # --- SECÇÃO SUPERIOR (ESTATÍSTICAS & INSTRUÇÕES) ---
+              - type: tile
+                entity: sensor.active_notifications
+                name: Alertas Ativos
+                icon: mdi:bell-ring
+                color: accent
+
+              - type: markdown
+                content: |
+                  ### ℹ️ Como Usar
+                  1. **📖 Leia** os detalhes do alerta abaixo.
+                  2. **🏃 Aja** para verificar ou corrigir o problema em sua casa.
+                  3. **🔽 Selecione** o ID no painel.
+                  4. **👆 Toque** em Aceitar ou Rejeitar apenas *depois* de ter agido.
+
+              # --- SECÇÃO INBOX ---
+              - type: markdown
+                title: 📬 Inbox Pendente
+                content: |
+                  {%- set notifs = state_attr('sensor.active_notifications', 'notifications') -%}
+                  {%- set safe_notifs = notifs if notifs else [] -%}
+                  {%- set pending = safe_notifs | selectattr('responded', 'equalto', false) | list -%}
+                  
+                  {%- if pending | length == 0 -%}
+                  ### ✅ Tudo em Dia!
+                  Sem alertas pendentes no momento. 😎
+                  {%- else -%}
+                  
+                  {%- for n in pending -%}
+                  ---
+                  ### 📢 {{ n.title }}
+                  **ID:** `{{ n.notification_id }}` • **⏰ Tempo:** *{{ n.time_ago }}*
+                  
+                  {{ n.message }}
+                  
+                  {%- endfor -%}
+                  {%- endif -%}
+
+              # --- PAINEL DE AÇÃO ---
+              - type: vertical-stack
+                cards:
+                  - type: entities
+                    title: 🎬 Tomar Ação
+                    show_header_toggle: false
+                    entities:
+                      - entity: select.notification_selector
+                        name: 🔽 Selecione o ID para Responder
+
+                  - type: horizontal-stack
+                    cards:
+                      - type: tile
+                        entity: select.notification_selector
+                        name: Aceitar
+                        icon: mdi:check
+                        color: green
+                        show_entity_picture: false
+                        state_content: []
+                        tap_action:
+                          action: call-service
+                          service: green_shift.respond_to_selection
+                          data:
+                            decision: accept
+                      
+                      - type: tile
+                        entity: select.notification_selector
+                        name: Rejeitar
+                        icon: mdi:close
+                        color: red
+                        show_entity_picture: false
+                        state_content: []
+                        tap_action:
+                          action: call-service
+                          service: green_shift.respond_to_selection
+                          data:
+                            decision: reject
+
+              # --- TABELA HISTÓRICO ---
+              - type: markdown
+                title: 📜 Histórico
+                content: |
+                  {%- set ns = state_attr('sensor.active_notifications', 'notifications') -%}
+                  {%- if ns -%}
+                  <table width="100%">
+                    <thead>
+                      <tr>
+                        <th align="left">⏰ Tempo</th>
+                        <th align="left">📋 Tipo</th>
+                        <th align="center">📊 Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                    {%- for n in ns[:8] -%}
+                      <tr>
+                        <td>{{ n.time_ago }}</td>
+                        <td>{{ n.action_type | replace('_', ' ') | capitalize }}</td>
+                        <td align="center">{{ n.status_emoji }}</td>
+                      </tr>
+                    {%- endfor -%}
+                    </tbody>
+                  </table>
+                  {%- else -%}
+                  📭 Sem histórico disponível.
+                  {%- endif -%}
+
+# ========== TAB 6: PERFIL ==========
+- title: Perfil
+  path: profile
+  icon: mdi:account-circle
+  type: panel
+  cards:
+    - type: vertical-stack
+      cards:
+        - type: conditional
+          conditions:
+            - entity: sensor.research_phase
+              state: baseline
+          card:
+            type: markdown
+            content: |
+              ## 🚧 Perfil em Construção...
+              🔧 Estamos atualmente a calibrar o seu baseline. 
+              As suas estatísticas ecológicas pessoais e níveis serão desbloqueados em **{{ state_attr('sensor.research_phase', 'days_remaining') }} dias**. ⏳
+
+        - type: conditional
+          conditions:
+            - entity: sensor.research_phase
+              state: active
+          card:
+            type: vertical-stack
+            cards:
+              # --- CARD NÍVEL DO JOGADOR ---
+              - type: markdown
+                content: |
+                  {% set tasks = states('sensor.tasks_completed') | int %}
+                  {% if tasks < 5 %}
+                  # 🐣 Nível 1: Principiante
+                  *Complete mais tarefas diárias para evoluir!* 🌱
+                  {% elif tasks < 15 %}
+                  # 🌿 Nível 2: Aprendiz Ecológico
+                  *Está a perceber o sistema!* 💪
+                  {% elif tasks < 30 %}
+                  # 🌳 Nível 3: Guardião
+                  *Dedicação incrível!* ⭐
+                  {% else %}
+                  # 👑 Nível 4: Mestre Planetário
+                  *É uma lenda da poupança de energia.* 🏆
+                  {% endif %}
+                  
+                  ---
+                  **📊 Total de Tarefas Completadas:** {{ tasks }}
+
+              # --- INDICADORES DE ESTATÍSTICAS RPG ---
+              - type: horizontal-stack
+                cards:
+                  - type: gauge
+                    entity: sensor.behaviour_index
+                    name: 💪 Compromisso
+                    min: 0
+                    max: 1
+                    severity:
+                      red: 0
+                      yellow: 0.4
+                      green: 0.8
+                  
+                  - type: gauge
+                    entity: sensor.fatigue_index
+                    name: 😴 Risco de Fadiga
+                    min: 0
+                    max: 1
+                    severity:
+                      green: 0
+                      yellow: 0.5
+                      red: 0.8
+
+              # --- RESUMO DE IMPACTO TOTAL ---
+              - type: glance
+                title: 🌟 Impacto Total
+                columns: 3
+                entities:
+                  - entity: sensor.savings_accumulated
+                    name: 💰 Dinheiro Poupado
+                  - entity: sensor.co2_saved
+                    name: 🌱 CO₂ Evitado
+                  - entity: sensor.weekly_challenge
+                    name: 🎯 Meta Atual
+
+              # --- CONTEXTO "SABIA QUE?" ---
+              - type: markdown
+                content: |
+                  ### 🌍 O Seu Impacto no Mundo Real
+                  {% set trees = state_attr('sensor.co2_saved', 'trees') %}
+                  {% set flights = state_attr('sensor.co2_saved', 'flights') %}
+                  {% set km = state_attr('sensor.co2_saved', 'car_km') %}
+                  
+                  As suas poupanças até agora equivalem a:
+                  * 🌲 Plantar **{{ trees }} árvores maduras**
+                  * ✈️ Compensar **{{ flights }} voos de curta distância**
+                  * 🚗 Evitar **{{ km }} km** conduzidos num carro a gasolina
+
+# ========== TAB 7: DEFINIÇÕES ==========
+- title: Definições
+  path: settings
+  icon: mdi:cog
+  type: panel
+  cards:
+    - type: vertical-stack
+      cards:
+        - type: markdown
+          content: |
+            # ⚙️ Configuração do Sistema
+            Gerir as suas preferências, configurações de custos e ver a saúde do sistema. 🔧
+
+        # --- ESTADO DO SISTEMA (Apenas Leitura) ---
+        - type: entities
+          title: 📊 Estado do Sistema
+          show_header_toggle: false
+          state_color: true
+          entities:
+            - entity: sensor.research_phase
+              name: Fase Atual
+              icon: mdi:flask-outline
+              secondary_info: last-updated
+            
+            - entity: sensor.energy_baseline
+              name: Baseline Aprendida
+              icon: mdi:chart-bell-curve-cumulative
+
+        # --- CONFIGURAÇÃO (Inputs de Utilizador) ---
+        - type: entities
+          title: 🎛️ Preferências & Custos
+          show_header_toggle: false
+          entities:
+            # --- SECÇÃO: METAS ---
+            - type: section
+              label: "Metas de Energia"
+            
+            - type: conditional
+              conditions:
+                - entity: sensor.research_phase
+                  state: baseline
+              row:
+                type: attribute
+                entity: sensor.research_phase
+                attribute: days_remaining
+                name: "Metas Bloqueadas (Calibração)"
+                icon: mdi:lock-clock
+                suffix: "dias restantes"
+
+            - type: conditional
+              conditions:
+                - entity: sensor.research_phase
+                  state: active
+              row:
+                entity: input_number.energy_saving_target
+                name: "Meta de Redução Semanal (%)"
+                icon: mdi:target
+
+            # --- SECÇÃO: ECONÓMICA ---
+            - type: section
+              label: "Custos & Moeda"
+            
+            - entity: input_select.currency
+              name: 💵 Moeda
+              icon: mdi:cash-100
+            
+            - entity: input_number.electricity_price
+              name: Preço da Eletricidade (por kWh)
+              icon: mdi:lightning-bolt-circle
+
+        # --- RODAPÉ DE AJUDA ---
+        - type: markdown
+          content: |
+            ### ℹ️ Guia Rápido
+            * **🔬 Fase Baseline:** O sistema aprende o seu uso normal durante 14 dias.
+            * **📉 Meta de Redução:** Uma vez ativo, o sistema definirá desafios semanais para reduzir o seu consumo nesta percentagem.
+            * **💡 Dicas:** Ajuste as configurações com base nos seus objetivos energéticos e tarifas locais de eletricidade.

@@ -21,6 +21,11 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Add metrics to Devices tab
 - [x] Add presence state in text also, not just an emoji in Devices tab
 - [ ] Translations to Portuguese in the interface
+    - [x] UI translation
+    - [x] Daily tasks translations
+    - [x] Notification translations
+    - [x] Check during baseline
+- [ ] Check notification report when transitioning from baseline to active intervention
 
 
 ### 🎮 Gamification
@@ -54,6 +59,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Test anomaly index with anomaly simulated anomaly scenario
 - [x] Test nudge selection based on current environment and priority
 - [x] Consider if 50 bins of power consumption is enough for intervention (decrease, keep or increase)
+- [ ] AI learning during baseline intervention
 - [ ] Store data needed for analysis/results extraction
 - [ ] Test AI-driven features (notifications, recommendations)
 

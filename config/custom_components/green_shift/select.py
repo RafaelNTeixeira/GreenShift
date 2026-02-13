@@ -28,7 +28,8 @@ class GreenShiftAreaViewSelect(SelectEntity):
     """Select entity to filter the dashboard area view."""
 
     _attr_should_poll = False
-    _attr_name = "Dashboard Area Filter"
+    _attr_has_entity_name = True
+    _attr_translation_key = "area_filter"
     _attr_unique_id = f"{DOMAIN}_area_filter"
     _attr_icon = "mdi:filter-variant"
 
@@ -83,7 +84,8 @@ class GreenShiftNotificationSelect(SelectEntity):
     """Select entity to choose a pending notification ID."""
 
     _attr_should_poll = False
-    _attr_name = "Notification Selector"
+    _attr_has_entity_name = True
+    _attr_translation_key = "notification_selector"
     _attr_unique_id = f"{DOMAIN}_notification_selector"
     _attr_icon = "mdi:message-badge"
 

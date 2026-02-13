@@ -9,7 +9,7 @@
         "title": "Energy Configuration",
         "description": "Please provide your local currency and current electricity cost per kWh to calculate savings.",
         "data": {
-          "currency": "Currency (e.g., EUR, USD)",
+          "currency": "Currency",
           "electricity_price": "Price per kWh"
         }
       },
@@ -44,6 +44,245 @@
       "intervention_info": {
         "title": "Setup Complete",
         "description": "Green Shift is now configured! \n\n**Note:** For the first 14 days, you will only see data consumption displays while the system learns your habits. \n\nOnce the baseline phase is complete, **AI insights and Gamification** features will automatically unlock."
+      }
+    }
+  },
+  "selector": {
+    "currency": {
+      "options": {
+        "EUR": "Euro (€)",
+        "USD": "US Dollar ($)",
+        "GBP": "British Pound (£)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "hardware_sensors": {
+        "name": "Hardware Sensors",
+        "state_attributes": {
+          "power": {
+            "name": "Power Sensors"
+          },
+          "energy": {
+            "name": "Energy Sensors"
+          },
+          "temperature": {
+            "name": "Temperature Sensors"
+          },
+          "humidity": {
+            "name": "Humidity Sensors"
+          },
+          "illuminance": {
+            "name": "Illuminance Sensors"
+          },
+          "occupancy": {
+            "name": "Occupancy Sensors"
+          }
+        }
+      },
+      "research_phase": {
+        "name": "Research Phase",
+        "state": {
+          "baseline": "Baseline Learning",
+          "active": "Active Intervention"
+        }
+      },
+      "energy_baseline": {
+        "name": "Energy Baseline"
+      },
+      "current_consumption": {
+        "name": "Current Consumption"
+      },
+      "current_cost": {
+        "name": "Current Cost per Hour"
+      },
+      "daily_cost": {
+        "name": "Daily Cost"
+      },
+      "daily_co2": {
+        "name": "Daily CO2 Estimate"
+      },
+      "savings_accumulated": {
+        "name": "Accumulated Savings",
+        "state_attributes": {
+          "daily_savings": {
+            "name": "Daily Savings"
+          },
+          "weekly_savings": {
+            "name": "Weekly Savings"
+          },
+          "monthly_savings": {
+            "name": "Monthly Savings"
+          },
+          "savings_percentage": {
+            "name": "Savings Percentage"
+          }
+        }
+      },
+      "co2_saved": {
+        "name": "CO2 Saved",
+        "state_attributes": {
+          "trees_equivalent": {
+            "name": "Trees Equivalent"
+          },
+          "flights_equivalent": {
+            "name": "Flights Equivalent"
+          },
+          "km_equivalent": {
+            "name": "Kilometers Equivalent"
+          }
+        }
+      },
+      "tasks_completed": {
+        "name": "Tasks Completed Today"
+      },
+      "weekly_challenge": {
+        "name": "Weekly Challenge Progress",
+        "state_attributes": {
+          "target_kwh": {
+            "name": "Target kWh"
+          },
+          "current_kwh": {
+            "name": "Current kWh"
+          },
+          "progress_percentage": {
+            "name": "Progress Percentage"
+          },
+          "status": {
+            "name": "Status"
+          }
+        }
+      },
+      "behaviour_index": {
+        "name": "Behavior Index"
+      },
+      "fatigue_index": {
+        "name": "Fatigue Index"
+      },
+      "daily_tasks": {
+        "name": "Daily Tasks",
+        "state_attributes": {
+          "task_1": {
+            "name": "Task 1"
+          },
+          "task_2": {
+            "name": "Task 2"
+          },
+          "task_3": {
+            "name": "Task 3"
+          }
+        }
+      },
+      "active_notifications": {
+        "name": "Active Notifications"
+      },
+      "opportunity_score": {
+        "name": "Opportunity Score"
+      },
+      "anomaly_index": {
+        "name": "Anomaly Index"
+      },
+      "action_mask": {
+        "name": "Action Mask",
+        "state_attributes": {
+          "specific": {
+            "name": "Specific Actions"
+          },
+          "anomaly": {
+            "name": "Anomaly Actions"
+          },
+          "behavioural": {
+            "name": "Behavioral Actions"
+          },
+          "normative": {
+            "name": "Normative Actions"
+          }
+        }
+      }
+    },
+    "select": {
+      "area_filter": {
+        "name": "Dashboard Area Filter",
+        "state": {
+          "all_areas": "All Areas"
+        }
+      },
+      "notification_selector": {
+        "name": "Notification Selector",
+        "state": {
+          "no_pending": "No pending notifications"
+        }
+      }
+    }
+  },
+  "services": {
+    "submit_task_feedback": {
+      "name": "Submit Task Feedback",
+      "description": "Provide feedback on task difficulty to help the AI adjust future challenges.",
+      "fields": {
+        "task_index": {
+          "name": "Task Index",
+          "description": "The index of the task (0 = first task, 1 = second, 2 = third)"
+        },
+        "feedback": {
+          "name": "Feedback",
+          "description": "Your feedback on the task difficulty"
+        }
+      }
+    },
+    "verify_tasks": {
+      "name": "Verify Tasks",
+      "description": "Manually trigger task verification for today's challenges."
+    },
+    "regenerate_tasks": {
+      "name": "Regenerate Tasks",
+      "description": "Force regeneration of today's tasks (admin use only)."
+    },
+    "respond_to_selection": {
+      "name": "Respond to Notification",
+      "description": "Accept or reject the notification currently selected in the dropdown.",
+      "fields": {
+        "decision": {
+          "name": "Decision",
+          "description": "Either accept or reject"
+        }
+      }
+    },
+    "force_ai_process": {
+      "name": "Force AI Processing",
+      "description": "Manually trigger AI model processing (for testing)."
+    },
+    "force_notification": {
+      "name": "Force Notification",
+      "description": "Bypass cooldowns and force a notification decision."
+    },
+    "inject_test_data": {
+      "name": "Inject Test Data",
+      "description": "Generate synthetic historical data for testing. Note: 1 hour = 720 data points.",
+      "fields": {
+        "hours": {
+          "name": "Hours of Data",
+          "description": "How many hours of data to generate (1 hour = 720 readings)"
+        }
+      }
+    },
+    "set_test_indices": {
+      "name": "Set Test Indices",
+      "description": "Manually set AI indices (fatigue, behavior, anomaly) for testing.",
+      "fields": {
+        "fatigue": {
+          "name": "Fatigue Index",
+          "description": "Fatigue index (0.0 to 1.0)"
+        },
+        "behavior": {
+          "name": "Behavior Index",
+          "description": "Behavior index (0.0 to 1.0)"
+        },
+        "anomaly": {
+          "name": "Anomaly Index",
+          "description": "Anomaly index (0.0 to 1.0)"
+        }
       }
     }
   }

@@ -1,0 +1,289 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Bem-vindo ao Green Shift",
+        "description": "O Green Shift combina **Inteligência Artificial** com **Gamificação** para transformar o seu consumo de energia.\n\nA nossa IA aprende os seus hábitos de consumo para criar baselines personalizadas, enquanto os desafios diários o ajudam a poupar energia de forma divertida e interativa.\n\nClique em **Seguinte** para começar a sua jornada."
+      },
+      "settings": {
+        "title": "Configuração de Energia",
+        "description": "Por favor, forneça a sua moeda local e o custo atual de eletricidade por kWh para calcular as poupanças.",
+        "data": {
+          "currency": "Moeda",
+          "electricity_price": "Preço por kWh"
+        }
+      },
+      "sensor_confirmation": {
+        "title": "Validação de Sensores",
+        "description": "Encontrámos **{discovered_count}** sensores compatíveis. Por favor, reveja a classificação abaixo para garantir a precisão dos cálculos.",
+        "data": {
+          "main_total_energy_sensor": "Medidor Principal de Energia (kWh Total)",
+          "main_total_power_sensor": "Medidor Principal de Potência (Watts Total)",
+          "confirmed_energy": "Aparelhos e Tomadas (Energia)",
+          "confirmed_power": "Aparelhos e Tomadas (Potência)",
+          "confirmed_temp": "Sensores de Temperatura",
+          "confirmed_hum": "Sensores de Humidade",
+          "confirmed_lux": "Sensores de Luminosidade",
+          "confirmed_occ": "Sensores de Ocupação"
+        },
+        "data_description": {
+          "main_total_energy_sensor": "Se disponível, selecione o sensor que mede a energia TOTAL acumulada de todo o edifício. Caso contrário, deixe este campo vazio.",
+          "main_total_power_sensor": "Se disponível, selecione o sensor que mede a potência instantânea TOTAL (Watts). Caso contrário, deixe este campo vazio.",
+          "confirmed_energy": "Selecione todos os dispositivos que medem kWh (ex: máquina de lavar, tomadas inteligentes).",
+          "confirmed_power": "Selecione todos os dispositivos que medem Watts instantâneos.",
+          "confirmed_temp": "Selecione os sensores usados para monitorizar a temperatura ambiente interior.",
+          "confirmed_hum": "Selecione os sensores usados para monitorizar a humidade relativa interior.",
+          "confirmed_lux": "Selecione os sensores usados para medir os níveis de luz (Lux).",
+          "confirmed_occ": "Sensores binários usados para determinar se uma divisão está atualmente ocupada."
+        }
+      },
+      "area_assignment": {
+        "title": "Atribuição de Áreas",
+        "description": "Atribua uma área a cada um dos **{count}** sensores detetados abaixo.\n\nOs sensores deixados vazios serão monitorizados globalmente sem atribuição específica de divisão, **mas a IA será incapaz de identificar divisões específicas que desperdiçam energia.**"
+      },
+      "intervention_info": {
+        "title": "Configuração Completa",
+        "description": "O Green Shift está agora configurado!\n\n**Nota:** Durante os primeiros 14 dias, apenas verá visualizações de consumo de dados enquanto o sistema aprende os seus hábitos.\n\nAssim que a fase de baseline estiver completa, as funcionalidades de **Insights da IA e Gamificação** serão desbloqueadas automaticamente."
+      }
+    }
+  },
+  "selector": {
+    "currency": {
+      "options": {
+        "EUR": "Euro (€)",
+        "USD": "Dólar Americano ($)",
+        "GBP": "Libra Esterlina (£)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "hardware_sensors": {
+        "name": "Sensores de Hardware",
+        "state_attributes": {
+          "power": {
+            "name": "Sensores de Potência"
+          },
+          "energy": {
+            "name": "Sensores de Energia"
+          },
+          "temperature": {
+            "name": "Sensores de Temperatura"
+          },
+          "humidity": {
+            "name": "Sensores de Humidade"
+          },
+          "illuminance": {
+            "name": "Sensores de Luminosidade"
+          },
+          "occupancy": {
+            "name": "Sensores de Ocupação"
+          }
+        }
+      },
+      "research_phase": {
+        "name": "Fase de Pesquisa",
+        "state": {
+          "baseline": "Aprendizagem de Baseline",
+          "active": "Intervenção Ativa"
+        }
+      },
+      "energy_baseline": {
+        "name": "Baseline de Energia"
+      },
+      "current_consumption": {
+        "name": "Consumo Atual"
+      },
+      "current_cost": {
+        "name": "Custo Atual por Hora"
+      },
+      "daily_cost": {
+        "name": "Custo Diário"
+      },
+      "daily_co2": {
+        "name": "Estimativa Diária de CO2"
+      },
+      "savings_accumulated": {
+        "name": "Poupanças Acumuladas",
+        "state_attributes": {
+          "daily_savings": {
+            "name": "Poupanças Diárias"
+          },
+          "weekly_savings": {
+            "name": "Poupanças Semanais"
+          },
+          "monthly_savings": {
+            "name": "Poupanças Mensais"
+          },
+          "savings_percentage": {
+            "name": "Percentagem de Poupança"
+          }
+        }
+      },
+      "co2_saved": {
+        "name": "CO2 Poupado",
+        "state_attributes": {
+          "trees_equivalent": {
+            "name": "Equivalente em Árvores"
+          },
+          "flights_equivalent": {
+            "name": "Equivalente em Voos"
+          },
+          "km_equivalent": {
+            "name": "Equivalente em Quilómetros"
+          }
+        }
+      },
+      "tasks_completed": {
+        "name": "Tarefas Concluídas Hoje"
+      },
+      "weekly_challenge": {
+        "name": "Progresso do Desafio Semanal",
+        "state_attributes": {
+          "target_kwh": {
+            "name": "Meta kWh"
+          },
+          "current_kwh": {
+            "name": "kWh Atual"
+          },
+          "progress_percentage": {
+            "name": "Percentagem de Progresso"
+          },
+          "status": {
+            "name": "Estado"
+          }
+        }
+      },
+      "behaviour_index": {
+        "name": "Índice de Comportamento"
+      },
+      "fatigue_index": {
+        "name": "Índice de Fadiga"
+      },
+      "daily_tasks": {
+        "name": "Tarefas Diárias",
+        "state_attributes": {
+          "task_1": {
+            "name": "Tarefa 1"
+          },
+          "task_2": {
+            "name": "Tarefa 2"
+          },
+          "task_3": {
+            "name": "Tarefa 3"
+          }
+        }
+      },
+      "active_notifications": {
+        "name": "Notificações Ativas"
+      },
+      "opportunity_score": {
+        "name": "Pontuação de Oportunidade"
+      },
+      "anomaly_index": {
+        "name": "Índice de Anomalia"
+      },
+      "action_mask": {
+        "name": "Máscara de Ação",
+        "state_attributes": {
+          "specific": {
+            "name": "Ações Específicas"
+          },
+          "anomaly": {
+            "name": "Ações de Anomalia"
+          },
+          "behavioural": {
+            "name": "Ações Comportamentais"
+          },
+          "normative": {
+            "name": "Ações Normativas"
+          }
+        }
+      }
+    },
+    "select": {
+      "area_filter": {
+        "name": "Filtro de Área do Dashboard",
+        "state": {
+          "all_areas": "Todas as Áreas"
+        }
+      },
+      "notification_selector": {
+        "name": "Seletor de Notificações",
+        "state": {
+          "no_pending": "Sem notificações pendentes"
+        }
+      }
+    }
+  },
+  "services": {
+    "submit_task_feedback": {
+      "name": "Submeter Feedback de Tarefa",
+      "description": "Forneça feedback sobre a dificuldade da tarefa para ajudar a IA a ajustar desafios futuros.",
+      "fields": {
+        "task_index": {
+          "name": "Índice da Tarefa",
+          "description": "O índice da tarefa (0 = primeira tarefa, 1 = segunda, 2 = terceira)"
+        },
+        "feedback": {
+          "name": "Feedback",
+          "description": "O seu feedback sobre a dificuldade da tarefa"
+        }
+      }
+    },
+    "verify_tasks": {
+      "name": "Verificar Tarefas",
+      "description": "Acionar manualmente a verificação de tarefas para os desafios de hoje."
+    },
+    "regenerate_tasks": {
+      "name": "Regenerar Tarefas",
+      "description": "Forçar a regeneração das tarefas de hoje (apenas uso de administrador)."
+    },
+    "respond_to_selection": {
+      "name": "Responder a Notificação",
+      "description": "Aceitar ou rejeitar a notificação atualmente selecionada no menu suspenso.",
+      "fields": {
+        "decision": {
+          "name": "Decisão",
+          "description": "Aceitar ou rejeitar"
+        }
+      }
+    },
+    "force_ai_process": {
+      "name": "Forçar Processamento da IA",
+      "description": "Acionar manualmente o processamento do modelo de IA (para testes)."
+    },
+    "force_notification": {
+      "name": "Forçar Notificação",
+      "description": "Ignorar cooldowns e forçar uma decisão de notificação."
+    },
+    "inject_test_data": {
+      "name": "Injetar Dados de Teste",
+      "description": "Gerar dados históricos sintéticos para testes. Nota: 1 hora = 720 pontos de dados.",
+      "fields": {
+        "hours": {
+          "name": "Horas de Dados",
+          "description": "Quantas horas de dados gerar (1 hora = 720 leituras)"
+        }
+      }
+    },
+    "set_test_indices": {
+      "name": "Definir Índices de Teste",
+      "description": "Definir manualmente os índices de IA (fadiga, comportamento, anomalia) para testes.",
+      "fields": {
+        "fatigue": {
+          "name": "Índice de Fadiga",
+          "description": "Índice de fadiga (0.0 a 1.0)"
+        },
+        "behavior": {
+          "name": "Índice de Comportamento",
+          "description": "Índice de comportamento (0.0 a 1.0)"
+        },
+        "anomaly": {
+          "name": "Índice de Anomalia",
+          "description": "Índice de anomalia (0.0 a 1.0)"
+        }
+      }
+    }
+  }
+}

@@ -9,6 +9,11 @@ from typing import List, Dict, Optional, Tuple
 from homeassistant.core import HomeAssistant
 
 from .const import TASK_GENERATION_TIME
+from .translations_runtime import (
+    get_language,
+    get_task_templates,
+    get_difficulty_display
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -138,15 +143,24 @@ class TaskManager:
         reduction = base_reduction * self.difficulty_multipliers[difficulty]
         target_temp = round(baseline_temp - reduction, 1)
         
+        # Get user's language and templates
+        language = get_language(self.hass)
+        templates = get_task_templates(language)
+        template = templates['temperature_reduction']
+        
         return {
             'task_id': f"temp_{datetime.now().strftime('%Y%m%d')}",
             'task_type': 'temperature_reduction',
-            'title': f'Reduce Temperature by {reduction:.1f}°C',
-            'description': f'Keep average temperature below {target_temp:.1f}°C today (current avg: {baseline_temp:.1f}°C)',
+            'title': template['title'].format(reduction=reduction),
+            'description': template['description'].format(
+                target_temp=target_temp,
+                baseline_temp=round(baseline_temp, 1)
+            ),
             'target_value': target_temp,
             'target_unit': '°C',
             'baseline_value': round(baseline_temp, 1),
             'difficulty_level': difficulty,
+            'difficulty_display': get_difficulty_display(difficulty, language),
             'area_name': None,  # Global task
         }
     
@@ -168,15 +182,24 @@ class TaskManager:
         reduction_pct = base_reduction_pct * self.difficulty_multipliers[difficulty]
         target_power = round(baseline_power * (1 - reduction_pct / 100))
         
+        # Get user's language and templates
+        language = get_language(self.hass)
+        templates = get_task_templates(language)
+        template = templates['power_reduction']
+        
         return {
             'task_id': f"power_{datetime.now().strftime('%Y%m%d')}",
             'task_type': 'power_reduction',
-            'title': f'Reduce Power by {reduction_pct:.1f}%',
-            'description': f'Keep average power below {target_power:.0f}W today (7-day avg: {round(baseline_power):.0f}W)',
+            'title': template['title'].format(reduction_pct=reduction_pct),
+            'description': template['description'].format(
+                target_power=target_power,
+                baseline_power=round(baseline_power)
+            ),
             'target_value': target_power,
             'target_unit': 'W',
             'baseline_value': round(baseline_power),
             'difficulty_level': difficulty,
+            'difficulty_display': get_difficulty_display(difficulty, language),
             'area_name': None,
         }
     
@@ -201,15 +224,24 @@ class TaskManager:
         reduction_pct = base_reduction_pct * self.difficulty_multipliers[difficulty]
         target_power = round(baseline_night_power * (1 - reduction_pct / 100))
         
+        # Get user's language and templates
+        language = get_language(self.hass)
+        templates = get_task_templates(language)
+        template = templates['standby_reduction']
+        
         return {
             'task_id': f"standby_{datetime.now().strftime('%Y%m%d')}",
             'task_type': 'standby_reduction',
-            'title': f'Reduce Night Power by {reduction_pct:.1f}%',
-            'description': f'Keep power below {target_power:.0f}W during 00:00-06:00 (avg: {round(baseline_night_power):.0f}W)',
+            'title': template['title'].format(reduction_pct=reduction_pct),
+            'description': template['description'].format(
+                target_power=target_power,
+                baseline_power=round(baseline_night_power)
+            ),
             'target_value': target_power,
             'target_unit': 'W',
             'baseline_value': round(baseline_night_power),
             'difficulty_level': difficulty,
+            'difficulty_display': get_difficulty_display(difficulty, language),
             'area_name': None,
         }
     
@@ -234,15 +266,21 @@ class TaskManager:
         reduction_pct = base_reduction_pct * self.difficulty_multipliers[difficulty]
         target_power = round(baseline_day_power * (1 - reduction_pct / 100))
         
+        # Get user's language and templates
+        language = get_language(self.hass)
+        templates = get_task_templates(language)
+        template = templates['daylight_usage']
+        
         return {
             'task_id': f"daylight_{datetime.now().strftime('%Y%m%d')}",
             'task_type': 'daylight_usage',
-            'title': f'Use Natural Light ({reduction_pct:.1f}% less power)',
-            'description': f'Keep daytime power (08:00-17:00) below {target_power:.0f}W by using natural light',
+            'title': template['title'].format(reduction_pct=reduction_pct),
+            'description': template['description'].format(target_power=target_power),
             'target_value': target_power,
             'target_unit': 'W',
             'baseline_value': round(baseline_day_power),
             'difficulty_level': difficulty,
+            'difficulty_display': get_difficulty_display(difficulty, language),
             'area_name': None,
         }
     
@@ -275,15 +313,24 @@ class TaskManager:
         reduction_pct = base_reduction_pct * self.difficulty_multipliers[difficulty]
         target_power = round(max_power * (1 - reduction_pct / 100))
         
+        # Get user's language and templates
+        language = get_language(self.hass)
+        templates = get_task_templates(language)
+        template = templates['unoccupied_power']
+        
         return {
             'task_id': f"unoccupied_{datetime.now().strftime('%Y%m%d')}",
             'task_type': 'unoccupied_power',
-            'title': f'Turn Off Devices in {target_area}',
-            'description': f'Reduce power in {target_area} to below {target_power:.0f}W when unoccupied',
+            'title': template['title'].format(target_area=target_area),
+            'description': template['description'].format(
+                target_area=target_area,
+                target_power=target_power
+            ),
             'target_value': target_power,
             'target_unit': 'W',
             'baseline_value': round(max_power),
             'difficulty_level': difficulty,
+            'difficulty_display': get_difficulty_display(difficulty, language),
             'area_name': target_area,
         }
     
@@ -313,15 +360,25 @@ class TaskManager:
         reduction_pct = base_reduction_pct * self.difficulty_multipliers[difficulty]
         target_power = round(peak_power * (1 - reduction_pct / 100))
         
+        # Get user's language and templates
+        language = get_language(self.hass)
+        templates = get_task_templates(language)
+        template = templates['peak_avoidance']
+        
         return {
             'task_id': f"peak_{datetime.now().strftime('%Y%m%d')}",
             'task_type': 'peak_avoidance',
-            'title': f'Reduce Peak Hour Usage ({peak_hour:02d}:00)',
-            'description': f'Keep power below {target_power:.0f}W during {peak_hour:02d}:00-{(peak_hour+1) % 24:02d}:00',
+            'title': template['title'].format(peak_hour=peak_hour),
+            'description': template['description'].format(
+                target_power=target_power,
+                peak_hour=peak_hour,
+                next_hour=(peak_hour+1) % 24
+            ),
             'target_value': target_power,
             'target_unit': 'W',
             'baseline_value': round(peak_power),
             'difficulty_level': difficulty,
+            'difficulty_display': get_difficulty_display(difficulty, language),
             'area_name': None,
         }
     

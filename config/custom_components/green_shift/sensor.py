@@ -7,7 +7,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN, GS_UPDATE_SIGNAL, GS_AI_UPDATE_SIGNAL, BASELINE_DAYS, UPDATE_INTERVAL_SECONDS, PHASE_BASELINE
-
 from .helpers import get_normalized_value, get_entity_area, get_environmental_impact
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,7 +50,8 @@ async def async_setup_entry(
 
 class GreenShiftBaseSensor(SensorEntity):
     """Base class to handle updates."""
-    _attr_should_poll = False 
+    _attr_should_poll = False
+    _attr_has_entity_name = True
 
     async def async_added_to_hass(self):
         """Register the listener when the entity is added to HA."""
@@ -84,7 +84,8 @@ class GreenShiftBaseSensor(SensorEntity):
 
 class GreenShiftAISensor(SensorEntity):
     """Class to handle AI virtual sensor updates."""
-    _attr_should_poll = False 
+    _attr_should_poll = False
+    _attr_has_entity_name = True
 
     async def async_added_to_hass(self):
         """Register the listener when the entity is added to HA."""
@@ -123,7 +124,7 @@ class HardwareSensorsSensor(GreenShiftBaseSensor):
         self._discovered = discovered
         self.main_energy_sensor = config_entry.data.get("main_total_energy_sensor")
         self.main_power_sensor = config_entry.data.get("main_total_power_sensor")
-        self._attr_name = "Hardware Sensors"
+        self._attr_translation_key = "hardware_sensors"
         self._attr_unique_id = f"{DOMAIN}_hardware_sensors"
         self._attr_icon = "mdi:database"
 
@@ -176,7 +177,7 @@ class ResearchPhaseSensor(GreenShiftAISensor):
     
     def __init__(self, agent):
         self._agent = agent
-        self._attr_name = "Research Phase"
+        self._attr_translation_key = "research_phase"
         self._attr_unique_id = f"{DOMAIN}_research_phase"
         self._attr_icon = "mdi:flask"
     
@@ -200,7 +201,7 @@ class EnergyBaselineSensor(GreenShiftAISensor):
     
     def __init__(self, agent):
         self._agent = agent
-        self._attr_name = "Energy Baseline"
+        self._attr_translation_key = "energy_baseline"
         self._attr_unique_id = f"{DOMAIN}_baseline"
         self._attr_unit_of_measurement = "W"
         self._attr_device_class = "power"
@@ -221,7 +222,7 @@ class CurrentConsumptionSensor(GreenShiftBaseSensor):
     
     def __init__(self, collector):
         self._collector = collector
-        self._attr_name = "Current Consumption"
+        self._attr_translation_key = "current_consumption"
         self._attr_unique_id = f"{DOMAIN}_current"
         self._attr_unit_of_measurement = "W"
         self._attr_device_class = "power"
@@ -241,7 +242,7 @@ class CurrentCostConsumptionSensor(GreenShiftBaseSensor):
     def __init__(self, hass, collector):
         self.hass = hass
         self._collector = collector
-        self._attr_name = "Current Hourly Cost"
+        self._attr_translation_key = "current_cost"
         self._attr_unique_id = f"{DOMAIN}_current_cost"
         self._attr_unit_of_measurement = "EUR/h"
         self._attr_icon = "mdi:cash-clock"
@@ -284,7 +285,7 @@ class DailyCostConsumptionSensor(GreenShiftBaseSensor):
     def __init__(self, hass, collector):
         self.hass = hass
         self._collector = collector
-        self._attr_name = "Daily Cost"
+        self._attr_translation_key = "daily_cost"
         self._attr_unique_id = f"{DOMAIN}_daily_cost"
         self._attr_unit_of_measurement = "EUR"
         self._attr_icon = "mdi:cash-multiple"
@@ -330,7 +331,7 @@ class DailyCO2EstimateSensor(GreenShiftBaseSensor):
     def __init__(self, hass, collector):
         self.hass = hass
         self._collector = collector
-        self._attr_name = "Daily CO2 Estimate"
+        self._attr_translation_key = "daily_co2"
         self._attr_unique_id = f"{DOMAIN}_daily_co2"
         self._attr_unit_of_measurement = "kg"
         self._attr_icon = "mdi:leaf-circle"
@@ -366,7 +367,7 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
     def __init__(self, agent, collector):
         self._agent = agent
         self._collector = collector
-        self._attr_name = "Savings Accumulated"
+        self._attr_translation_key = "savings_accumulated"
         self._attr_unique_id = f"{DOMAIN}_savings"
         self._attr_icon = "mdi:cash-check"
         self._attr_native_value = 0
@@ -435,7 +436,7 @@ class CO2SavedSensor(GreenShiftAISensor):
     def __init__(self, agent, collector):
         self._agent = agent
         self._collector = collector
-        self._attr_name = "CO2 Saved"
+        self._attr_translation_key = "co2_saved"
         self._attr_unique_id = f"{DOMAIN}_co2"
         self._attr_unit_of_measurement = "kg"
         self._attr_icon = "mdi:leaf"
@@ -475,7 +476,7 @@ class TasksCompletedSensor(GreenShiftAISensor):
     
     def __init__(self, storage):
         self._storage = storage
-        self._attr_name = "Tasks Completed (30 days)"
+        self._attr_translation_key = "tasks_completed"
         self._attr_unique_id = f"{DOMAIN}_tasks"
         self._attr_icon = "mdi:check-circle"
         self._completed_count = 0
@@ -493,7 +494,7 @@ class WeeklyChallengeSensor(GreenShiftAISensor):
     
     def __init__(self, agent):
         self._agent = agent
-        self._attr_name = "Weekly Challenge"
+        self._attr_translation_key = "weekly_challenge"
         self._attr_unique_id = f"{DOMAIN}_weekly_challenge"
         self._attr_icon = "mdi:flag-checkered"
         self._attr_unit_of_measurement = "%"
@@ -537,7 +538,7 @@ class BehaviourIndexSensor(GreenShiftAISensor):
     
     def __init__(self, agent):
         self._agent = agent
-        self._attr_name = "Behaviour Index"
+        self._attr_translation_key = "behaviour_index"
         self._attr_unique_id = f"{DOMAIN}_behaviour"
         self._attr_icon = "mdi:account-check"
     
@@ -551,7 +552,7 @@ class FatigueIndexSensor(GreenShiftAISensor):
     
     def __init__(self, agent):
         self._agent = agent
-        self._attr_name = "Fatigue Index"
+        self._attr_translation_key = "fatigue_index"
         self._attr_unique_id = f"{DOMAIN}_fatigue"
         self._attr_icon = "mdi:alert-circle"
     
@@ -567,7 +568,7 @@ class DailyTasksSensor(GreenShiftAISensor):
     
     def __init__(self, storage):
         self._storage = storage
-        self._attr_name = "Daily Tasks"
+        self._attr_translation_key = "daily_tasks"
         self._attr_unique_id = f"{DOMAIN}_daily_tasks"
         self._attr_icon = "mdi:clipboard-check-outline"
         self._tasks = []
@@ -679,7 +680,7 @@ class ActiveNotificationsSensor(GreenShiftAISensor):
     
     def __init__(self, agent):
         self._agent = agent
-        self._attr_name = "Active Notifications"
+        self._attr_translation_key = "active_notifications"
         self._attr_unique_id = f"{DOMAIN}_active_notifications"
         self._attr_icon = "mdi:bell-ring"
     
@@ -782,14 +783,13 @@ class ActiveNotificationsSensor(GreenShiftAISensor):
 class OpportunityScoreSensor(GreenShiftAISensor):
     """Debug sensor showing current opportunity score for notifications."""
     
-    _attr_name = "AI Opportunity Score"
-    _attr_unique_id = f"{DOMAIN}_opportunity_score"
-    _attr_icon = "mdi:bullseye-arrow"
-    _attr_native_unit_of_measurement = None
-    
     def __init__(self, agent):
         super().__init__()
         self._agent = agent
+        self._attr_translation_key = "opportunity_score"
+        self._attr_unique_id = f"{DOMAIN}_opportunity_score"
+        self._attr_icon = "mdi:bullseye-arrow"
+        self._attr_native_unit_of_measurement = None
     
     async def _async_update_state(self):
         try:
@@ -811,14 +811,13 @@ class OpportunityScoreSensor(GreenShiftAISensor):
 class AnomalyIndexSensor(GreenShiftAISensor):
     """Debug sensor showing current anomaly index."""
     
-    _attr_name = "AI Anomaly Index"
-    _attr_unique_id = f"{DOMAIN}_anomaly_index"
-    _attr_icon = "mdi:alert-circle-outline"
-    _attr_native_unit_of_measurement = None
-    
     def __init__(self, agent):
         super().__init__()
         self._agent = agent
+        self._attr_translation_key = "anomaly_index"
+        self._attr_unique_id = f"{DOMAIN}_anomaly_index"
+        self._attr_icon = "mdi:alert-circle-outline"
+        self._attr_native_unit_of_measurement = None
     
     async def _async_update_state(self):
         self._attr_native_value = round(self._agent.anomaly_index, 3)
@@ -838,14 +837,13 @@ class AnomalyIndexSensor(GreenShiftAISensor):
 class ActionMaskSensor(GreenShiftAISensor):
     """Debug sensor showing current action mask."""
     
-    _attr_name = "AI Action Mask"
-    _attr_unique_id = f"{DOMAIN}_action_mask"
-    _attr_icon = "mdi:filter-variant"
-    _attr_native_unit_of_measurement = None
-    
     def __init__(self, agent):
         super().__init__()
         self._agent = agent
+        self._attr_translation_key = "action_mask"
+        self._attr_unique_id = f"{DOMAIN}_action_mask"
+        self._attr_icon = "mdi:filter-variant"
+        self._attr_native_unit_of_measurement = None
     
     async def _async_update_state(self):
         if self._agent.action_mask is None:

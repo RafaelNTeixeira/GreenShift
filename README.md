@@ -15,6 +15,14 @@
 - 😊 **Feedback Integration**: Learns from your reactions to improve future recommendations
 - ⚙️ **Zero Configuration**: Helpers and dashboard created automatically
 - 🎯 **Phased Approach**: 14-day learning phase, then active engagement
+- 🌍 **Multilingual**: Full support for English and Portuguese
+
+### Supported Languages
+
+Green Shift is **fully translated** including dynamic content (AI notifications and tasks):
+
+- 🇬🇧 **English** - Default
+- 🇵🇹 **Português** - Complete translation ([Quick guide](./TRADUCAO_RAPIDA.md))
 
 ---
 

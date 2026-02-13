@@ -1,0 +1,13 @@
+# Input Numbers
+input_number.energy_saving_target:
+  friendly_name: "Savings Target (%)"
+
+input_number.electricity_price:
+  friendly_name: "Electricity Price (€/kWh)"
+
+# Input Selects  
+input_select.currency:
+  friendly_name: "Currency"
+
+input_select.task_difficulty:
+  friendly_name: "Task Difficulty"

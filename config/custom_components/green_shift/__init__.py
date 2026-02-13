@@ -574,36 +574,43 @@ async def async_setup_services(hass: HomeAssistant):
 
 async def trigger_phase_transition_notification(hass, agent, collector):
     """Calculates baseline summary and sends the transition notification."""
+    from .translations_runtime import get_language, get_phase_transition_template
+    
+    # Get user's language
+    language = get_language(hass)
+    
     # Fetch data from collector
     summary = await collector.calculate_baseline_summary()
     impact = summary.get("impact", {})
     target = summary.get("target", 15)
 
-    # Build the message
-    notification_msg = (
-        f"### Baseline Phase Complete! 🎉\n\n"
-        f"**Daily Average:** {summary['avg_daily_kwh']} kWh\n"
-        f"**Peak Usage:** {summary['peak_time']}\n"
-    )
-
+    # Get translated template
+    template = get_phase_transition_template(language)
+    
+    # Build top_area section if available
+    top_area_section = ""
     if summary.get('top_area'):
-        notification_msg += f"**Main Area:** {summary['top_area']}\n"
+        if language == "pt":
+            top_area_section = f"**Área Principal:** {summary['top_area']}\n"
+        else:
+            top_area_section = f"**Main Area:** {summary['top_area']}\n"
 
-    notification_msg += (
-        f"\n**Target:** We've set a **{target}%** reduction goal for you (you can change this in the Settings tab)\n"
-        f"\n---\n"
-        f"### Your Potential Impact 🌍\n"
-        f"By hitting your **{target}%** reduction goal, in one year you would save:\n"
-        f"* **{impact.get('co2_kg', 0)} kg** of CO₂\n"
-        f"* The equivalent of planting **{impact.get('trees', 0)}** mature trees\n"
-        f"* The carbon offset of **{impact.get('flights', 0)}** short-haul flights\n"
+    # Format the message with data
+    notification_msg = template["message"].format(
+        avg_daily_kwh=summary['avg_daily_kwh'],
+        peak_time=summary['peak_time'],
+        top_area_section=top_area_section,
+        target=target,
+        co2_kg=impact.get('co2_kg', 0),
+        trees=impact.get('trees', 0),
+        flights=impact.get('flights', 0)
     )
 
     # Send the notification 
     await hass.services.async_call(
         "persistent_notification", "create",
         {
-            "title": "Green Shift: Action Phase Started",
+            "title": template["title"],
             "message": notification_msg,
             "notification_id": "gs_phase_transition"
         }
