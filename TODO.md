@@ -16,11 +16,11 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Improve Monitored Devices tab
 - [x] Improve Dashboard tab
 - [x] Add emojis to places where they are missing to make screen more appealing
-- [x] Add extra attributes to money saved in Profile tab?
+- [x] Add extra attributes to money saved in Profile tab
 - [x] Update guide from Settings tab
 - [x] Add metrics to Devices tab
 - [x] Add presence state in text also, not just an emoji in Devices tab
-- [ ] Translations to Portuguese in the interface
+- [x] Translations to Portuguese in the interface
     - [x] UI translation
     - [x] Daily tasks translations
     - [x] Notification translations
@@ -49,16 +49,15 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Improve anomaly index
 - [x] Develop behaviour index
 - [x] Develop fatigue index
-- [x] Set default MAX_NOTIFICATIONS_PER_DAY value to 5
 - [x] Check why it is still sending notifications when notification count exceeds MAX_NOTIFICATIONS_PER_DAY
 - [x] Add mechanism that does not use notification timeouts. Must submit notification when most needed and when fatigue is not high.
 - [x] Check if indices are updating during the intervention
 - [x] Check adaptive difficulty updates
-- [x] Q-table in JSON with duplicate key entries
+- [x] Fix Q-table in JSON with duplicate key entries
 - [x] Check notification templates that make more sense
 - [x] Test anomaly index with anomaly simulated anomaly scenario
 - [x] Test nudge selection based on current environment and priority
-- [x] Consider if 50 bins of power consumption is enough for intervention (decrease, keep or increase)
+- [x] Consider if 50 bins of power consumption is enough for intervention (decrease, keep or increase) - increased to 100
 - [ ] AI learning during baseline intervention
 - [ ] Store data needed for analysis/results extraction
 - [ ] Test AI-driven features (notifications, recommendations)
@@ -68,6 +67,6 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Build tables required for analysis extraction
 - [x] Store data required for analysis extraction
 - [ ] Build backup daily to prevent data loss
-- [ ] Check query 13
+- [x] Check query 13
  
 ---
