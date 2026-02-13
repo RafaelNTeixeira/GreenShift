@@ -282,7 +282,7 @@ WHERE action_name IS NOT NULL
 GROUP BY action_name
 ORDER BY times_selected DESC;
 
--- Action constraint analysis (NEW)
+-- Action constraint analysis
 SELECT 
     DATE(timestamp, 'unixepoch') as date,
     COUNT(*) as total_decisions,
@@ -293,7 +293,7 @@ WHERE action_mask IS NOT NULL
 GROUP BY date;
 ```
 
-### 5. Weekly Challenge Performance (NEW)
+### 5. Weekly Challenge Performance
 
 ```sql
 -- Weekly challenge success rate
@@ -335,10 +335,10 @@ GROUP BY action_name;
 
 ## Data Export
 
-All research data can be exported to CSV using the built-in `export_research_data()` method:
+All research data can be exported to CSV using the built-in `export_research` file:
 
 ```python
-await storage.export_research_data("./research_export/")
+python export_research.py ./research_export
 ```
 
 This creates 7 CSV files:

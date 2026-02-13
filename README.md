@@ -15,14 +15,35 @@
 - 😊 **Feedback Integration**: Learns from your reactions to improve future recommendations
 - ⚙️ **Zero Configuration**: Helpers and dashboard created automatically
 - 🎯 **Phased Approach**: 14-day learning phase, then active engagement
-- 🌍 **Multilingual**: Full support for English and Portuguese
+- 🌍 **Multilingual**: Integration for different languages
 
 ### Supported Languages
 
 Green Shift is **fully translated** including dynamic content (AI notifications and tasks):
 
 - 🇬🇧 **English** - Default
-- 🇵🇹 **Português** - Complete translation ([Quick guide](./TRADUCAO_RAPIDA.md))
+- 🇵🇹 **Português** - Complete translation
+
+**To switch languages:**
+
+1. **Update your Home Assistant profile**: Settings → Profile → Language → Select your language
+2. **Update [`configuration.yaml`](./config/configuration.yaml)**:
+   ```yaml
+   homeassistant:
+     customize: !include customize_pt.yaml  # or customize_en.yaml
+   
+   lovelace:
+     mode: yaml
+     dashboards:
+       lovelace-green-shift:
+         mode: yaml
+         filename: ui-lovelace-pt.yaml  # or ui-lovelace-en.yaml
+         title: Green Shift
+         icon: mdi:leaf
+   ```
+3. **Restart Home Assistant**
+
+📚 **[Translation Guide](./docs/TRANSLATIONS.md)** - Help us add more languages!
 
 ---
 
@@ -324,13 +345,24 @@ Configure these parameters:
 
 ---
 
+**Made with 💚 for energy conservation and climate action**
+
+---
+
 ## 🤝 Contributing
 
-This is an academic research project. For issues, feature requests or improvements:
+We welcome contributions! Whether you want to:
+- 🌍 Add translations for your language
+- 🐛 Report bugs or suggest features
+- 💻 Submit code improvements
+- 📚 Improve documentation
 
-1. **Report Issues**: Open a GitHub issue with detailed logs
-2. **Submit Changes**: Create a pull request with clear descriptions
-3. **Contact**: rafael2003t.18@gmail.com
+**See [CONTRIBUTING.md](./docs/CONTRIBUTING.md) for detailed guidelines.**
+
+Quick links:
+- **Report Issues**: [GitHub Issues](https://github.com/RafaelNTeixeira/GreenShift/issues)
+- **Translation Guide**: [docs/TRANSLATIONS.md](./docs/TRANSLATIONS.md)
+- **Contact**: rafael2003t.18@gmail.com
 
 ---
 

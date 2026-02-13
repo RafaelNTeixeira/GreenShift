@@ -26,7 +26,7 @@ Green Shift provides **complete multilingual support** with two translation syst
 Home Assistant's translation system is **automatic** and requires **no language picker** in the config flow. The system works as follows:
 
 1. **User's Language**: Home Assistant detects the user's preferred language from their profile settings (Settings → Profile → Language)
-2. **Automatic Loading**: HA automatically loads the corresponding translation file (e.g., `en.json`, `pt.json`, `es.json`)
+2. **Automatic Loading**: HA automatically loads the corresponding translation file (e.g., `en.json`, `pt.json`)
 3. **Fallback**: If a translation doesn't exist for the user's language, it falls back to English (`en.json`)
 
 ## Supported Languages
@@ -38,7 +38,7 @@ Currently, Green Shift supports:
 
 ## Translation Structure
 
-Translation files are located in: `config/custom_components/green_shift/translations/`
+Translation files are located in: [`config/custom_components/green_shift/translations/`](../config/custom_components/green_shift/translations/)
 
 Each translation file follows this structure:
 
@@ -61,12 +61,12 @@ Each translation file follows this structure:
 
 ## Runtime Translations (Dynamic Content)
 
-Dynamic content like **AI notifications** and **daily tasks** cannot use static JSON files because they are generated at runtime with variable data. For these, we use a Python module: `translations_runtime.py`
+Dynamic content like **AI notifications** and **daily tasks** cannot use static JSON files because they are generated at runtime with variable data. For these, we use a Python module: [`translations_runtime.py`](../config/custom_components/green_shift/translations_runtime.py)
 
 ### How Runtime Translations Work
 
 1. **Language Detection**: System reads user's language from `hass.config.language`
-2. **Template Selection**: Chooses appropriate template dictionary (`en`, `pt`, or `es`)
+2. **Template Selection**: Chooses appropriate template dictionary (`en`, `pt`)
 3. **Dynamic Formatting**: Fills templates with real-time data (power values, device names, etc.)
 
 ### Example: AI Notification
@@ -114,7 +114,7 @@ message = templates["specific"][0]["message"].format(
 
 ### Adding Runtime Translations for New Language
 
-Edit `translations_runtime.py` and add your language code to:
+Edit [`translations_runtime.py`](../config/custom_components/green_shift/translations_runtime.py) and add your language code to:
 1. `NOTIFICATION_TEMPLATES["xx"]` - All notification templates
 2. `TASK_TEMPLATES["xx"]` - All task title/description templates
 3. `DIFFICULTY_DISPLAY["xx"]` - Difficulty level names
@@ -128,7 +128,7 @@ To add support for a new language (e.g., French):
 
 ### 1. Create the Translation File
 
-Create a new file: `translations/fr.json`
+Create a new file in [`config/custom_components/green_shift/translations/`](../config/custom_components/green_shift/translations/): `translations/fr.json`
 
 Use the ISO 639-1 language code:
 - French: `fr`
@@ -139,10 +139,10 @@ Use the ISO 639-1 language code:
 
 ### 2. Copy the English Template
 
-Start by copying `en.json` and translating all strings:
+Start by copying [`en.json`](../config/custom_components/green_shift/translations/en.json) and translating all strings:
 
 ```bash
-cp translations/en.json translations/fr.json
+cp config/custom_components/green_shift/translations/en.json config/custom_components/green_shift/translations/fr.json
 ```
 
 ### 3. Translate All Strings
@@ -193,7 +193,7 @@ Input helpers (like `input_number.energy_saving_target` and `input_select.curren
 
 ### Configuration
 
-Edit your `configuration.yaml` and choose **ONE** customize file:
+Edit your [`configuration.yaml`](../config/configuration.yaml) and choose **ONE** customize file:
 
 **For English:**
 ```yaml
@@ -207,13 +207,11 @@ homeassistant:
   customize: !include customize_pt.yaml
 ```
 
-**For Spanish:**
-```yaml
-homeassistant:
-  customize: !include customize_es.yaml
-```
-
 ⚠️ **Important**: You can only have **ONE** active `customize:` line. Comment out the others with `#`.
+
+**Available customize files:**
+- [`customize_en.yaml`](../config/customize_en.yaml) - English helper names
+- [`customize_pt.yaml`](../config/customize_pt.yaml) - Portuguese helper names
 
 ### Customize File Structure
 
@@ -243,117 +241,31 @@ The customize files translate:
 - Task Difficulty selector
 
 **Note**: After adding or changing the customize configuration, restart Home Assistant for changes to take effect.
-
-## Translating Lovelace UI
-
-The Lovelace dashboard (`ui-lovelace.yaml`) contains hardcoded text that needs manual translation. 
+[`ui-lovelace-en.yaml`](../config/ui-lovelace-en.yaml)) contains hardcoded text that needs manual translation. 
 
 ### ✅ Available Translated Dashboards
 
-- **English:** `ui-lovelace.yaml` (original)
-- **Portuguese:** `ui-lovelace-pt.yaml` ✅ **READY TO USE**
+- **English:** [`ui-lovelace-en.yaml`](../config/ui-lovelace-en.yaml) (original)
+- **Portuguese:** [`ui-lovelace-pt.yaml`](../config/ui-lovelace-pt.yaml)
 
-### Quick Setup - Use Portuguese Dashboard
+### Quick Setup
 
-**Option 1: Replace Main Dashboard (Simplest)**
-```bash
-# Backup English version
-mv config/ui-lovelace.yaml config/ui-lovelace-en.yaml
+Update your [`configuration.yaml`](../config/configuration.yaml) to select the dashboard language:
 
-# Use Portuguese version
-mv config/ui-lovelace-pt.yaml config/ui-lovelace.yaml
-
-# Restart Home Assistant
-```
-
-**Option 2: Multiple Dashboards in Sidebar**
-
-Add to your `configuration.yaml`:
 ```yaml
 lovelace:
   mode: yaml
   dashboards:
-    lovelace-pt:
+    lovelace-green-shift:
       mode: yaml
-      title: Green Shift (Português)
+      filename: ui-lovelace-pt.yaml  # Change to ui-lovelace-en.yaml for English
+      title: Green Shift
       icon: mdi:leaf
-      show_in_sidebar: true
-      filename: ui-lovelace-pt.yaml
-    lovelace-en:
-      mode: yaml
-      title: Green Shift (English)
-      icon: mdi:leaf
-      show_in_sidebar: true
-      filename: ui-lovelace.yaml
-```
+``
 
-This allows you to switch between languages from the sidebar.
+- **English:** `ui-lovelace.yaml` (original)
+- **Portuguese:** `ui-lovelace-pt.yaml`
 
-### Create Additional Language Versions
-
-1. **Create Language-Specific YAML Files**
-   - Copy `ui-lovelace.yaml` to `ui-lovelace-es.yaml` (for Spanish)
-
-2. **Translate All Text Content**
-   - Translate markdown headers (e.g., "# 🔌 Monitored Devices" → "# 🔌 Dispositivos Monitorizados")
-   - Translate card titles and descriptions
-   - Translate labels and helper text
-   - Keep entity IDs unchanged (e.g., `sensor.current_consumption`)
-
-3. **Add to Configuration**
-   - Add new dashboard to `configuration.yaml` as shown in Option 2
-   
-   In your `configuration.yaml`:
-   ```yaml
-   lovelace:
-     mode: yaml
-     resources: []
-     dashboards:
-       green-shift-en:
-         mode: yaml
-         filename: ui-lovelace.yaml
-         title: Green Shift (English)
-         icon: mdi:leaf
-       green-shift-pt:
-         mode: yaml
-         filename: ui-lovelace-pt.yaml
-         title: Green Shift (Português)
-         icon: mdi:leaf
-       green-shift-es:
-         mode: yaml
-         filename: ui-lovelace-es.yaml
-         title: Green Shift (Español)
-         icon: mdi:leaf
-   ```
-
-4. **Select Your Preferred Dashboard**
-   - Users can switch between dashboards from the sidebar
-
-### Example Translations
-
-**English:**
-```yaml
-- type: markdown
-  content: |
-    # 📊 Dashboard 
-    Analyze your energy consumption patterns
-```
-
-**Portuguese:**
-```yaml
-- type: markdown
-  content: |
-    # 📊 Dashboard 
-    Analise os seus padrões de consumo de energia
-```
-
-**Spanish:**
-```yaml
-- type: markdown
-  content: |
-    # 📊 Dashboard 
-    Analiza tus patrones de consumo de energía
-```
 
 ## Architecture Details
 
@@ -434,6 +346,7 @@ If you'd like to contribute a new language:
 - **Restart required**: Restart HA after adding new translation files
 - **Cache**: Clear browser cache
 - **File name**: Ensure you used the correct ISO 639-1 code
+- **Configuration**: `configuration.yaml` not linked with correct translation files
 
 ### Partial Translations
 - If some text remains in English, check for:
@@ -445,10 +358,7 @@ If you'd like to contribute a new language:
 - Entity translation requires `_attr_translation_key` + `_attr_has_entity_name = True`
 - Without these, entities will show the hardcoded `_attr_name` value
 
-## Quick Start Guides
-
-- **🇵🇹 Portuguese Users**: See [TRADUCAO_RAPIDA.md](./TRADUCAO_RAPIDA.md) for quick activation guide
-- **🇵🇹 Documentação Completa**: See [TRADUCAO.md](./TRADUCAO.md) for complete Portuguese documentation
+---
 
 ## Architecture Notes
 
