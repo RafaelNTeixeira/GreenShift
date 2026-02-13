@@ -10,6 +10,7 @@ config/*
 !config/lovelace-views/
 !config/customize_en.yaml
 !config/customize_pt.yaml
+!config/locales/
 
 config/custom_components/green_shift/__pycache__/
 

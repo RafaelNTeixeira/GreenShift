@@ -20,6 +20,7 @@ This folder contains comprehensive documentation for the Green Shift project.
 - Adding new languages
 - Translating UI elements, notifications, and tasks
 - Dashboard and helper translations
+- Working with the [`config/locales/`](../config/locales/) folder
 
 **Start here if you want to add support for a new language!**
 

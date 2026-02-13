@@ -198,20 +198,20 @@ Edit your [`configuration.yaml`](../config/configuration.yaml) and choose **ONE*
 **For English:**
 ```yaml
 homeassistant:
-  customize: !include customize_en.yaml
+  customize: !include locales/customize_en.yaml
 ```
 
 **For Portuguese:**
 ```yaml
 homeassistant:
-  customize: !include customize_pt.yaml
+  customize: !include locales/customize_pt.yaml
 ```
 
 ⚠️ **Important**: You can only have **ONE** active `customize:` line. Comment out the others with `#`.
 
-**Available customize files:**
-- [`customize_en.yaml`](../config/customize_en.yaml) - English helper names
-- [`customize_pt.yaml`](../config/customize_pt.yaml) - Portuguese helper names
+**Available customize files in [`config/locales/`](../config/locales/):**
+- [`customize_en.yaml`](../config/locales/customize_en.yaml) - English helper names
+- [`customize_pt.yaml`](../config/locales/customize_pt.yaml) - Portuguese helper names
 
 ### Customize File Structure
 
@@ -241,12 +241,15 @@ The customize files translate:
 - Task Difficulty selector
 
 **Note**: After adding or changing the customize configuration, restart Home Assistant for changes to take effect.
-[`ui-lovelace-en.yaml`](../config/ui-lovelace-en.yaml)) contains hardcoded text that needs manual translation. 
+
+## Translating Lovelace UI
+
+The Lovelace dashboards are located in [`config/locales/`](../config/locales/) and contain hardcoded text that needs manual translation.
 
 ### ✅ Available Translated Dashboards
 
-- **English:** [`ui-lovelace-en.yaml`](../config/ui-lovelace-en.yaml) (original)
-- **Portuguese:** [`ui-lovelace-pt.yaml`](../config/ui-lovelace-pt.yaml)
+- **English:** [`ui-lovelace-en.yaml`](../config/locales/ui-lovelace-en.yaml)
+- **Portuguese:** [`ui-lovelace-pt.yaml`](../config/locales/ui-lovelace-pt.yaml)
 
 ### Quick Setup
 
@@ -258,14 +261,10 @@ lovelace:
   dashboards:
     lovelace-green-shift:
       mode: yaml
-      filename: ui-lovelace-pt.yaml  # Change to ui-lovelace-en.yaml for English
+      filename: locales/ui-lovelace-pt.yaml  # Change to locales/ui-lovelace-en.yaml for English
       title: Green Shift
       icon: mdi:leaf
-``
-
-- **English:** `ui-lovelace.yaml` (original)
-- **Portuguese:** `ui-lovelace-pt.yaml`
-
+```
 
 ## Architecture Details
 

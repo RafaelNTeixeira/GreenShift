@@ -30,14 +30,14 @@ Green Shift is **fully translated** including dynamic content (AI notifications 
 2. **Update [`configuration.yaml`](./config/configuration.yaml)**:
    ```yaml
    homeassistant:
-     customize: !include customize_pt.yaml  # or customize_en.yaml
+     customize: !include locales/customize_pt.yaml  # or locales/customize_en.yaml
    
    lovelace:
      mode: yaml
      dashboards:
        lovelace-green-shift:
          mode: yaml
-         filename: ui-lovelace-pt.yaml  # or ui-lovelace-en.yaml
+         filename: locales/ui-lovelace-pt.yaml  # or locales/ui-lovelace-en.yaml
          title: Green Shift
          icon: mdi:leaf
    ```

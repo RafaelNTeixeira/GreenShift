@@ -94,7 +94,7 @@ ln -s /path/to/your/GreenShift/config/custom_components/green_shift green_shift
 **Key Files Structure:**
 - [`config/custom_components/green_shift/`](../config/custom_components/green_shift/) - Integration code
 - [`config/custom_components/green_shift/translations/`](../config/custom_components/green_shift/translations/) - JSON translation files
-- [`config/ui-lovelace.yaml`](../config/ui-lovelace.yaml) - Dashboard YAML
+- [`config/locales/`](../config/locales/) - YAML translation files (dashboards & helpers)
 - [`config/configuration.yaml`](../config/configuration.yaml) - HA configuration
 
 ### 3. Enable Debug Logging
@@ -167,10 +167,12 @@ async def example_function(hass: HomeAssistant, param: str) -> dict:
 
 **Configuration Files** ([`config/`](../config/)):
 - **[`configuration.yaml`](../config/configuration.yaml)**: Main HA configuration
-- **[`ui-lovelace.yaml`](../config/ui-lovelace.yaml)**: English dashboard
-- **[`ui-lovelace-pt.yaml`](../config/ui-lovelace-pt.yaml)**: Portuguese dashboard
-- **[`customize_en.yaml`](../config/customize_en.yaml)**: English helper names
-- **[`customize_pt.yaml`](../config/customize_pt.yaml)**: Portuguese helper names
+
+**Locale Files** ([`config/locales/`](../config/locales/)):
+- **[`ui-lovelace-en.yaml`](../config/locales/ui-lovelace-en.yaml)**: English dashboard
+- **[`ui-lovelace-pt.yaml`](../config/locales/ui-lovelace-pt.yaml)**: Portuguese dashboard
+- **[`customize_en.yaml`](../config/locales/customize_en.yaml)**: English helper names
+- **[`customize_pt.yaml`](../config/locales/customize_pt.yaml)**: Portuguese helper names
 
 ### Best Practices
 
@@ -216,15 +218,24 @@ Translate AI notifications and tasks in [`translations_runtime.py`](../config/cu
 
 ### 3. Dashboard Translations (YAML)
 
-1. Copy [`config/ui-lovelace-en.yaml`](../config\ui-lovelace-en.yaml) to `config/ui-lovelace-XX.yaml`
+1. Copy [`config/locales/ui-lovelace-en.yaml`](../config/locales/ui-lovelace-en.yaml) to `config/locales/ui-lovelace-XX.yaml`
 2. Translate all markdown content and card titles
 3. Keep entity IDs unchanged
 
 ### 4. Helper Translations (YAML)
 
-1. Copy [`config/customize_en.yaml`](../config/customize_en.yaml) to `config/customize_XX.yaml`
+1. Copy [`config/locales/customize_en.yaml`](../config/locales/customize_en.yaml) to `config/locales/customize_XX.yaml`
 2. Translate all `friendly_name` values
-3. Update [`configuration.yaml`](../config/configuration.yaml) to reference your new file
+3. Update [`configuration.yaml`](../config/configuration.yaml) to reference your new file:
+   ```yaml
+   homeassistant:
+     customize: !include locales/customize_XX.yaml
+   
+   lovelace:
+     dashboards:
+       lovelace-green-shift:
+         filename: locales/ui-lovelace-XX.yaml
+   ```
 
 👉 **Complete guide:** [TRANSLATIONS.md](./TRANSLATIONS.md)
 
