@@ -116,6 +116,18 @@ After making changes, restart HA to load your modifications:
 ha core restart
 ```
 
+### 5. Set System Language for Testing
+
+To test translations, set your Home Assistant system language:
+
+1. Go to **Settings → System → General**
+2. Scroll to **Language**
+3. Select the language you want to test
+4. Click **Save**
+5. Restart Home Assistant
+
+⚠️ **Note**: The Profile language (Settings → Profile) only affects the HA UI, not integrations. You must change the **System language** to test Green Shift translations.
+
 ---
 
 ## 📝 Code Guidelines

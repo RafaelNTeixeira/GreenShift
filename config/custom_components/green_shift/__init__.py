@@ -24,6 +24,7 @@ from .data_collector import DataCollector
 from .decision_agent import DecisionAgent
 from .storage import StorageManager
 from .task_manager import TaskManager
+from .translations_runtime import get_language, get_phase_transition_template
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor", "select"]
@@ -574,10 +575,9 @@ async def async_setup_services(hass: HomeAssistant):
 
 async def trigger_phase_transition_notification(hass, agent, collector):
     """Calculates baseline summary and sends the transition notification."""
-    from .translations_runtime import get_language, get_phase_transition_template
     
     # Get user's language
-    language = get_language(hass)
+    language = await get_language(hass)
     
     # Fetch data from collector
     summary = await collector.calculate_baseline_summary()

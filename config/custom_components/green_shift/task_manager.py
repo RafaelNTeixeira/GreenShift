@@ -9,11 +9,7 @@ from typing import List, Dict, Optional, Tuple
 from homeassistant.core import HomeAssistant
 
 from .const import TASK_GENERATION_TIME
-from .translations_runtime import (
-    get_language,
-    get_task_templates,
-    get_difficulty_display
-)
+from .translations_runtime import get_language, get_task_templates, get_difficulty_display
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -144,7 +140,7 @@ class TaskManager:
         target_temp = round(baseline_temp - reduction, 1)
         
         # Get user's language and templates
-        language = get_language(self.hass)
+        language = await get_language(self.hass)
         templates = get_task_templates(language)
         template = templates['temperature_reduction']
         
@@ -183,7 +179,7 @@ class TaskManager:
         target_power = round(baseline_power * (1 - reduction_pct / 100))
         
         # Get user's language and templates
-        language = get_language(self.hass)
+        language = await get_language(self.hass)
         templates = get_task_templates(language)
         template = templates['power_reduction']
         
@@ -225,7 +221,7 @@ class TaskManager:
         target_power = round(baseline_night_power * (1 - reduction_pct / 100))
         
         # Get user's language and templates
-        language = get_language(self.hass)
+        language = await get_language(self.hass)
         templates = get_task_templates(language)
         template = templates['standby_reduction']
         
@@ -267,7 +263,7 @@ class TaskManager:
         target_power = round(baseline_day_power * (1 - reduction_pct / 100))
         
         # Get user's language and templates
-        language = get_language(self.hass)
+        language = await get_language(self.hass)
         templates = get_task_templates(language)
         template = templates['daylight_usage']
         
@@ -314,7 +310,7 @@ class TaskManager:
         target_power = round(max_power * (1 - reduction_pct / 100))
         
         # Get user's language and templates
-        language = get_language(self.hass)
+        language = await get_language(self.hass)
         templates = get_task_templates(language)
         template = templates['unoccupied_power']
         
@@ -361,7 +357,7 @@ class TaskManager:
         target_power = round(peak_power * (1 - reduction_pct / 100))
         
         # Get user's language and templates
-        language = get_language(self.hass)
+        language = await get_language(self.hass)
         templates = get_task_templates(language)
         template = templates['peak_avoidance']
         

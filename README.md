@@ -26,7 +26,14 @@ Green Shift is **fully translated** including dynamic content (AI notifications 
 
 **To switch languages:**
 
-1. **Update your Home Assistant profile**: Settings → Profile → Language → Select your language
+1. **Update your Home Assistant system language**: 
+   - Go to **Settings → System → General**
+   - Scroll to **Language**
+   - Select your language (e.g., Português)
+   - Click **Save**
+   
+   ⚠️ **Note**: The Profile language (Settings → Profile → Language) only changes the Home Assistant UI language, not the integration language. You must change the **System Language** for Green Shift to detect it.
+
 2. **Update [`configuration.yaml`](./config/configuration.yaml)**:
    ```yaml
    homeassistant:

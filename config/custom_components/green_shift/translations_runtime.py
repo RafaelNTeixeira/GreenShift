@@ -1,3 +1,7 @@
+import logging
+
+_LOGGER = logging.getLogger(__name__)
+
 # Notification Templates by Language
 NOTIFICATION_TEMPLATES = {
     "en": {
@@ -277,7 +281,7 @@ TIME_OF_DAY = {
 }
 
 
-def get_language(hass) -> str:
+async def get_language(hass) -> str:
     """
     Get user's preferred language from Home Assistant.
     Falls back to English if not found.
@@ -291,15 +295,29 @@ def get_language(hass) -> str:
                 lang_code = lang[:2].lower()
                 # Check if we have translations for this language
                 if lang_code in NOTIFICATION_TEMPLATES:
+                    _LOGGER.info("✓ Detected language from HA config: %s", lang_code)
                     return lang_code
+                else:
+                    _LOGGER.debug("Language %s not in available translations: %s", lang_code, list(NOTIFICATION_TEMPLATES.keys()))
+
+        _LOGGER.info("No specific language detected, defaulting to English")
+
+        # Default fallback    
         return "en"
-    except Exception:
+    except Exception as e:
+        _LOGGER.warning("Error detecting language, defaulting to English: %s", e)
         return "en"
 
 
 def get_notification_templates(language: str) -> dict:
     """Get notification templates for specified language."""
     return NOTIFICATION_TEMPLATES.get(language, NOTIFICATION_TEMPLATES["en"])
+
+
+def get_phase_transition_template(language: str) -> dict:
+    """Get phase transition template for specified language."""
+    templates = NOTIFICATION_TEMPLATES.get(language, NOTIFICATION_TEMPLATES["en"])
+    return templates.get("phase_transition", NOTIFICATION_TEMPLATES["en"]["phase_transition"])
 
 
 def get_task_templates(language: str) -> dict:

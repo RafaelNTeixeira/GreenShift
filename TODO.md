@@ -25,7 +25,8 @@ Checklist to track remaining features, fixes and tests before completion.
     - [x] Daily tasks translations
     - [x] Notification translations
     - [x] Check during baseline
-- [ ] Check notification report when transitioning from baseline to active intervention
+- [x] Check notification report when transitioning from baseline to active intervention
+- [ ] Test interface on mobile
 
 
 ### 🎮 Gamification

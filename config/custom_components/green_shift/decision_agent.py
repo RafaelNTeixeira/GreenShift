@@ -9,9 +9,7 @@ import random
 
 from .storage import StorageManager
 from .helpers import get_friendly_name
-from .translations_runtime import (
-    get_language, get_notification_templates, get_time_of_day_name
-)
+from .translations_runtime import get_language, get_notification_templates, get_time_of_day_name
 from .const import (
     UPDATE_INTERVAL_SECONDS,
     SAVE_STATE_INTERVAL_SECONDS,
@@ -517,7 +515,7 @@ class DecisionAgent:
         Generates context-aware notification based on action type.
         """
         # Get user's language
-        language = get_language(self.hass)
+        language = await get_language(self.hass)
         
         # Get templates for user's language
         notification_templates = get_notification_templates(language)
@@ -583,7 +581,7 @@ class DecisionAgent:
         
         # Time-based context
         now = datetime.now()
-        language = get_language(self.hass)
+        language = await get_language(self.hass)
         
         # Determine time of day key
         if 6 <= now.hour < 12:
