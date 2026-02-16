@@ -158,7 +158,7 @@ class StorageManager:
                     phase TEXT NOT NULL,
                     start_timestamp REAL NOT NULL,
                     end_timestamp REAL,
-                    baseline_consumption_kwh REAL,
+                    baseline_consumption_W REAL,
                     baseline_occupancy_avg REAL,
                     notes TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -1036,7 +1036,7 @@ class StorageManager:
             # Start new phase
             cursor.execute("""
                 INSERT INTO research_phase_metadata 
-                (phase, start_timestamp, baseline_consumption_kwh, baseline_occupancy_avg, notes)
+                (phase, start_timestamp, baseline_consumption_W, baseline_occupancy_avg, notes)
                 VALUES (?, ?, ?, ?, ?)
             """, (phase, datetime.now().timestamp(), baseline_consumption, baseline_occupancy, notes))
             

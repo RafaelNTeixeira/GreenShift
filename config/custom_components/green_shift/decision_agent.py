@@ -24,7 +24,10 @@ from .const import (
     MAX_NOTIFICATIONS_PER_DAY,
     MIN_COOLDOWN_MINUTES,
     HIGH_OPPORTUNITY_THRESHOLD,
-    CRITICAL_OPPORTUNITY_THRESHOLD
+    CRITICAL_OPPORTUNITY_THRESHOLD,
+    SHADOW_EXPLORATION_RATE,
+    SHADOW_LEARNING_RATE,
+    SHADOW_INTERVAL_MULTIPLIER
 )
 
 _LOGGER = logging.getLogger(f"{__name__}.ai_model")
@@ -70,6 +73,7 @@ class DecisionAgent:
         self.learning_rate = 0.1
         self.epsilon = 0.2  # Exploration rate
         self.episode_number = 0  # Track RL episodes for research logging
+        self.shadow_episode_number = 0  # Track shadow RL episodes (baseline phase)
         
         # Behaviour indices
         self.anomaly_index = 0.0 
@@ -179,6 +183,11 @@ class DecisionAgent:
                 _LOGGER.error("Failed to load Q-table: %s", e)
                 self.q_table = {}
 
+        # Load shadow learning episode counter
+        if "shadow_episode_number" in state:
+            self.shadow_episode_number = state["shadow_episode_number"]
+            _LOGGER.info("Loaded shadow episode number: %d", self.shadow_episode_number)
+
         _LOGGER.info("Persistent AI state loaded successfully")
 
     async def _save_persistent_state(self):
@@ -214,6 +223,7 @@ class DecisionAgent:
             "last_notification_time": self.last_notification_time.isoformat() if self.last_notification_time else None,
             "notification_history": list(self.notification_history),
             "q_table": serializable_q_table,
+            "shadow_episode_number": self.shadow_episode_number,
         }
 
         current_state.update(ai_state)
@@ -245,9 +255,14 @@ class DecisionAgent:
         # Update action mask M_t
         await self._update_action_mask()
         
-        # Decide action A_t if in active phase
+        # Decide action A_t based on phase
         if self.phase == PHASE_ACTIVE:
             await self._decide_action()
+        elif self.phase == PHASE_BASELINE:
+            # Shadow learning: simulate decisions without executing actions
+            # Runs at reduced frequency to avoid excessive Q-table noise
+            if self._process_count % SHADOW_INTERVAL_MULTIPLIER == 0:
+                await self._shadow_decide_action()
 
         self._process_count += 1
 
@@ -305,7 +320,7 @@ class DecisionAgent:
         _LOGGER.debug("Indoor humidity: %.2f %%", state[6])
         
         # 5. Illuminance
-        lux = current_state.get("illuminance", 0.0)
+        lux = current_state.get("illuminance:", 0.0)
         state.extend([lux if lux is not None else 0.0, 1.0 if lux is not None else 0.0])
         _LOGGER.debug("Indoor illuminance: %.2f lx", state[8])
         
@@ -442,6 +457,196 @@ class DecisionAgent:
         # Log RL episode for research analysis
         self.episode_number += 1
         await self._log_rl_episode(state_key, action, reward, action_source)
+
+    async def _shadow_decide_action(self):
+        """
+        Shadow learning: simulates RL decisions during baseline phase WITHOUT
+        executing any actions (no notifications sent to the user).
+        
+        This allows the Q-table to be pre-trained on energy consumption patterns
+        and temporal context so the agent is already warm-started when the active
+        phase begins. Because no user interaction exists during baseline, the
+        reward function uses only energy-pattern and context-based components.
+        
+        Key differences from _decide_action():
+        - Higher exploration rate (SHADOW_EXPLORATION_RATE) since bad exploration has no cost
+        - Lower learning rate (SHADOW_LEARNING_RATE) since rewards are estimated, not real
+        - No notifications sent, no engagement/fatigue tracking modified
+        - Episodes logged with action_source="shadow" for research differentiation
+        """
+        # Get current state
+        state_key = self._discretize_state()
+
+        # Available actions based on mask
+        available_actions = [a for a, available in self.action_mask.items() if available]
+
+        if not available_actions:
+            _LOGGER.debug("Shadow learning: no actions available based on current context")
+            return
+
+        # Epsilon-greedy selection with higher exploration rate
+        action_source = "shadow_explore"
+        if random.random() < SHADOW_EXPLORATION_RATE:
+            # Exploration: random action
+            action = random.choice(available_actions)
+            action_source = "shadow_explore"
+            _LOGGER.debug("Shadow learning (explore): selected random action %d", action)
+        else:
+            # Exploitation: best known action from Q-table
+            action_source = "shadow_exploit"
+            if state_key not in self.q_table:
+                self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
+            
+            best_action = max(available_actions, key=lambda a: self.q_table[state_key].get(a, 0.0))
+            action = best_action
+            _LOGGER.debug("Shadow learning (exploit): selected best action %d (Q=%.2f)", action, self.q_table[state_key].get(action, 0.0))
+        
+        # Calculate shadow reward
+        reward = await self._calculate_shadow_reward(action)
+        
+        # Update Q-table with shadow learning rate
+        await self._shadow_update_q_table(state_key, action, reward)
+        
+        # Log shadow episode to research database
+        self.shadow_episode_number += 1
+        await self._log_rl_episode(state_key, action, reward, action_source)
+        
+        _LOGGER.debug("Shadow episode #%d: state=%s, action=%d, reward=%.4f",
+                      self.shadow_episode_number, state_key[:3], action, reward)
+
+    async def _calculate_shadow_reward(self, action: int) -> float:
+        """
+        Calculates an estimated reward during baseline without user interaction.
+        
+        Components:
+        1. Energy savings potential: how much current consumption deviates above
+           the running baseline mean (higher deviation = more opportunity for the
+           action to be useful, higher reward for actions that address it)
+        2. Action-context alignment: whether the selected action type matches the
+           current environmental context (e.g., anomaly action when anomaly_index
+           is high, specific action when a single device dominates)
+        3. Temporal appropriateness: reward actions chosen at good times (occupied,
+           reasonable hour) more than those at bad times
+        
+        Formula:
+            R_shadow = α · savings_potential + β_ctx · context_alignment + δ_time · time_score
+        
+        The weights are intentionally conservative since these are estimated rewards.
+        """
+        power_history_data = await self.data_collector.get_power_history(hours=1)
+        power_values = [power for timestamp, power in power_history_data]
+
+        if len(power_values) < 10:
+            return 0.0
+        
+        # Component 1: Energy savings potential 
+        current_power = power_values[-1]
+        running_mean = np.mean(power_values)
+        
+        if running_mean > 0:
+            # Positive when consuming above mean (opportunity for savings)
+            savings_potential = max(0, (current_power - running_mean) / running_mean)
+            savings_potential = min(savings_potential, 1.0)  # Cap at 1.0
+        else:
+            savings_potential = 0.0
+        
+        # Component 2: Action–context alignment 
+        # Reward higher when the chosen action type matches the situation
+        context_alignment = 0.0
+        action_name = [k for k, v in ACTIONS.items() if v == action][0]
+        
+        if action_name == "specific":
+            # Specific actions are best when a single device dominates consumption
+            top_consumer = await self._get_top_power_consumer()
+            if running_mean > 0 and top_consumer > 0:
+                # Higher reward if one device accounts for a large share
+                dominance_ratio = top_consumer / max(current_power, 1.0)
+                context_alignment = min(dominance_ratio, 1.0)
+            
+        elif action_name == "anomaly":
+            # Anomaly actions are best when anomaly_index is high
+            context_alignment = self.anomaly_index
+            # Boost if area-specific anomalies are present
+            area_anomaly_count = len([a for a in self.area_anomalies.values() 
+                                      if any(v > 0.3 for v in a.values())])
+            if area_anomaly_count > 0:
+                context_alignment = min(context_alignment + 0.2, 1.0)
+            
+        elif action_name == "behavioural":
+            # Behavioural nudges are best during typical usage patterns
+            # Reward moderately as they're always somewhat applicable
+            context_alignment = 0.4
+            # Better when consumption is moderate
+            if running_mean > 0:
+                variability = np.std(power_values) / running_mean if running_mean > 0 else 0
+                # Low variability = stable patterns = better for behavioural nudges
+                context_alignment += 0.3 * max(0, 1.0 - variability)
+            
+        elif action_name == "normative":
+            # Normative nudges work best when baseline exists and deviation is notable
+            if self.baseline_consumption > 0:
+                deviation = abs(current_power - self.baseline_consumption) / self.baseline_consumption
+                context_alignment = min(deviation, 1.0)
+            else:
+                context_alignment = 0.2  # Still somewhat useful
+        
+        # Component 3: Temporal appropriateness
+        now = datetime.now()
+        hour = now.hour
+        
+        # Good notification times (morning, lunch, evening)
+        if 7 <= hour <= 9 or 12 <= hour <= 14 or 18 <= hour <= 21:
+            time_score = 1.0
+        elif 22 <= hour or hour < 7:
+            time_score = 0.2  # Bad time
+        else:
+            time_score = 0.6  # Neutral
+        
+        # Boost if building is occupied
+        current_state = self.data_collector.get_current_state()
+        if current_state.get("occupancy", False):
+            time_score = min(time_score + 0.2, 1.0)
+        
+        # Weighted combination (conservative weights)
+        reward = (
+            0.5 * savings_potential +
+            0.3 * context_alignment +
+            0.2 * time_score
+        )
+        
+        _LOGGER.debug(
+            "Shadow reward: %.4f (savings=%.2f, alignment=%.2f [%s], time=%.2f)",
+            reward, savings_potential, context_alignment, action_name, time_score
+        )
+        
+        return reward
+
+    async def _shadow_update_q_table(self, state_key: tuple, action: int, reward: float):
+        """
+        Updates Q-table with shadow learning rate (lower than active learning rate).
+        Uses the same Q-learning formula but with SHADOW_LEARNING_RATE to avoid
+        over-committing to estimated rewards.
+        
+        Q(s,a) ← Q(s,a) + α_shadow[R_shadow + γ max Q(s',a') - Q(s,a)]
+        """
+        if state_key not in self.q_table:
+            self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
+        
+        current_q = self.q_table[state_key].get(action, 0.0)
+        
+        # Next state is the same since no real action was executed
+        next_state_key = self._discretize_state()
+        if next_state_key not in self.q_table:
+            self.q_table[next_state_key] = {a: 0.0 for a in ACTIONS.values()}
+        
+        max_next_q = max(self.q_table[next_state_key].values())
+        
+        # Q-learning update with shadow learning rate
+        new_q = current_q + SHADOW_LEARNING_RATE * (reward + GAMMA * max_next_q - current_q)
+        self.q_table[state_key][action] = new_q
+        
+        _LOGGER.debug("Shadow Q-table updated: state=%s, action=%d, reward=%.2f, Q: %.2f → %.2f",
+                      state_key[:3], action, reward, current_q, new_q)
 
     async def _update_q_table(self, state_key: tuple, action: int, reward: float):
         """

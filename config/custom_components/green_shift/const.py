@@ -73,11 +73,16 @@ REWARD_WEIGHTS = {
 }
 
 # Notification settings
-MAX_NOTIFICATIONS_PER_DAY = 100
+MAX_NOTIFICATIONS_PER_DAY = 10
 FATIGUE_THRESHOLD = 0.7
 MIN_COOLDOWN_MINUTES = 30  # Base cooldown between notifications
 HIGH_OPPORTUNITY_THRESHOLD = 0.6  # Score needed to bypass cooldown
 CRITICAL_OPPORTUNITY_THRESHOLD = 0.8  # Score for immediate notification
+
+# Shadow learning (offline RL during baseline phase)
+SHADOW_EXPLORATION_RATE = 0.5  # Higher exploration during baseline (no cost to bad exploration)
+SHADOW_LEARNING_RATE = 0.05   # Lower learning rate for shadow episodes (noisier signal)
+SHADOW_INTERVAL_MULTIPLIER = 4 # Shadow episode every N AI cycles (e.g., if AI_FREQUENCY_SECONDS=15s, happens every 4 * 15s = 60s)
 
 # Discount factor for RL
 GAMMA = 0.95

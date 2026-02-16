@@ -59,7 +59,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Test anomaly index with anomaly simulated anomaly scenario
 - [x] Test nudge selection based on current environment and priority
 - [x] Consider if 50 bins of power consumption is enough for intervention (decrease, keep or increase) - increased to 100
-- [ ] AI learning during baseline intervention
+- [x] AI learning during baseline intervention
 - [ ] Store data needed for analysis/results extraction
 - [ ] Test AI-driven features (notifications, recommendations)
 
