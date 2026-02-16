@@ -18,12 +18,20 @@ from .const import (
     BASELINE_DAYS,
     AI_FREQUENCY_SECONDS,
     TASK_GENERATION_TIME,
-    VERIFY_TASKS_INTERVAL_MINUTES
+    VERIFY_TASKS_INTERVAL_MINUTES,
+    BACKUP_INTERVAL_HOURS,
+    BACKUP_DAILY_TIME,
+    BACKUP_WEEKLY_DAY,
+    BACKUP_WEEKLY_TIME,
+    KEEP_AUTO_BACKUPS,
+    KEEP_DAILY_BACKUPS,
+    KEEP_WEEKLY_BACKUPS
 )
 from .data_collector import DataCollector
 from .decision_agent import DecisionAgent
 from .storage import StorageManager
 from .task_manager import TaskManager
+from .backup_manager import BackupManager
 from .translations_runtime import get_language, get_phase_transition_template
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,6 +59,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     storage = StorageManager(hass)
     await storage.setup()
 
+    # Initialize backup manager
+    backup_manager = BackupManager(hass.config.path("green_shift_data"))
+    
+    # Create initial backup on startup
+    _LOGGER.info("Creating startup backup...")
+    await backup_manager.create_backup(backup_type="startup")
+
     # Initialize the real-time data collector
     collector = DataCollector(hass, discovered_sensors, main_energy_sensor, main_power_sensor, storage)
     await collector.setup()
@@ -76,6 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN]["collector"] = collector
     hass.data[DOMAIN]["agent"] = agent
     hass.data[DOMAIN]["task_manager"] = task_manager
+    hass.data[DOMAIN]["backup_manager"] = backup_manager
     hass.data[DOMAIN]["discovered_sensors"] = discovered_sensors
     
     # Platform setup
@@ -193,6 +209,67 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     hass.data[DOMAIN]["daily_aggregation_listener"] = async_track_time_interval(
         hass, daily_aggregation_callback, timedelta(hours=1)
+    )
+
+    # Automatic backup every BACKUP_INTERVAL_HOURS hours
+    async def auto_backup_callback(now):
+        """Create automatic backup periodically."""
+        _LOGGER.debug("Creating automatic backup...")
+        try:
+            success = await backup_manager.create_backup(backup_type="auto")
+            if success:
+                _LOGGER.info("Automatic backup created successfully")
+                # Clean up old backups
+                await backup_manager.cleanup_old_backups(
+                    keep_auto=KEEP_AUTO_BACKUPS,
+                    keep_daily=KEEP_DAILY_BACKUPS,
+                    keep_weekly=KEEP_WEEKLY_BACKUPS
+                )
+            else:
+                _LOGGER.warning("Automatic backup failed")
+        except Exception as e:
+            _LOGGER.error("Automatic backup error: %s", e)
+    
+    hass.data[DOMAIN]["auto_backup_listener"] = async_track_time_interval(
+        hass, auto_backup_callback, timedelta(hours=BACKUP_INTERVAL_HOURS)
+    )
+
+    # Daily backup at BACKUP_DAILY_TIME
+    async def daily_backup_callback(now):
+        """Create daily backup."""
+        _LOGGER.info("Creating daily backup...")
+        try:
+            await backup_manager.create_backup(backup_type="daily")
+            _LOGGER.info("Daily backup created successfully")
+        except Exception as e:
+            _LOGGER.error("Daily backup error: %s", e)
+    
+    hass.data[DOMAIN]["daily_backup_listener"] = async_track_time_change(
+        hass, daily_backup_callback, 
+        hour=BACKUP_DAILY_TIME[0], 
+        minute=BACKUP_DAILY_TIME[1], 
+        second=BACKUP_DAILY_TIME[2]
+    )
+
+    # Weekly backup
+    async def weekly_backup_callback(now):
+        """Create weekly backup."""
+        # Only run on the specified day of week
+        if now.weekday() != BACKUP_WEEKLY_DAY:
+            return
+        
+        _LOGGER.info("Creating weekly backup...")
+        try:
+            await backup_manager.create_backup(backup_type="weekly")
+            _LOGGER.info("Weekly backup created successfully")
+        except Exception as e:
+            _LOGGER.error("Weekly backup error: %s", e)
+    
+    hass.data[DOMAIN]["weekly_backup_listener"] = async_track_time_change(
+        hass, weekly_backup_callback, 
+        hour=BACKUP_WEEKLY_TIME[0], 
+        minute=BACKUP_WEEKLY_TIME[1], 
+        second=BACKUP_WEEKLY_TIME[2]
     )
 
     # Generate tasks immediately if none exist for today (only in active phase)
@@ -562,6 +639,60 @@ async def async_setup_services(hass: HomeAssistant):
     hass.services.async_register(DOMAIN, "test_q_learning", test_q_learning)
 
     # ===========================================================================================
+    
+    # Backup and restore services
+    async def create_backup(call: ServiceCall):
+        """Service to manually create a backup."""
+        backup_manager = hass.data[DOMAIN].get("backup_manager")
+        if not backup_manager:
+            _LOGGER.error("Backup manager not initialized")
+            return
+        
+        _LOGGER.info("Manual backup requested")
+        success = await backup_manager.create_backup(backup_type="manual")
+        
+        if success:
+            _LOGGER.info("Manual backup created successfully")
+        else:
+            _LOGGER.error("Manual backup failed")
+    
+    async def restore_backup(call: ServiceCall):
+        """Service to restore from a backup."""
+        backup_manager = hass.data[DOMAIN].get("backup_manager")
+        if not backup_manager:
+            _LOGGER.error("Backup manager not initialized")
+            return
+        
+        backup_name = call.data.get("backup_name")
+        if not backup_name:
+            _LOGGER.error("No backup name provided")
+            return
+        
+        _LOGGER.warning("Restoring from backup: %s - This will overwrite current data!", backup_name)
+        success = await backup_manager.restore_from_backup(backup_name)
+        
+        if success:
+            _LOGGER.info("Backup restored successfully. Please restart Home Assistant.")
+        else:
+            _LOGGER.error("Backup restoration failed")
+    
+    async def list_backups(call: ServiceCall):
+        """Service to list available backups."""
+        backup_manager = hass.data[DOMAIN].get("backup_manager")
+        if not backup_manager:
+            _LOGGER.error("Backup manager not initialized")
+            return
+        
+        backups = backup_manager.list_backups()
+        _LOGGER.info("="*60)
+        _LOGGER.info("Available Backups (%d total):", len(backups))
+        _LOGGER.info("="*60)
+        
+        for backup in backups:
+            _LOGGER.info("  - %s", backup)
+        
+        _LOGGER.info("="*60)
+        _LOGGER.info("Use 'green_shift.restore_backup' with backup_name to restore")
 
 
     # Register services
@@ -569,6 +700,9 @@ async def async_setup_services(hass: HomeAssistant):
     hass.services.async_register(DOMAIN, "verify_tasks", verify_tasks)
     hass.services.async_register(DOMAIN, "regenerate_tasks", regenerate_tasks)
     hass.services.async_register(DOMAIN, "respond_to_selection", respond_to_selection)
+    hass.services.async_register(DOMAIN, "create_backup", create_backup)
+    hass.services.async_register(DOMAIN, "restore_backup", restore_backup)
+    hass.services.async_register(DOMAIN, "list_backups", list_backups)
     
     _LOGGER.info("Services registered successfully")
 
@@ -648,10 +782,38 @@ async def sync_helper_entities(hass: HomeAssistant, entry: ConfigEntry):
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload of the config entry."""
+    _LOGGER.info("Green Shift shutting down - saving state and creating backup...")
+    
+    # Save AI state before shutdown
+    agent = hass.data[DOMAIN].get("agent")
+    if agent and agent.storage:
+        try:
+            await agent._save_persistent_state()
+            _LOGGER.info("AI state saved successfully on shutdown")
+        except Exception as e:
+            _LOGGER.error("Failed to save AI state on shutdown: %s", e)
+    
+    # Create shutdown backup
+    backup_manager = hass.data[DOMAIN].get("backup_manager")
+    if backup_manager:
+        try:
+            await backup_manager.create_backup(backup_type="shutdown")
+            _LOGGER.info("Shutdown backup created successfully")
+        except Exception as e:
+            _LOGGER.error("Failed to create shutdown backup: %s", e)
+    
     # Unregister services
     hass.services.async_remove(DOMAIN, "submit_task_feedback")
     hass.services.async_remove(DOMAIN, "verify_tasks")
     hass.services.async_remove(DOMAIN, "regenerate_tasks")
+    hass.services.async_remove(DOMAIN, "respond_to_selection")
+    hass.services.async_remove(DOMAIN, "force_ai_process")
+    hass.services.async_remove(DOMAIN, "force_notification")
+    hass.services.async_remove(DOMAIN, "inject_test_data")
+    hass.services.async_remove(DOMAIN, "set_test_indices")
+    hass.services.async_remove(DOMAIN, "create_backup")
+    hass.services.async_remove(DOMAIN, "restore_backup")
+    hass.services.async_remove(DOMAIN, "list_backups")
 
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN]["update_listener"]()
@@ -665,6 +827,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         if "daily_aggregation_listener" in hass.data[DOMAIN]:
             hass.data[DOMAIN]["daily_aggregation_listener"]()
+        
+        # Cancel backup listeners
+        if "auto_backup_listener" in hass.data[DOMAIN]:
+            hass.data[DOMAIN]["auto_backup_listener"]()
+        
+        if "daily_backup_listener" in hass.data[DOMAIN]:
+            hass.data[DOMAIN]["daily_backup_listener"]()
+        
+        if "weekly_backup_listener" in hass.data[DOMAIN]:
+            hass.data[DOMAIN]["weekly_backup_listener"]()
 
         # Close storage connections
         storage = hass.data[DOMAIN].get("storage")
@@ -672,6 +844,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await storage.close()
             
         hass.data.pop(DOMAIN)
+    
+    _LOGGER.info("Green Shift unloaded successfully")
     return unload_ok
 
 

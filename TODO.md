@@ -61,13 +61,15 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Consider if 50 bins of power consumption is enough for intervention (decrease, keep or increase) - increased to 100
 - [x] AI learning during baseline intervention
 - [ ] Store data needed for analysis/results extraction
-- [ ] Test AI-driven features (notifications, recommendations)
+- [x] Test AI-driven features (notifications, recommendations)
 
 
 ### 📊 Data
 - [x] Build tables required for analysis extraction
 - [x] Store data required for analysis extraction
-- [ ] Build backup daily to prevent data loss
+- [x] Build backup daily to prevent data loss
 - [x] Check query 13
- 
+- [ ] Test WAL
+- [ ] Improve research data queries
+
 ---

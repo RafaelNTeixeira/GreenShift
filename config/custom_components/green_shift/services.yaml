@@ -120,3 +120,25 @@ set_test_indices:
           max: 1.0
           step: 0.1
           mode: slider
+
+create_backup:
+  name: Create Backup
+  description: Manually create a backup of all Green Shift data
+  fields: {}
+
+restore_backup:
+  name: Restore from Backup
+  description: Restore Green Shift data from a specific backup
+  fields:
+    backup_name:
+      name: Backup Name
+      description: Name of the backup to restore (e.g., "auto_20260216_143022")
+      required: true
+      example: "daily_20260215_030000"
+      selector:
+        text:
+
+list_backups:
+  name: List Backups
+  description: List all available backups (check logs for output)
+  fields: {}

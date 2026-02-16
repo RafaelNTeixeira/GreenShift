@@ -55,6 +55,12 @@ class StorageManager:
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
             
+            # Enable WAL mode for better crash recovery and concurrent access
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")  # Balance between safety and performance
+            
+            _LOGGER.info("SQLite WAL mode enabled for crash protection")
+            
             # Main sensor data table with all metrics
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS sensor_history (
@@ -150,6 +156,12 @@ class StorageManager:
         def _create_research_tables():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
+            
+            # Enable WAL mode for better crash recovery and concurrent access
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            
+            _LOGGER.info("Research database WAL mode enabled for crash protection")
             
             # Phase metadata table
             cursor.execute("""
@@ -435,25 +447,34 @@ class StorageManager:
     ):
         """Store a single sensor snapshot."""
         def _insert():
-            conn = sqlite3.connect(str(self.db_path))
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                INSERT INTO sensor_history 
-                (timestamp, power, energy, temperature, humidity, illuminance, occupancy)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                timestamp.timestamp(),
-                power,
-                energy,
-                temperature,
-                humidity,
-                illuminance,
-                1 if occupancy else 0 if occupancy is not None else None
-            ))
-            
-            conn.commit()
-            conn.close()
+            conn = None
+            try:
+                conn = sqlite3.connect(str(self.db_path))
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    INSERT INTO sensor_history 
+                    (timestamp, power, energy, temperature, humidity, illuminance, occupancy)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    timestamp.timestamp(),
+                    power,
+                    energy,
+                    temperature,
+                    humidity,
+                    illuminance,
+                    1 if occupancy else 0 if occupancy is not None else None
+                ))
+                
+                conn.commit()
+                
+            except Exception as e:
+                _LOGGER.error("Failed to store sensor snapshot: %s", e)
+                if conn:
+                    conn.rollback()
+            finally:
+                if conn:
+                    conn.close()
         
         await self.hass.async_add_executor_job(_insert)
 
@@ -470,26 +491,35 @@ class StorageManager:
     ):
         """Store a sensor snapshot for a specific area."""
         def _insert():
-            conn = sqlite3.connect(str(self.db_path))
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                INSERT INTO area_sensor_history 
-                (timestamp, area_name, power, energy, temperature, humidity, illuminance, occupancy)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                timestamp.timestamp(),
-                area_name,
-                power,
-                energy,
-                temperature,
-                humidity,
-                illuminance,
-                1 if occupancy else 0 if occupancy is not None else None
-            ))
-            
-            conn.commit()
-            conn.close()
+            conn = None
+            try:
+                conn = sqlite3.connect(str(self.db_path))
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    INSERT INTO area_sensor_history 
+                    (timestamp, area_name, power, energy, temperature, humidity, illuminance, occupancy)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    timestamp.timestamp(),
+                    area_name,
+                    power,
+                    energy,
+                    temperature,
+                    humidity,
+                    illuminance,
+                    1 if occupancy else 0 if occupancy is not None else None
+                ))
+                
+                conn.commit()
+                
+            except Exception as e:
+                _LOGGER.error("Failed to store area snapshot for %s: %s", area_name, e)
+                if conn:
+                    conn.rollback()
+            finally:
+                if conn:
+                    conn.close()
         
         await self.hass.async_add_executor_job(_insert)
     
@@ -959,7 +989,7 @@ class StorageManager:
     
     async def save_state(self, state_data: Dict[str, Any]):
         """
-        Save persistent state to JSON.
+        Save persistent state to JSON using atomic write.
         
         Expected keys:
         - phase: Current system phase
@@ -971,18 +1001,33 @@ class StorageManager:
         - energy_midnight_points: Midnight energy readings
         """
         def _write():
-            # Convert datetime objects to ISO strings
-            serializable_state = {}
-            for key, value in state_data.items():
-                if isinstance(value, datetime):
-                    serializable_state[key] = value.isoformat()
-                else:
-                    serializable_state[key] = value
-            
-            with open(self.state_file, 'w') as f:
-                json.dump(serializable_state, f, indent=2)
-            
-            _LOGGER.debug("State saved to %s", self.state_file)
+            try:
+                # Convert datetime objects to ISO strings
+                serializable_state = {}
+                for key, value in state_data.items():
+                    if isinstance(value, datetime):
+                        serializable_state[key] = value.isoformat()
+                    else:
+                        serializable_state[key] = value
+                
+                # Atomic write: write to temporary file first, then rename
+                temp_file = self.state_file.with_suffix('.tmp')
+                
+                with open(temp_file, 'w') as f:
+                    json.dump(serializable_state, f, indent=2)
+                
+                # Atomic rename (replaces old file only after new one is complete)
+                temp_file.replace(self.state_file)
+                
+                _LOGGER.debug("State saved atomically to %s", self.state_file)
+                
+            except Exception as e:
+                _LOGGER.error("Failed to save state: %s", e)
+                # Clean up temp file if it exists
+                temp_file = self.state_file.with_suffix('.tmp')
+                if temp_file.exists():
+                    temp_file.unlink()
+                raise
         
         async with self._lock:
             await self.hass.async_add_executor_job(_write)

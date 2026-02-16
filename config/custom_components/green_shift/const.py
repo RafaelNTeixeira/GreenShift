@@ -10,11 +10,21 @@ PHASE_BASELINE = "baseline"
 PHASE_ACTIVE = "active"
 BASELINE_DAYS = 14
 
+# Update intervals and scheduling
 UPDATE_INTERVAL_SECONDS = 5 # Frequency to store data
 AI_FREQUENCY_SECONDS = 15 # Update interval for agent state
 SAVE_STATE_INTERVAL_SECONDS = 600 # Frequency to save AI state to avoid many writes (600 seconds = 10 minutes)
 TASK_GENERATION_TIME = (6, 0, 0) # (hour, minute, second) for daily task generation
 VERIFY_TASKS_INTERVAL_MINUTES = 15 # Frequency to verify tasks in minutes
+
+# Backup settings
+BACKUP_INTERVAL_HOURS = 4 # Create automatic backup every 4 hours
+BACKUP_DAILY_TIME = (3, 0, 0) # (hour, minute, second) for daily backup
+BACKUP_WEEKLY_DAY = 0 # Day of week for weekly backup (0 = Monday)
+BACKUP_WEEKLY_TIME = (3, 30, 0) # (hour, minute, second) for weekly backup
+KEEP_AUTO_BACKUPS = 12 # Keep last 2 days (12 * 4 hours = 48 hours) of automatic backups
+KEEP_DAILY_BACKUPS = 7 # Keep last 7 daily backups (1 week)
+KEEP_WEEKLY_BACKUPS = 4 # Keep last 4 weekly backups (1 month)
 
 # Sensor categories and keywords for auto-discovery
 SENSOR_MAPPING = {
