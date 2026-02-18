@@ -770,12 +770,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, "force_notification")
     hass.services.async_remove(DOMAIN, "inject_test_data")
     hass.services.async_remove(DOMAIN, "set_test_indices")
+    hass.services.async_remove(DOMAIN, "inspect_q_table")
+    hass.services.async_remove(DOMAIN, "test_q_learning")
     hass.services.async_remove(DOMAIN, "create_backup")
     hass.services.async_remove(DOMAIN, "restore_backup")
     hass.services.async_remove(DOMAIN, "list_backups")
 
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN]["update_listener"]()
+
+        # Cancel target listener
+        if "target_listener" in hass.data[DOMAIN]:
+            hass.data[DOMAIN]["target_listener"]()
 
         # Cancel task listeners
         if "task_generation_listener" in hass.data[DOMAIN]:

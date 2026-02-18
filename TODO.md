@@ -70,8 +70,8 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Store data required for analysis extraction
 - [x] Build backup daily to prevent data loss
 - [x] Check query 13
-- [ ] Test WAL
 - [x] Improve research data queries
 - [x] Manage memory usage 
+- [ ] Consider if AI state history and notifications should be kept in persistent memory (JSON)
 
 ---

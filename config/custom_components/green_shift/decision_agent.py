@@ -320,7 +320,7 @@ class DecisionAgent:
         _LOGGER.debug("Indoor humidity: %.2f %%", state[6])
         
         # 5. Illuminance
-        lux = current_state.get("illuminance:", 0.0)
+        lux = current_state.get("illuminance", 0.0)
         state.extend([lux if lux is not None else 0.0, 1.0 if lux is not None else 0.0])
         _LOGGER.debug("Indoor illuminance: %.2f lx", state[8])
         
