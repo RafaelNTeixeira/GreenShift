@@ -80,6 +80,8 @@ def main():
         UNION ALL
         SELECT 'research_nudge_log', COUNT(*) FROM research_nudge_log
         UNION ALL
+        SELECT 'research_blocked_notifications', COUNT(*) FROM research_blocked_notifications
+        UNION ALL
         SELECT 'research_task_interactions', COUNT(*) FROM research_task_interactions
         UNION ALL
         SELECT 'research_phase_metadata', COUNT(*) FROM research_phase_metadata
@@ -124,7 +126,8 @@ def main():
             tasks_generated as tasks_gen,
             tasks_completed as tasks_done,
             nudges_sent,
-            nudges_accepted
+            nudges_accepted,
+            nudges_blocked
         FROM research_daily_aggregates
         ORDER BY date DESC
         LIMIT 5;
@@ -219,29 +222,30 @@ def main():
         LIMIT 5;
     """, "11. WEEKLY CHALLENGE SUMMARY (Last 5)")
     
-    # 12. Time-of-Day Decision Patterns
+    # 12. Time-of-Day Notification Patterns (Active Phase)
     run_query(conn, """
         SELECT 
             time_of_day_hour as hour,
-            COUNT(*) as decisions,
-            SUM(CASE WHEN action_name != 'noop' THEN 1 ELSE 0 END) as notifications,
-            ROUND(AVG(CASE WHEN action_name != 'noop' THEN reward END), 4) as avg_reward
+            COUNT(*) as total_decisions,
+            COUNT(CASE WHEN action_name IS NOT NULL THEN 1 END) as notifications_attempted,
+            ROUND(AVG(reward), 4) as avg_reward,
+            ROUND(AVG(opportunity_score), 3) as avg_opportunity
         FROM research_rl_episodes
         WHERE time_of_day_hour IS NOT NULL
+          AND phase = 'active'
         GROUP BY time_of_day_hour
-        ORDER BY decisions DESC
-        LIMIT 10;
-    """, "12. TIME-OF-DAY DECISION PATTERNS (Top 10 Hours)")
+        ORDER BY hour;
+    """, "12. TIME-OF-DAY NOTIFICATION PATTERNS - Active Phase")
     
-    # 13. Action Constraint Analysis
+    # 13. Action Constraint Analysis (ACTIVE PHASE ONLY - Real RL Decisions)
     run_query(conn, """
         SELECT 
             DATE(timestamp, 'unixepoch') as date,
             COUNT(*) as total_decisions,
-            SUM(CASE WHEN action_mask LIKE '%"1": false%' THEN 1 ELSE 0 END) as specific_blocked,
-            SUM(CASE WHEN action_mask LIKE '%"2": false%' THEN 1 ELSE 0 END) as anomaly_blocked,
-            SUM(CASE WHEN action_mask LIKE '%"3": false%' THEN 1 ELSE 0 END) as behavioural_blocked,
-            SUM(CASE WHEN action_mask LIKE '%"4": false%' THEN 1 ELSE 0 END) as normative_blocked,
+            SUM(CASE WHEN action_mask LIKE '%"1": false%' THEN 1 ELSE 0 END) as specific_masked,
+            SUM(CASE WHEN action_mask LIKE '%"2": false%' THEN 1 ELSE 0 END) as anomaly_masked,
+            SUM(CASE WHEN action_mask LIKE '%"3": false%' THEN 1 ELSE 0 END) as behavioural_masked,
+            SUM(CASE WHEN action_mask LIKE '%"4": false%' THEN 1 ELSE 0 END) as normative_masked,
             ROUND(AVG(
                 CAST((action_mask LIKE '%"1": true%') AS INTEGER) +
                 CAST((action_mask LIKE '%"2": true%') AS INTEGER) +
@@ -250,10 +254,26 @@ def main():
             ), 1) as avg_available_actions
         FROM research_rl_episodes
         WHERE action_mask IS NOT NULL
+          AND phase = 'active'
         GROUP BY date
         ORDER BY date DESC
         LIMIT 5;
-    """, "13. ACTION CONSTRAINT ANALYSIS (Last 5 Days - only logged decisions)")
+    """, "13. ACTION CONSTRAINT ANALYSIS - Active Phase Only (Last 5 Days)")
+    
+    # 13b. Shadow Phase Learning Summary (Baseline Phase - No Real Notifications)
+    run_query(conn, """
+        SELECT 
+            DATE(timestamp, 'unixepoch') as date,
+            COUNT(*) as shadow_episodes,
+            SUM(CASE WHEN action_source LIKE 'shadow%' THEN 1 ELSE 0 END) as shadow_decisions,
+            ROUND(AVG(reward), 3) as avg_shadow_reward,
+            ROUND(AVG(max_q_value), 3) as avg_max_q
+        FROM research_rl_episodes
+        WHERE phase = 'baseline'
+        GROUP BY date
+        ORDER BY date DESC
+        LIMIT 5;
+    """, "13b. SHADOW LEARNING SUMMARY - Baseline Phase (Last 5 Days)")
     
     # 14. Baseline Comparison Effectiveness
     run_query(conn, """
@@ -294,6 +314,54 @@ def main():
         ORDER BY sent DESC;
     """, "16. NUDGE TYPE DISTRIBUTION")
     
+    # 16b. Blocked Notifications Summary (Active Phase Only)
+    run_query(conn, """
+        SELECT 
+            COUNT(*) as total_blocked,
+            SUM(CASE WHEN block_reason = 'max_daily_limit' THEN 1 ELSE 0 END) as blocked_max_daily,
+            SUM(CASE WHEN block_reason = 'cooldown' THEN 1 ELSE 0 END) as blocked_cooldown,
+            SUM(CASE WHEN block_reason = 'fatigue_threshold' THEN 1 ELSE 0 END) as blocked_fatigue,
+            SUM(CASE WHEN block_reason = 'no_available_actions' THEN 1 ELSE 0 END) as blocked_no_actions,
+            ROUND(AVG(opportunity_score), 3) as avg_opportunity,
+            ROUND(AVG(fatigue_index), 3) as avg_fatigue_at_block
+        FROM research_blocked_notifications
+        WHERE phase = 'active';
+    """, "16b. BLOCKED NOTIFICATIONS SUMMARY - Active Phase Only")
+    
+    # 16c. Blocked Notifications by Reason (Daily Breakdown)
+    run_query(conn, """
+        SELECT 
+            DATE(timestamp, 'unixepoch') as date,
+            block_reason,
+            COUNT(*) as count,
+            ROUND(AVG(opportunity_score), 3) as avg_opportunity,
+            ROUND(AVG(fatigue_index), 3) as avg_fatigue
+        FROM research_blocked_notifications
+        WHERE phase = 'active'
+        GROUP BY date, block_reason
+        ORDER BY date DESC, count DESC
+        LIMIT 15;
+    """, "16c. BLOCKED NOTIFICATIONS BY REASON (Recent Days)")
+    
+    # 16d. Notification Success vs Block Rate
+    run_query(conn, """
+        SELECT 
+            DATE(n.timestamp, 'unixepoch') as date,
+            COUNT(n.notification_id) as sent,
+            (SELECT COUNT(*) FROM research_blocked_notifications 
+             WHERE DATE(timestamp, 'unixepoch') = DATE(n.timestamp, 'unixepoch') 
+             AND phase = 'active') as blocked,
+            ROUND(COUNT(n.notification_id) * 100.0 / 
+                  NULLIF(COUNT(n.notification_id) + 
+                         (SELECT COUNT(*) FROM research_blocked_notifications 
+                          WHERE DATE(timestamp, 'unixepoch') = DATE(n.timestamp, 'unixepoch') 
+                          AND phase = 'active'), 0), 1) as send_rate_pct
+        FROM research_nudge_log n
+        GROUP BY date
+        ORDER BY date DESC
+        LIMIT 5;
+    """, "16d. NOTIFICATION SUCCESS VS BLOCK RATE (Last 5 Days)")
+    
     # 17. Task summary
     run_query(conn, """
         SELECT 
@@ -316,19 +384,154 @@ def main():
         ORDER BY total DESC;
     """, "18. TASK TYPE DISTRIBUTION")
     
-    # 19. Energy efficiency by phase
+    # 19. Energy Consumption by Phase (Intervention Impact)
     run_query(conn, """
         SELECT 
             phase,
             COUNT(*) as days,
             ROUND(AVG(avg_power_w), 2) as avg_power_w,
-            ROUND(AVG(total_energy_kwh / NULLIF(avg_occupancy_count, 0)), 2) as energy_per_person
+            ROUND(AVG(peak_power_w), 2) as avg_peak_w,
+            ROUND(AVG(total_energy_kwh), 2) as avg_daily_kwh,
+            ROUND(AVG(total_energy_kwh / NULLIF(total_occupied_hours, 0)), 3) as kwh_per_occupied_hour
         FROM research_daily_aggregates
-        WHERE avg_occupancy_count > 0
+        WHERE total_occupied_hours > 0
         GROUP BY phase;
-    """, "19. ENERGY EFFICIENCY BY PHASE")
+    """, "19. ENERGY CONSUMPTION BY PHASE (Intervention Impact)")
     
-    # 20. Last data collection time
+    # 20. Power Consumption Trend Over Time
+    run_query(conn, """
+        SELECT 
+            date,
+            phase,
+            ROUND(avg_power_w, 2) as avg_power_w,
+            ROUND(total_energy_kwh, 2) as energy_kwh,
+            ROUND(avg_occupancy_count, 1) as occupancy
+        FROM research_daily_aggregates
+        ORDER BY date DESC
+        LIMIT 14;
+    """, "20. POWER CONSUMPTION TREND (Last 14 Days)")
+    
+    # 21. User Engagement Trends Over Time
+    run_query(conn, """
+        SELECT 
+            date,
+            phase,
+            tasks_generated,
+            tasks_completed,
+            ROUND(tasks_completed * 100.0 / NULLIF(tasks_generated, 0), 1) as completion_rate_pct,
+            nudges_sent,
+            nudges_accepted,
+            ROUND(nudges_accepted * 100.0 / NULLIF(nudges_sent, 0), 1) as acceptance_rate_pct
+        FROM research_daily_aggregates
+        WHERE tasks_generated > 0 OR nudges_sent > 0
+        ORDER BY date DESC
+        LIMIT 14;
+    """, "21. USER ENGAGEMENT TRENDS (Last 14 Days)")
+    
+    # 22. AI Indices Progression Over Time
+    run_query(conn, """
+        SELECT 
+            date,
+            phase,
+            ROUND(avg_anomaly_index, 3) as anomaly,
+            ROUND(avg_behaviour_index, 3) as behaviour,
+            ROUND(avg_fatigue_index, 3) as fatigue
+        FROM research_daily_aggregates
+        WHERE avg_anomaly_index IS NOT NULL
+        ORDER BY date DESC
+        LIMIT 14;
+    """, "22. AI INDICES PROGRESSION (Last 14 Days)")
+    
+    # 23. Task Difficulty Feedback Analysis
+    run_query(conn, """
+        SELECT 
+            task_type,
+            difficulty_level,
+            COUNT(*) as total,
+            SUM(completed) as completed,
+            ROUND(AVG(CASE WHEN user_feedback = 'too_easy' THEN 1 ELSE 0 END) * 100, 1) as too_easy_pct,
+            ROUND(AVG(CASE WHEN user_feedback = 'just_right' THEN 1 ELSE 0 END) * 100, 1) as just_right_pct,
+            ROUND(AVG(CASE WHEN user_feedback = 'too_hard' THEN 1 ELSE 0 END) * 100, 1) as too_hard_pct
+        FROM research_task_interactions
+        WHERE user_feedback IS NOT NULL
+        GROUP BY task_type, difficulty_level
+        ORDER BY task_type, difficulty_level;
+    """, "23. TASK DIFFICULTY FEEDBACK ANALYSIS")
+    
+    # 24. Notification Response Time Analysis
+    run_query(conn, """
+        SELECT 
+            action_type,
+            COUNT(*) as total_sent,
+            SUM(responded) as responded,
+            SUM(accepted) as accepted,
+            ROUND(AVG(response_time_seconds), 1) as avg_response_sec,
+            ROUND(MIN(response_time_seconds), 1) as min_response_sec,
+            ROUND(MAX(response_time_seconds), 1) as max_response_sec
+        FROM research_nudge_log
+        WHERE responded = 1
+        GROUP BY action_type;
+    """, "24. NOTIFICATION RESPONSE TIME ANALYSIS")
+    
+    # 25. Phase Transition Impact (Before/After Comparison)
+    run_query(conn, """
+        SELECT 
+            phase,
+            COUNT(*) as days,
+            ROUND(AVG(avg_power_w), 2) as avg_power,
+            ROUND(AVG(tasks_completed), 1) as avg_tasks_completed,
+            ROUND(AVG(nudges_accepted * 100.0 / NULLIF(nudges_sent, 0)), 1) as avg_acceptance_rate,
+            ROUND(AVG(avg_behaviour_index), 3) as avg_behaviour,
+            ROUND(AVG(avg_fatigue_index), 3) as avg_fatigue
+        FROM research_daily_aggregates
+        GROUP BY phase;
+    """, "25. PHASE TRANSITION IMPACT (Baseline vs Active Comparison)")
+    
+    # 26. Q-Learning Convergence Analysis
+    run_query(conn, """
+        SELECT 
+            DATE(timestamp, 'unixepoch') as date,
+            phase,
+            COUNT(*) as episodes,
+            ROUND(AVG(max_q_value), 4) as avg_max_q,
+            ROUND(AVG(reward), 4) as avg_reward,
+            ROUND(AVG(epsilon), 3) as avg_epsilon
+        FROM research_rl_episodes
+        GROUP BY date, phase
+        ORDER BY date DESC
+        LIMIT 14;
+    """, "26. Q-LEARNING CONVERGENCE (Last 14 Days)")
+    
+    # 27. Correlation: Indices vs User Behavior
+    run_query(conn, """
+        SELECT 
+            CASE 
+                WHEN avg_fatigue_index < 0.3 THEN 'Low Fatigue'
+                WHEN avg_fatigue_index < 0.7 THEN 'Medium Fatigue'
+                ELSE 'High Fatigue'
+            END as fatigue_level,
+            COUNT(*) as days,
+            ROUND(AVG(nudges_accepted * 100.0 / NULLIF(nudges_sent, 0)), 1) as avg_acceptance_rate,
+            ROUND(AVG(tasks_completed * 100.0 / NULLIF(tasks_generated, 0)), 1) as avg_task_completion
+        FROM research_daily_aggregates
+        WHERE nudges_sent > 0 AND avg_fatigue_index IS NOT NULL
+        GROUP BY fatigue_level;
+    """, "27. FATIGUE INDEX vs USER ENGAGEMENT")
+    
+    # 28. Area-Based Intervention Impact
+    run_query(conn, """
+        SELECT 
+            area_name,
+            phase,
+            COUNT(*) as days,
+            ROUND(AVG(avg_power_w), 2) as avg_power_w,
+            ROUND(AVG(occupancy_percentage), 1) as avg_occupancy_pct
+        FROM research_area_daily_stats
+        GROUP BY area_name, phase
+        ORDER BY area_name, phase;
+    """, "28. AREA-BASED INTERVENTION IMPACT")
+    
+    # 29. Last Data Collection Time
     run_query(conn, """
         SELECT 
             'daily_aggregates' as table_name,
@@ -354,7 +557,21 @@ def main():
             'task_interactions',
             MAX(date)
         FROM research_task_interactions;
-    """, "20. LAST DATA COLLECTION TIME")
+    """, "29. LAST DATA COLLECTION TIME")
+    
+    # 30. Gamification Effectiveness: Task Completion Times
+    run_query(conn, """
+        SELECT 
+            task_type,
+            COUNT(*) as total_completed,
+            ROUND(AVG(time_to_complete_seconds / 3600.0), 2) as avg_hours_to_complete,
+            ROUND(MIN(time_to_complete_seconds / 3600.0), 2) as min_hours,
+            ROUND(MAX(time_to_complete_seconds / 3600.0), 2) as max_hours
+        FROM research_task_interactions
+        WHERE completed = 1 AND time_to_complete_seconds IS NOT NULL
+        GROUP BY task_type
+        ORDER BY total_completed DESC;
+    """, "30. TASK COMPLETION TIME ANALYSIS")
     
     # Close connection
     conn.close()

@@ -228,7 +228,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.error("Automatic backup error: %s", e)
     
     hass.data[DOMAIN]["auto_backup_listener"] = async_track_time_interval(
-        hass, auto_backup_callback, timedelta(seconds=BACKUP_INTERVAL_HOURS)
+        hass, auto_backup_callback, timedelta(hours=BACKUP_INTERVAL_HOURS)
     )
 
     # Generate tasks immediately if none exist for today (only in active phase)

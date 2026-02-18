@@ -404,6 +404,15 @@ class DecisionAgent:
         # Check notification limits
         if self.notification_count_today >= MAX_NOTIFICATIONS_PER_DAY:
             _LOGGER.info("Max notifications reached for today (%d/%d)", self.notification_count_today, MAX_NOTIFICATIONS_PER_DAY)
+            # Log blocked notification
+            await self._log_blocked_notification(
+                reason="max_daily_limit",
+                opportunity_score=0.0,  # Not calculated yet
+                time_since_last=None,
+                required_cooldown=None,
+                adaptive_cooldown=None,
+                available_actions=[]
+            )
             return
         
         # Calculate opportunity score BEFORE cooldown check
@@ -411,12 +420,44 @@ class DecisionAgent:
         
         # Check adaptive cooldown with opportunity-based bypass
         if not await self._check_cooldown_with_opportunity(opportunity_score):
+            # Log blocked notification - cooldown details captured in method
+            current_state = self.data_collector.get_current_state()
+            time_since_last = (datetime.now() - self.last_notification_time).total_seconds() / 60 if self.last_notification_time else None
+            
+            # Recalculate cooldown for logging
+            base_cooldown = MIN_COOLDOWN_MINUTES
+            fatigue_multiplier = 1.0 + (self.fatigue_index * 2.0)
+            now = datetime.now()
+            hour = now.hour
+            time_multiplier = 0.7 if 17 <= hour <= 22 else (0.8 if 7 <= hour <= 9 else 1.0)
+            adaptive_cooldown = base_cooldown * fatigue_multiplier * time_multiplier
+            
+            required_cooldown = adaptive_cooldown
+            if opportunity_score >= HIGH_OPPORTUNITY_THRESHOLD:
+                required_cooldown = adaptive_cooldown * 0.5
+            
+            await self._log_blocked_notification(
+                reason="cooldown",
+                opportunity_score=opportunity_score,
+                time_since_last=time_since_last,
+                required_cooldown=required_cooldown,
+                adaptive_cooldown=adaptive_cooldown,
+                available_actions=[]  # Not checked yet
+            )
             return
         
         # Check fatigue threshold - but allow bypass for critical opportunities
         if self.fatigue_index > FATIGUE_THRESHOLD and opportunity_score < CRITICAL_OPPORTUNITY_THRESHOLD:
             _LOGGER.info("User fatigue too high (%.2f > %.2f) and opportunity not critical (%.2f), skipping notification", 
                         self.fatigue_index, FATIGUE_THRESHOLD, opportunity_score)
+            await self._log_blocked_notification(
+                reason="fatigue_threshold",
+                opportunity_score=opportunity_score,
+                time_since_last=None,
+                required_cooldown=None,
+                adaptive_cooldown=None,
+                available_actions=[]
+            )
             return
             
         # Get current state
@@ -427,6 +468,14 @@ class DecisionAgent:
 
         if not available_actions:
             _LOGGER.debug("No notification actions available based on current context")
+            await self._log_blocked_notification(
+                reason="no_available_actions",
+                opportunity_score=opportunity_score,
+                time_since_last=None,
+                required_cooldown=None,
+                adaptive_cooldown=None,
+                available_actions=available_actions
+            )
             return
 
        # Epsilon-greedy action selection
@@ -456,7 +505,7 @@ class DecisionAgent:
         
         # Log RL episode for research analysis
         self.episode_number += 1
-        await self._log_rl_episode(state_key, action, reward, action_source)
+        await self._log_rl_episode(state_key, action, reward, action_source, opportunity_score)
 
     async def _shadow_decide_action(self):
         """
@@ -894,6 +943,57 @@ class DecisionAgent:
         if self.storage:
             await self._save_persistent_state()
     
+    async def _log_blocked_notification(
+        self,
+        reason: str,
+        opportunity_score: float,
+        time_since_last: float = None,
+        required_cooldown: float = None,
+        adaptive_cooldown: float = None,
+        available_actions: list = None
+    ):
+        """
+        Log when a notification attempt was blocked in active phase.
+        
+        Args:
+            reason: Reason for blocking (max_daily_limit, cooldown, fatigue_threshold, no_available_actions)
+            opportunity_score: Calculated opportunity score at time of block
+            time_since_last: Minutes since last notification (for cooldown blocks)
+            required_cooldown: Required cooldown that wasn't met (for cooldown blocks)
+            adaptive_cooldown: Base adaptive cooldown calculated (for cooldown blocks)
+            available_actions: List of available actions (empty if none)
+        """
+        if not self.storage or self.phase != PHASE_ACTIVE:
+            # Only log in active phase
+            return
+        
+        current_state = self.data_collector.get_current_state()
+        now = datetime.now()
+        
+        # Serialize action mask
+        action_mask_dict = {int(k): bool(v) for k, v in self.action_mask.items()}
+        
+        block_data = {
+            "phase": self.phase,
+            "block_reason": reason,
+            "opportunity_score": opportunity_score,
+            "current_power": current_state.get("power", 0),
+            "anomaly_index": self.anomaly_index,
+            "behaviour_index": self.behaviour_index,
+            "fatigue_index": self.fatigue_index,
+            "notification_count_today": self.notification_count_today,
+            "time_since_last_notification_minutes": time_since_last,
+            "required_cooldown_minutes": required_cooldown,
+            "adaptive_cooldown_minutes": adaptive_cooldown,
+            "available_action_count": len(available_actions) if available_actions else 0,
+            "action_mask": action_mask_dict,
+            "state_vector": self.state_vector.tolist() if self.state_vector is not None and hasattr(self.state_vector, 'tolist') else [],
+            "time_of_day_hour": now.hour
+        }
+        
+        await self.storage.log_blocked_notification(block_data)
+        _LOGGER.debug("Blocked notification logged: reason=%s, opportunity=%.2f", reason, opportunity_score)
+    
     async def _calculate_reward(self) -> float:
         """
         Calculates reward R_t based on energy savings, engagement and fatigue.
@@ -927,7 +1027,7 @@ class DecisionAgent:
         
         return reward
     
-    async def _log_rl_episode(self, state_key: tuple, action: int, reward: float, action_source: str):
+    async def _log_rl_episode(self, state_key: tuple, action: int, reward: float, action_source: str, opportunity_score: float = None):
         """Log RL decision episode to research database for convergence analysis."""
         if not self.storage:
             return
@@ -966,6 +1066,7 @@ class DecisionAgent:
             "anomaly_index": self.anomaly_index,
             "behaviour_index": self.behaviour_index,
             "fatigue_index": self.fatigue_index,
+            "opportunity_score": opportunity_score,  # None for shadow episodes, calculated for active
             "time_of_day_hour": time_of_day_hour,
             "baseline_power_reference": self.baseline_consumption
         }

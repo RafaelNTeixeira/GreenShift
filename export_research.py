@@ -50,6 +50,7 @@ def export_research_data(db_path: str, output_dir: str = None):
         'research_rl_episodes',
         'research_phase_metadata',
         'research_nudge_log',
+        'research_blocked_notifications',
         'research_task_interactions',
         'research_area_daily_stats',
         'research_weekly_challenges'

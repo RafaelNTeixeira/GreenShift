@@ -208,6 +208,7 @@ class StorageManager:
                     nudges_accepted INTEGER DEFAULT 0,
                     nudges_dismissed INTEGER DEFAULT 0,
                     nudges_ignored INTEGER DEFAULT 0,
+                    nudges_blocked INTEGER DEFAULT 0,
                     
                     -- Indices
                     avg_anomaly_index REAL,
@@ -251,6 +252,7 @@ class StorageManager:
                     anomaly_index REAL,
                     behaviour_index REAL,
                     fatigue_index REAL,
+                    opportunity_score REAL,
                     time_of_day_hour INTEGER,
                     baseline_power_reference REAL,
                     
@@ -284,6 +286,41 @@ class StorageManager:
                     accepted INTEGER DEFAULT 0,
                     response_timestamp REAL,
                     response_time_seconds REAL,
+                    
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Blocked notifications table (active phase only)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS research_blocked_notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp REAL NOT NULL,
+                    phase TEXT,
+                    
+                    -- Block reason
+                    block_reason TEXT NOT NULL,
+                    
+                    -- Context at block time
+                    opportunity_score REAL,
+                    current_power REAL,
+                    anomaly_index REAL,
+                    behaviour_index REAL,
+                    fatigue_index REAL,
+                    notification_count_today INTEGER,
+                    
+                    -- Cooldown details (if applicable)
+                    time_since_last_notification_minutes REAL,
+                    required_cooldown_minutes REAL,
+                    adaptive_cooldown_minutes REAL,
+                    
+                    -- Action availability
+                    available_action_count INTEGER,
+                    action_mask TEXT,
+                    
+                    -- State
+                    state_vector TEXT,
+                    time_of_day_hour INTEGER,
                     
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
@@ -362,6 +399,11 @@ class StorageManager:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_nudge_log_timestamp 
                 ON research_nudge_log(timestamp)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_blocked_notifications_timestamp 
+                ON research_blocked_notifications(timestamp)
             """)
             
             cursor.execute("""
@@ -1102,8 +1144,8 @@ class StorageManager:
                 (timestamp, episode_number, phase, state_vector, state_key,
                  action, action_name, action_source, reward, q_values,
                  max_q_value, epsilon, action_mask, current_power, anomaly_index, 
-                 behaviour_index, fatigue_index, time_of_day_hour, baseline_power_reference)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 behaviour_index, fatigue_index, opportunity_score, time_of_day_hour, baseline_power_reference)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 datetime.now().timestamp(),
                 episode_data.get('episode'),
@@ -1122,6 +1164,7 @@ class StorageManager:
                 episode_data.get('anomaly_index'),
                 episode_data.get('behaviour_index'),
                 episode_data.get('fatigue_index'),
+                episode_data.get('opportunity_score'),
                 episode_data.get('time_of_day_hour'),
                 episode_data.get('baseline_power_reference')
             ))
@@ -1195,6 +1238,44 @@ class StorageManager:
             conn.close()
         
         await self.hass.async_add_executor_job(_update)
+    
+    async def log_blocked_notification(self, block_data: dict):
+        """Log when a notification attempt was blocked in active phase."""
+        def _insert():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT INTO research_blocked_notifications
+                (timestamp, phase, block_reason, opportunity_score,
+                 current_power, anomaly_index, behaviour_index, fatigue_index,
+                 notification_count_today, time_since_last_notification_minutes,
+                 required_cooldown_minutes, adaptive_cooldown_minutes,
+                 available_action_count, action_mask, state_vector, time_of_day_hour)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                datetime.now().timestamp(),
+                block_data.get('phase'),
+                block_data.get('block_reason'),
+                block_data.get('opportunity_score'),
+                block_data.get('current_power'),
+                block_data.get('anomaly_index'),
+                block_data.get('behaviour_index'),
+                block_data.get('fatigue_index'),
+                block_data.get('notification_count_today'),
+                block_data.get('time_since_last_notification_minutes'),
+                block_data.get('required_cooldown_minutes'),
+                block_data.get('adaptive_cooldown_minutes'),
+                block_data.get('available_action_count'),
+                json.dumps(block_data.get('action_mask', {})),
+                json.dumps(block_data.get('state_vector', [])),
+                block_data.get('time_of_day_hour')
+            ))
+            
+            conn.commit()
+            conn.close()
+        
+        await self.hass.async_add_executor_job(_insert)
     
     async def log_task_generation(self, task_data: dict):
         """Log task generation with full context."""
@@ -1326,6 +1407,7 @@ class StorageManager:
             # Get energy metrics from sensor database
             sensor_cursor.execute("""
                 SELECT 
+                    energy as total_energy_kwh,
                     AVG(power) as avg_power,
                     MAX(power) as peak_power,
                     MIN(power) as min_power,
@@ -1376,6 +1458,15 @@ class StorageManager:
             if not nudge_stats or nudge_stats[0] is None:
                 nudge_stats = (0, 0, 0, 0)
             
+            # Get blocked notification count (active phase only)
+            research_cursor.execute("""
+                SELECT COUNT(*) FROM research_blocked_notifications
+                WHERE DATE(timestamp, 'unixepoch') = ?
+                  AND phase = 'active'
+            """, (date,))
+            blocked_result = research_cursor.fetchone()
+            blocked_count = blocked_result[0] if blocked_result and blocked_result[0] else 0
+            
             # Get average indices from research RL episodes
             research_cursor.execute("""
                 SELECT 
@@ -1392,15 +1483,16 @@ class StorageManager:
             # Insert aggregate
             research_cursor.execute("""
                 INSERT OR REPLACE INTO research_daily_aggregates
-                (date, phase, avg_power_w, peak_power_w, min_power_w,
+                (date, phase, total_energy_kwh, avg_power_w, peak_power_w, min_power_w,
                  avg_temperature, avg_humidity, avg_illuminance,
                  avg_occupancy_count, total_occupied_hours,
                  tasks_generated, tasks_completed, tasks_verified,
-                 nudges_sent, nudges_accepted, nudges_dismissed, nudges_ignored,
+                 nudges_sent, nudges_accepted, nudges_dismissed, nudges_ignored, nudges_blocked,
                  avg_anomaly_index, avg_behaviour_index, avg_fatigue_index)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (date, phase, *energy_stats[:6], avg_occupancy, energy_stats[6],
-                   *task_stats, *nudge_stats, *indices_stats))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (date, phase, energy_stats[0], energy_stats[1], energy_stats[2], energy_stats[3],
+                   energy_stats[4], energy_stats[5], energy_stats[6], avg_occupancy, energy_stats[7],
+                   *task_stats, *nudge_stats, blocked_count, *indices_stats))
             
             research_conn.commit()
             sensor_conn.close()
@@ -1529,6 +1621,7 @@ class StorageManager:
                 cursor.execute("DELETE FROM research_daily_aggregates")
                 cursor.execute("DELETE FROM research_rl_episodes")
                 cursor.execute("DELETE FROM research_nudge_log")
+                cursor.execute("DELETE FROM research_blocked_notifications")
                 cursor.execute("DELETE FROM research_task_interactions")
                 cursor.execute("DELETE FROM research_area_daily_stats")
                 conn.commit()

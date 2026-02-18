@@ -70,6 +70,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Build backup daily to prevent data loss
 - [x] Check query 13
 - [ ] Test WAL
-- [ ] Improve research data queries
+- [x] Improve research data queries
+- [ ] Manage memory usage 
 
 ---
