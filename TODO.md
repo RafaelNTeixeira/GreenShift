@@ -72,6 +72,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Check query 13
 - [x] Improve research data queries
 - [x] Manage memory usage 
+- [ ] Analyze quantity of rl episodes being stored into the database (~60K entries per 21 days of runtime)
 - [ ] Consider if AI state history and notifications should be kept in persistent memory (JSON)
 
 ---

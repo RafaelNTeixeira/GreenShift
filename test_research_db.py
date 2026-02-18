@@ -151,6 +151,7 @@ def main():
             ROUND(avg_power_w, 2) as avg_power_w,
             ROUND(avg_temperature, 1) as temp_c,
             ROUND(avg_humidity, 1) as humidity_pct,
+            ROUND(avg_illuminance, 1) as illuminance_lx,
             ROUND(total_occupied_hours, 1) as occupied_hrs,
             ROUND(occupancy_percentage, 1) as occupancy_pct
         FROM research_area_daily_stats
