@@ -60,8 +60,9 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Test nudge selection based on current environment and priority
 - [x] Consider if 50 bins of power consumption is enough for intervention (decrease, keep or increase) - increased to 100
 - [x] AI learning during baseline intervention
-- [ ] Store data needed for analysis/results extraction
+- [x] Store data needed for analysis/results extraction
 - [x] Test AI-driven features (notifications, recommendations)
+- [ ] Analyze solution for office weekends
 
 
 ### 📊 Data
@@ -71,6 +72,6 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Check query 13
 - [ ] Test WAL
 - [x] Improve research data queries
-- [ ] Manage memory usage 
+- [x] Manage memory usage 
 
 ---
