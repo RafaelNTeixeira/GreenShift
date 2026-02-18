@@ -411,30 +411,6 @@ class DecisionAgent:
         
         # Check adaptive cooldown with opportunity-based bypass
         if not await self._check_cooldown_with_opportunity(opportunity_score):
-            # Log blocked notification - cooldown details captured in method
-            current_state = self.data_collector.get_current_state()
-            time_since_last = (datetime.now() - self.last_notification_time).total_seconds() / 60 if self.last_notification_time else None
-            
-            # Recalculate cooldown for logging
-            base_cooldown = MIN_COOLDOWN_MINUTES
-            fatigue_multiplier = 1.0 + (self.fatigue_index * 2.0)
-            now = datetime.now()
-            hour = now.hour
-            time_multiplier = 0.7 if 17 <= hour <= 22 else (0.8 if 7 <= hour <= 9 else 1.0)
-            adaptive_cooldown = base_cooldown * fatigue_multiplier * time_multiplier
-            
-            required_cooldown = adaptive_cooldown
-            if opportunity_score >= HIGH_OPPORTUNITY_THRESHOLD:
-                required_cooldown = adaptive_cooldown * 0.5
-            
-            await self._log_blocked_notification(
-                reason="cooldown",
-                opportunity_score=opportunity_score,
-                time_since_last=time_since_last,
-                required_cooldown=required_cooldown,
-                adaptive_cooldown=adaptive_cooldown,
-                available_actions=[]  # Not checked yet
-            )
             return
         
         # Check fatigue threshold - but allow bypass for critical opportunities
@@ -459,14 +435,6 @@ class DecisionAgent:
 
         if not available_actions:
             _LOGGER.debug("No notification actions available based on current context")
-            await self._log_blocked_notification(
-                reason="no_available_actions",
-                opportunity_score=opportunity_score,
-                time_since_last=None,
-                required_cooldown=None,
-                adaptive_cooldown=None,
-                available_actions=available_actions
-            )
             return
 
        # Epsilon-greedy action selection
@@ -1388,8 +1356,7 @@ class DecisionAgent:
         # Allow bypass if opportunity is exceptional
         if opportunity_score >= CRITICAL_OPPORTUNITY_THRESHOLD:
             # Critical opportunity - immediate notification allowed
-            _LOGGER.info(
-                "Critical opportunity (%.2f) - bypassing cooldown (%.1f min since last)",
+            _LOGGER.info("Critical opportunity (%.2f) - bypassing cooldown (%.1f min since last)",
                 opportunity_score, time_since_last
             )
             return True
@@ -1397,28 +1364,24 @@ class DecisionAgent:
             # High opportunity - reduced cooldown (50% of adaptive)
             required_cooldown = adaptive_cooldown * 0.5
             if time_since_last >= required_cooldown:
-                _LOGGER.info(
-                    "High opportunity (%.2f) - reduced cooldown met (%.1f/%.1f min)",
+                _LOGGER.info("High opportunity (%.2f) - reduced cooldown met (%.1f/%.1f min)",
                     opportunity_score, time_since_last, required_cooldown
                 )
                 return True
             else:
-                _LOGGER.debug(
-                    "High opportunity but cooldown not met: %.1f/%.1f min (opportunity=%.2f)",
+                _LOGGER.debug("High opportunity but cooldown not met: %.1f/%.1f min (opportunity=%.2f)",
                     time_since_last, required_cooldown, opportunity_score
                 )
                 return False
         else:
             # Normal opportunity - full adaptive cooldown required
             if time_since_last >= adaptive_cooldown:
-                _LOGGER.debug(
-                    "Standard cooldown met: %.1f/%.1f min (opportunity=%.2f)",
+                _LOGGER.debug("Standard cooldown met: %.1f/%.1f min (opportunity=%.2f)",
                     time_since_last, adaptive_cooldown, opportunity_score
                 )
                 return True
             else:
-                _LOGGER.debug(
-                    "In cooldown: %.1f/%.1f min (opportunity=%.2f, fatigue=%.2f)",
+                _LOGGER.debug("In cooldown: %.1f/%.1f min (opportunity=%.2f, fatigue=%.2f)",
                     time_since_last, adaptive_cooldown, opportunity_score, self.fatigue_index
                 )
                 return False
