@@ -404,15 +404,6 @@ class DecisionAgent:
         # Check notification limits
         if self.notification_count_today >= MAX_NOTIFICATIONS_PER_DAY:
             _LOGGER.info("Max notifications reached for today (%d/%d)", self.notification_count_today, MAX_NOTIFICATIONS_PER_DAY)
-            # Log blocked notification
-            await self._log_blocked_notification(
-                reason="max_daily_limit",
-                opportunity_score=0.0,  # Not calculated yet
-                time_since_last=None,
-                required_cooldown=None,
-                adaptive_cooldown=None,
-                available_actions=[]
-            )
             return
         
         # Calculate opportunity score BEFORE cooldown check

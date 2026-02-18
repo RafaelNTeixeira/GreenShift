@@ -27,7 +27,7 @@ from typing import List, Dict
 import random
 
 # Constants matching the actual system
-UPDATE_INTERVAL_SECONDS = 5
+UPDATE_INTERVAL_SECONDS = 15  # Optimized for storage
 AI_FREQUENCY_SECONDS = 15
 SHADOW_INTERVAL_MULTIPLIER = 4
 MAX_NOTIFICATIONS_PER_DAY = 10
@@ -43,8 +43,6 @@ ACTIONS = {
 }
 
 BLOCK_REASONS = [
-    "max_daily_limit",
-    "cooldown", 
     "fatigue_threshold",
     "no_available_actions"
 ]
@@ -686,8 +684,8 @@ class TestDataGenerator:
             self.episode_number += 1
             rl_episodes += 1
             
-            # If blocked, log blocked notification
-            if blocked:
+            # Only log blocked notifications for research-valuable reasons
+            if blocked and block_reason in BLOCK_REASONS:
                 minutes_since = (current - self.last_notification_time).total_seconds() / 60 if self.last_notification_time else None
                 
                 cursor.execute("""
@@ -709,8 +707,8 @@ class TestDataGenerator:
                     fatigue_idx,
                     self.notification_count_today,
                     minutes_since,
-                    MIN_COOLDOWN_MINUTES if block_reason == "cooldown" else None,
-                    MIN_COOLDOWN_MINUTES * (1 + fatigue_idx) if block_reason == "cooldown" else None,
+                    None,  # required_cooldown not relevant for fatigue/no_actions
+                    None,  # adaptive_cooldown not relevant for fatigue/no_actions
                     sum(action_mask.values()),
                     json.dumps(action_mask),
                     json.dumps(state_vector),

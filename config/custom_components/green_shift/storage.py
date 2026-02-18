@@ -1417,7 +1417,7 @@ class StorageManager:
                     SUM(CASE WHEN occupancy = 1 THEN 1 ELSE 0 END) * ? / 3600.0 as occupied_hours
                 FROM sensor_history
                 WHERE timestamp >= ? AND timestamp < ?
-            """, (UPDATE_INTERVAL_SECONDS, start_ts, end_ts))  # 5 seconds per reading
+            """, (UPDATE_INTERVAL_SECONDS, start_ts, end_ts))  # UPDATE_INTERVAL_SECONDS per reading
             energy_stats = sensor_cursor.fetchone()
             
             # Count occupancy per reading (could be multiple areas)

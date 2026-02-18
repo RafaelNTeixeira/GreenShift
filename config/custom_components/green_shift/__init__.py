@@ -786,7 +786,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         if "daily_aggregation_listener" in hass.data[DOMAIN]:
             hass.data[DOMAIN]["daily_aggregation_listener"]()
-        
+            
         # Cancel backup listener
         if "auto_backup_listener" in hass.data[DOMAIN]:
             hass.data[DOMAIN]["auto_backup_listener"]()

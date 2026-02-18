@@ -70,11 +70,11 @@ force_notification:
   
 inject_test_data:
   name: Inject Test Data
-  description: Generate synthetic historical data for testing. Note - 1 hour = 720 data points, so large values may take time.
+  description: Generate synthetic historical data for testing. Note - 1 hour = 240 data points (15s intervals), so large values may take time.
   fields:
     hours:
       name: Hours of data
-      description: How many hours of data to generate (1 hour = 720 readings)
+      description: How many hours of data to generate (1 hour = 240 readings at 15s intervals)
       required: true
       example: 2
       selector:
