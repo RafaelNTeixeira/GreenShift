@@ -358,9 +358,9 @@ Green Shift includes comprehensive data protection to ensure your energy data an
 
 ### Automatic Protection
 - ✅ **Write-Ahead Logging (WAL)**: Protects against crashes and power failures
-- ✅ **Automatic Backups**: Hourly, daily and weekly backups created automatically
+- ✅ **Automatic Backups**: Every 4 hours, keeps last 18 (~3 days of protection)
 - ✅ **Atomic Writes**: State files never partially written (no corruption)
-- ✅ **Graceful Shutdown**: Data saved automatically when Home Assistant restarts
+- ✅ **Startup/Shutdown Backups**: Snapshots before and after restarts
 
 ### Recovery Services
 
@@ -376,7 +376,7 @@ service: green_shift.create_backup
 # Restore from a backup
 service: green_shift.restore_backup
 data:
-  backup_name: "daily_20260215_030000"
+  backup_name: "auto/20260218_100000"  # or just "20260218_100000"
 ```
 
 ### Backup Storage
@@ -385,7 +385,11 @@ All data is stored in: `config/green_shift_data/`
 - `sensor_data.db` - Last 14 days of sensor readings
 - `research_data.db` - Permanent research and analytics data
 - `state.json` - AI model state (Q-table, indices)
-- `backups/` - Automated backup snapshots
+- `backups/` - Organized backup snapshots:
+  - `auto/` - Every 4 hours (keeps last 18)
+  - `startup/` - On integration startup (keeps last 10)
+  - `shutdown/` - On integration shutdown (keeps last 10)
+  - `manual/` - User-created backups (never auto-deleted)
 
 ---
 

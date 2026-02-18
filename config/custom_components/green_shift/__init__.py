@@ -20,12 +20,9 @@ from .const import (
     TASK_GENERATION_TIME,
     VERIFY_TASKS_INTERVAL_MINUTES,
     BACKUP_INTERVAL_HOURS,
-    BACKUP_DAILY_TIME,
-    BACKUP_WEEKLY_DAY,
-    BACKUP_WEEKLY_TIME,
     KEEP_AUTO_BACKUPS,
-    KEEP_DAILY_BACKUPS,
-    KEEP_WEEKLY_BACKUPS
+    KEEP_STARTUP_BACKUPS,
+    KEEP_SHUTDOWN_BACKUPS
 )
 from .data_collector import DataCollector
 from .decision_agent import DecisionAgent
@@ -219,11 +216,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             success = await backup_manager.create_backup(backup_type="auto")
             if success:
                 _LOGGER.info("Automatic backup created successfully")
-                # Clean up old backups
+                # Clean up old backups (manual backups are never auto-deleted)
                 await backup_manager.cleanup_old_backups(
                     keep_auto=KEEP_AUTO_BACKUPS,
-                    keep_daily=KEEP_DAILY_BACKUPS,
-                    keep_weekly=KEEP_WEEKLY_BACKUPS
+                    keep_startup=KEEP_STARTUP_BACKUPS,
+                    keep_shutdown=KEEP_SHUTDOWN_BACKUPS
                 )
             else:
                 _LOGGER.warning("Automatic backup failed")
@@ -231,45 +228,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.error("Automatic backup error: %s", e)
     
     hass.data[DOMAIN]["auto_backup_listener"] = async_track_time_interval(
-        hass, auto_backup_callback, timedelta(hours=BACKUP_INTERVAL_HOURS)
-    )
-
-    # Daily backup at BACKUP_DAILY_TIME
-    async def daily_backup_callback(now):
-        """Create daily backup."""
-        _LOGGER.info("Creating daily backup...")
-        try:
-            await backup_manager.create_backup(backup_type="daily")
-            _LOGGER.info("Daily backup created successfully")
-        except Exception as e:
-            _LOGGER.error("Daily backup error: %s", e)
-    
-    hass.data[DOMAIN]["daily_backup_listener"] = async_track_time_change(
-        hass, daily_backup_callback, 
-        hour=BACKUP_DAILY_TIME[0], 
-        minute=BACKUP_DAILY_TIME[1], 
-        second=BACKUP_DAILY_TIME[2]
-    )
-
-    # Weekly backup
-    async def weekly_backup_callback(now):
-        """Create weekly backup."""
-        # Only run on the specified day of week
-        if now.weekday() != BACKUP_WEEKLY_DAY:
-            return
-        
-        _LOGGER.info("Creating weekly backup...")
-        try:
-            await backup_manager.create_backup(backup_type="weekly")
-            _LOGGER.info("Weekly backup created successfully")
-        except Exception as e:
-            _LOGGER.error("Weekly backup error: %s", e)
-    
-    hass.data[DOMAIN]["weekly_backup_listener"] = async_track_time_change(
-        hass, weekly_backup_callback, 
-        hour=BACKUP_WEEKLY_TIME[0], 
-        minute=BACKUP_WEEKLY_TIME[1], 
-        second=BACKUP_WEEKLY_TIME[2]
+        hass, auto_backup_callback, timedelta(seconds=BACKUP_INTERVAL_HOURS)
     )
 
     # Generate tasks immediately if none exist for today (only in active phase)
@@ -828,15 +787,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if "daily_aggregation_listener" in hass.data[DOMAIN]:
             hass.data[DOMAIN]["daily_aggregation_listener"]()
         
-        # Cancel backup listeners
+        # Cancel backup listener
         if "auto_backup_listener" in hass.data[DOMAIN]:
             hass.data[DOMAIN]["auto_backup_listener"]()
-        
-        if "daily_backup_listener" in hass.data[DOMAIN]:
-            hass.data[DOMAIN]["daily_backup_listener"]()
-        
-        if "weekly_backup_listener" in hass.data[DOMAIN]:
-            hass.data[DOMAIN]["weekly_backup_listener"]()
 
         # Close storage connections
         storage = hass.data[DOMAIN].get("storage")

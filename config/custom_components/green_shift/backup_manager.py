@@ -26,6 +26,17 @@ class BackupManager:
         self.backup_dir = self.data_dir / "backups"
         self.backup_dir.mkdir(exist_ok=True)
         
+        # Create organized subdirectories for each backup type
+        self.auto_dir = self.backup_dir / "auto"
+        self.startup_dir = self.backup_dir / "startup"
+        self.shutdown_dir = self.backup_dir / "shutdown"
+        self.manual_dir = self.backup_dir / "manual"
+        
+        self.auto_dir.mkdir(exist_ok=True)
+        self.startup_dir.mkdir(exist_ok=True)
+        self.shutdown_dir.mkdir(exist_ok=True)
+        self.manual_dir.mkdir(exist_ok=True)
+        
         self.db_path = self.data_dir / "sensor_data.db"
         self.research_db_path = self.data_dir / "research_data.db"
         self.state_file = self.data_dir / "state.json"
@@ -36,14 +47,24 @@ class BackupManager:
         """Create a timestamped backup of all data files.
         
         Args:
-            backup_type: Type of backup ('auto', 'manual', 'daily', 'weekly')
+            backup_type: Type of backup ('auto', 'manual', 'startup', 'shutdown')
             
         Returns:
             True if backup successful, False otherwise
         """
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_subdir = self.backup_dir / f"{backup_type}_{timestamp}"
+            
+            # Organize backups into type-specific subdirectories
+            type_dir_map = {
+                "auto": self.auto_dir,
+                "startup": self.startup_dir,
+                "shutdown": self.shutdown_dir,
+                "manual": self.manual_dir
+            }
+            
+            parent_dir = type_dir_map.get(backup_type, self.backup_dir)
+            backup_subdir = parent_dir / timestamp
             backup_subdir.mkdir(exist_ok=True)
             
             # Backup SQLite databases using the proper backup API
@@ -111,40 +132,47 @@ class BackupManager:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _do_backup)
     
-    async def cleanup_old_backups(self, keep_auto: int = 48, keep_daily: int = 7, keep_weekly: int = 4) -> None:
+    async def cleanup_old_backups(self, keep_auto: int = 18, keep_startup: int = 10, keep_shutdown: int = 10) -> None:
         """Remove old backups to save space.
         
+        Note: Manual backups are never auto-deleted.
+        
         Args:
-            keep_auto: Number of automatic backups to keep (default: 48 = 2 days if hourly)
-            keep_daily: Number of daily backups to keep
-            keep_weekly: Number of weekly backups to keep
+            keep_auto: Number of automatic backups to keep
+            keep_startup: Number of startup backups to keep
+            keep_shutdown: Number of shutdown backups to keep
         """
         try:
             def _cleanup():
-                # Get all backup directories
-                auto_backups = sorted([d for d in self.backup_dir.glob("auto_*")], reverse=True)
-                daily_backups = sorted([d for d in self.backup_dir.glob("daily_*")], reverse=True)
-                weekly_backups = sorted([d for d in self.backup_dir.glob("weekly_*")], reverse=True)
+                total_removed = 0
                 
-                # Remove old auto backups
+                # Clean auto backups
+                auto_backups = sorted([d for d in self.auto_dir.iterdir() if d.is_dir()], reverse=True)
                 for backup in auto_backups[keep_auto:]:
                     shutil.rmtree(backup)
+                    total_removed += 1
                     _LOGGER.debug("Removed old auto backup: %s", backup.name)
                 
-                # Remove old daily backups
-                for backup in daily_backups[keep_daily:]:
+                # Clean startup backups
+                startup_backups = sorted([d for d in self.startup_dir.iterdir() if d.is_dir()], reverse=True)
+                for backup in startup_backups[keep_startup:]:
                     shutil.rmtree(backup)
-                    _LOGGER.debug("Removed old daily backup: %s", backup.name)
+                    total_removed += 1
+                    _LOGGER.debug("Removed old startup backup: %s", backup.name)
                 
-                # Remove old weekly backups
-                for backup in weekly_backups[keep_weekly:]:
+                # Clean shutdown backups
+                shutdown_backups = sorted([d for d in self.shutdown_dir.iterdir() if d.is_dir()], reverse=True)
+                for backup in shutdown_backups[keep_shutdown:]:
                     shutil.rmtree(backup)
-                    _LOGGER.debug("Removed old weekly backup: %s", backup.name)
+                    total_removed += 1
+                    _LOGGER.debug("Removed old shutdown backup: %s", backup.name)
+                
+                if total_removed > 0:
+                    _LOGGER.info("Cleanup: removed %d old backups (keeping auto:%d, startup:%d, shutdown:%d)", 
+                                total_removed, keep_auto, keep_startup, keep_shutdown)
             
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, _cleanup)
-            
-            _LOGGER.info("Backup cleanup complete")
             
         except Exception as e:
             _LOGGER.error("Backup cleanup failed: %s", e)
@@ -153,13 +181,25 @@ class BackupManager:
         """Restore data from a specific backup.
         
         Args:
-            backup_name: Name of the backup directory to restore from
+            backup_name: Full path to backup (e.g., 'auto/20260218_100000' or just '20260218_100000')
             
         Returns:
             True if restore successful, False otherwise
         """
         try:
-            backup_path = self.backup_dir / backup_name
+            # Support both full path and just timestamp
+            if '/' in backup_name or '\\' in backup_name:
+                backup_path = self.backup_dir / backup_name
+            else:
+                # Try to find in all type directories
+                for type_dir in [self.auto_dir, self.startup_dir, self.shutdown_dir, self.manual_dir]:
+                    potential_path = type_dir / backup_name
+                    if potential_path.exists():
+                        backup_path = potential_path
+                        break
+                else:
+                    _LOGGER.error("Backup not found: %s", backup_name)
+                    return False
             
             if not backup_path.exists():
                 _LOGGER.error("Backup not found: %s", backup_name)
@@ -194,16 +234,23 @@ class BackupManager:
             return False
     
     def list_backups(self) -> list:
-        """List all available backups.
+        """List all available backups organized by type.
         
         Returns:
-            List of backup directory names, sorted by date (newest first)
+            List of backup paths in format 'type/timestamp', sorted by date (newest first)
         """
         try:
-            backups = sorted(
-                [d.name for d in self.backup_dir.iterdir() if d.is_dir()],
-                reverse=True
-            )
+            backups = []
+            
+            # Collect from all type directories
+            for type_name, type_dir in [("auto", self.auto_dir), ("startup", self.startup_dir), 
+                                        ("shutdown", self.shutdown_dir), ("manual", self.manual_dir)]:
+                for backup in type_dir.iterdir():
+                    if backup.is_dir():
+                        backups.append(f"{type_name}/{backup.name}")
+            
+            # Sort by timestamp (newest first)
+            backups.sort(reverse=True)
             return backups
         except Exception as e:
             _LOGGER.error("Failed to list backups: %s", e)

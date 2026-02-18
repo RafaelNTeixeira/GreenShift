@@ -132,9 +132,9 @@ restore_backup:
   fields:
     backup_name:
       name: Backup Name
-      description: Name of the backup to restore (e.g., "auto_20260216_143022")
+      description: Path to backup (e.g., "auto/20260218_100000" or just "20260218_100000")
       required: true
-      example: "daily_20260215_030000"
+      example: "auto/20260218_100000"
       selector:
         text:
 
