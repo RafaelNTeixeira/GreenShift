@@ -19,14 +19,14 @@ def connect_db(db_path):
     print(f"   Size: {db_path.stat().st_size / 1024:.2f} KB\n")
     return sqlite3.connect(db_path)
 
-def run_query(conn, query, description):
+def run_query(research_conn, query, description):
     """Run a query and display results."""
     print(f"{'='*80}")
     print(f"{description}")
     print(f"{'='*80}")
     
     try:
-        cursor = conn.cursor()
+        cursor = research_conn.cursor()
         cursor.execute(query)
         
         # Get column names
@@ -59,21 +59,31 @@ def run_query(conn, query, description):
 
 def main():
     """Run all test queries."""
-    # Determine database path
+    # Determine database paths
     if len(sys.argv) > 1:
-        db_path = Path(sys.argv[1])
+        data_dir = Path(sys.argv[1])
+        research_db_path = data_dir / "research_data.db"
+        sensor_db_path = data_dir / "sensor_data.db"
     else:
-        db_path = Path("config/green_shift_data/research_data.db")
+        research_db_path = Path("config/green_shift_data/research_data.db")
+        sensor_db_path = Path("config/green_shift_data/sensor_data.db")
     
-    # Connect to database
-    conn = connect_db(db_path)
-    if not conn:
+    # Connect to research database
+    research_conn = connect_db(research_db_path)
+    if not research_conn:
         return
+    
+    # Also connect to sensor database for Query 29
+    sensor_conn = None
+    if sensor_db_path.exists():
+        sensor_conn = sqlite3.connect(sensor_db_path)
+        print(f"✅ Sensor database found: {sensor_db_path}")
+        print(f"   Size: {sensor_db_path.stat().st_size / 1024:.2f} KB\n")
     
     print(f"Test Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
     # 1. Table existence and row counts
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 'research_daily_aggregates' as table_name, COUNT(*) as row_count FROM research_daily_aggregates
         UNION ALL
         SELECT 'research_rl_episodes', COUNT(*) FROM research_rl_episodes
@@ -92,7 +102,7 @@ def main():
     """, "1. TABLE ROW COUNTS")
     
     # 2. Phase metadata
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             phase,
             datetime(start_timestamp, 'unixepoch') as start_date,
@@ -104,7 +114,7 @@ def main():
     """, "2. PHASE METADATA")
     
     # 3. Current phase
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             phase,
             datetime(start_timestamp, 'unixepoch') as started,
@@ -116,7 +126,7 @@ def main():
     """, "3. CURRENT PHASE")
     
     # 4. Recent daily aggregates
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             date,
             phase,
@@ -134,7 +144,7 @@ def main():
     """, "4. RECENT DAILY AGGREGATES (Last 5 Days)")
     
     # 5. Area daily stats summary
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             COUNT(DISTINCT area_name) as total_areas,
             COUNT(DISTINCT date) as days_tracked,
@@ -143,7 +153,7 @@ def main():
     """, "5. AREA DAILY STATS SUMMARY")
     
     # 6. Recent area daily stats
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             date,
             area_name,
@@ -160,7 +170,7 @@ def main():
     """, "6. RECENT AREA DAILY STATS (Last 10 Records)")
     
     # 7. Area power consumption comparison (latest day)
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             area_name,
             ROUND(avg_power_w, 2) as avg_power_w,
@@ -173,7 +183,7 @@ def main():
     """, "7. AREA POWER COMPARISON (Latest Day)")
     
     # 8. RL episodes summary
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             COUNT(*) as total_episodes,
             COUNT(DISTINCT episode_number) as unique_episodes,
@@ -184,7 +194,7 @@ def main():
     """, "8. RL EPISODES SUMMARY")
     
     # 9. Action distribution
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             action_name,
             COUNT(*) as times_used,
@@ -197,7 +207,7 @@ def main():
     """, "9. ACTION DISTRIBUTION")
     
     # 10. Exploration vs Exploitation
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             action_source,
             COUNT(*) as count,
@@ -209,7 +219,7 @@ def main():
     """, "10. EXPLORATION VS EXPLOITATION")
     
     # 11. Weekly Challenge Summary
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             week_start_date,
             target_percentage,
@@ -224,7 +234,7 @@ def main():
     """, "11. WEEKLY CHALLENGE SUMMARY (Last 5)")
     
     # 12. Time-of-Day Notification Patterns (Active Phase)
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             time_of_day_hour as hour,
             COUNT(*) as total_decisions,
@@ -239,7 +249,7 @@ def main():
     """, "12. TIME-OF-DAY NOTIFICATION PATTERNS - Active Phase")
     
     # 13. Action Constraint Analysis (ACTIVE PHASE ONLY - Real RL Decisions)
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             DATE(timestamp, 'unixepoch') as date,
             COUNT(*) as total_decisions,
@@ -262,7 +272,7 @@ def main():
     """, "13. ACTION CONSTRAINT ANALYSIS - Active Phase Only (Last 5 Days)")
     
     # 13b. Shadow Phase Learning Summary (Baseline Phase - No Real Notifications)
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             DATE(timestamp, 'unixepoch') as date,
             COUNT(*) as shadow_episodes,
@@ -277,7 +287,7 @@ def main():
     """, "13b. SHADOW LEARNING SUMMARY - Baseline Phase (Last 5 Days)")
     
     # 14. Baseline Comparison Effectiveness
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             action_name,
             COUNT(*) as times_used,
@@ -292,7 +302,7 @@ def main():
     """, "14. BASELINE COMPARISON EFFECTIVENESS")
     
     # 15. Nudge summary
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             COUNT(*) as total_nudges,
             SUM(responded) as responded,
@@ -303,7 +313,7 @@ def main():
     """, "15. NUDGE SUMMARY")
     
     # 16. Nudge type distribution
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             action_type,
             COUNT(*) as sent,
@@ -316,11 +326,9 @@ def main():
     """, "16. NUDGE TYPE DISTRIBUTION")
     
     # 16b. Blocked Notifications Summary (Active Phase Only)
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             COUNT(*) as total_blocked,
-            SUM(CASE WHEN block_reason = 'max_daily_limit' THEN 1 ELSE 0 END) as blocked_max_daily,
-            SUM(CASE WHEN block_reason = 'cooldown' THEN 1 ELSE 0 END) as blocked_cooldown,
             SUM(CASE WHEN block_reason = 'fatigue_threshold' THEN 1 ELSE 0 END) as blocked_fatigue,
             SUM(CASE WHEN block_reason = 'no_available_actions' THEN 1 ELSE 0 END) as blocked_no_actions,
             ROUND(AVG(opportunity_score), 3) as avg_opportunity,
@@ -330,7 +338,7 @@ def main():
     """, "16b. BLOCKED NOTIFICATIONS SUMMARY - Active Phase Only")
     
     # 16c. Blocked Notifications by Reason (Daily Breakdown)
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             DATE(timestamp, 'unixepoch') as date,
             block_reason,
@@ -345,7 +353,7 @@ def main():
     """, "16c. BLOCKED NOTIFICATIONS BY REASON (Recent Days)")
     
     # 16d. Notification Success vs Block Rate
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             DATE(n.timestamp, 'unixepoch') as date,
             COUNT(n.notification_id) as sent,
@@ -364,7 +372,7 @@ def main():
     """, "16d. NOTIFICATION SUCCESS VS BLOCK RATE (Last 5 Days)")
     
     # 17. Task summary
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             COUNT(*) as total_tasks,
             SUM(completed) as completed,
@@ -374,7 +382,7 @@ def main():
     """, "17. TASK SUMMARY")
     
     # 18. Task type distribution
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             task_type,
             COUNT(*) as total,
@@ -386,7 +394,7 @@ def main():
     """, "18. TASK TYPE DISTRIBUTION")
     
     # 19. Energy Consumption by Phase (Intervention Impact)
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             phase,
             COUNT(*) as days,
@@ -400,7 +408,7 @@ def main():
     """, "19. ENERGY CONSUMPTION BY PHASE (Intervention Impact)")
     
     # 20. Power Consumption Trend Over Time
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             date,
             phase,
@@ -413,7 +421,7 @@ def main():
     """, "20. POWER CONSUMPTION TREND (Last 14 Days)")
     
     # 21. User Engagement Trends Over Time
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             date,
             phase,
@@ -430,7 +438,7 @@ def main():
     """, "21. USER ENGAGEMENT TRENDS (Last 14 Days)")
     
     # 22. AI Indices Progression Over Time
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             date,
             phase,
@@ -444,7 +452,7 @@ def main():
     """, "22. AI INDICES PROGRESSION (Last 14 Days)")
     
     # 23. Task Difficulty Feedback Analysis
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             task_type,
             difficulty_level,
@@ -460,7 +468,7 @@ def main():
     """, "23. TASK DIFFICULTY FEEDBACK ANALYSIS")
     
     # 24. Notification Response Time Analysis
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             action_type,
             COUNT(*) as total_sent,
@@ -475,7 +483,7 @@ def main():
     """, "24. NOTIFICATION RESPONSE TIME ANALYSIS")
     
     # 25. Phase Transition Impact (Before/After Comparison)
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             phase,
             COUNT(*) as days,
@@ -489,7 +497,7 @@ def main():
     """, "25. PHASE TRANSITION IMPACT (Baseline vs Active Comparison)")
     
     # 26. Q-Learning Convergence Analysis
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             DATE(timestamp, 'unixepoch') as date,
             phase,
@@ -504,7 +512,7 @@ def main():
     """, "26. Q-LEARNING CONVERGENCE (Last 14 Days)")
     
     # 27. Correlation: Indices vs User Behavior
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             CASE 
                 WHEN avg_fatigue_index < 0.3 THEN 'Low Fatigue'
@@ -520,7 +528,7 @@ def main():
     """, "27. FATIGUE INDEX vs USER ENGAGEMENT")
     
     # 28. Area-Based Intervention Impact
-    run_query(conn, """
+    run_query(research_conn, """
         SELECT 
             area_name,
             phase,
@@ -532,8 +540,69 @@ def main():
         ORDER BY area_name, phase;
     """, "28. AREA-BASED INTERVENTION IMPACT")
     
-    # 29. Last Data Collection Time
-    run_query(conn, """
+    # 29. Working Hours Data Distribution (from sensor database)
+    if sensor_conn:
+        run_query(sensor_conn, """
+            SELECT 
+                'sensor_history' as table_name,
+                SUM(CASE WHEN within_working_hours = 1 THEN 1 ELSE 0 END) as working_hours_count,
+                SUM(CASE WHEN within_working_hours = 0 THEN 1 ELSE 0 END) as non_working_hours_count,
+                ROUND(SUM(CASE WHEN within_working_hours = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as working_hours_pct
+            FROM sensor_history
+            UNION ALL
+            SELECT 
+                'area_sensor_history',
+                SUM(CASE WHEN within_working_hours = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN within_working_hours = 0 THEN 1 ELSE 0 END),
+                ROUND(SUM(CASE WHEN within_working_hours = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1)
+            FROM area_sensor_history;
+        """, "29. WORKING HOURS DATA DISTRIBUTION")
+        
+        # 29b. Working Hours Comparison: Average Power
+        run_query(sensor_conn, """
+            SELECT 
+                'Working Hours (Mon-Fri 8am-6pm)' as time_period,
+                COUNT(*) as readings,
+                ROUND(AVG(power), 2) as avg_power_w,
+                ROUND(MIN(power), 2) as min_power_w,
+                ROUND(MAX(power), 2) as max_power_w
+            FROM sensor_history
+            WHERE within_working_hours = 1 AND power IS NOT NULL
+            UNION ALL
+            SELECT 
+                'Non-Working Hours (Nights + Weekends)',
+                COUNT(*),
+                ROUND(AVG(power), 2),
+                ROUND(MIN(power), 2),
+                ROUND(MAX(power), 2)
+            FROM sensor_history
+            WHERE within_working_hours = 0 AND power IS NOT NULL;
+        """, "29b. WORKING VS NON-WORKING HOURS - Power Comparison")
+        
+        # 29c. Working Hours by Day of Week
+        run_query(sensor_conn, """
+            SELECT 
+                CASE CAST(strftime('%w', timestamp, 'unixepoch') AS INTEGER)
+                    WHEN 0 THEN 'Sunday'
+                    WHEN 1 THEN 'Monday'
+                    WHEN 2 THEN 'Tuesday'
+                    WHEN 3 THEN 'Wednesday'
+                    WHEN 4 THEN 'Thursday'
+                    WHEN 5 THEN 'Friday'
+                    WHEN 6 THEN 'Saturday'
+                END as day_of_week,
+                COUNT(*) as total_readings,
+                SUM(CASE WHEN within_working_hours = 1 THEN 1 ELSE 0 END) as working_hours_readings,
+                ROUND(SUM(CASE WHEN within_working_hours = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as working_hours_pct
+            FROM sensor_history
+            GROUP BY CAST(strftime('%w', timestamp, 'unixepoch') AS INTEGER)
+            ORDER BY CAST(strftime('%w', timestamp, 'unixepoch') AS INTEGER);
+        """, "29c. WORKING HOURS DISTRIBUTION BY DAY OF WEEK")
+    else:
+        print("⚠️  Query 29: Sensor database not found, skipping working hours queries\\n")
+    
+    # 30. Last Data Collection Time
+    run_query(research_conn, """
         SELECT 
             'daily_aggregates' as table_name,
             MAX(date) as last_date
@@ -558,10 +627,10 @@ def main():
             'task_interactions',
             MAX(date)
         FROM research_task_interactions;
-    """, "29. LAST DATA COLLECTION TIME")
+    """, "30. LAST DATA COLLECTION TIME")
     
-    # 30. Gamification Effectiveness: Task Completion Times
-    run_query(conn, """
+    # 31. Gamification Effectiveness: Task Completion Times
+    run_query(research_conn, """
         SELECT 
             task_type,
             COUNT(*) as total_completed,
@@ -572,10 +641,12 @@ def main():
         WHERE completed = 1 AND time_to_complete_seconds IS NOT NULL
         GROUP BY task_type
         ORDER BY total_completed DESC;
-    """, "30. TASK COMPLETION TIME ANALYSIS")
+    """, "31. TASK COMPLETION TIME ANALYSIS")
     
-    # Close connection
-    conn.close()
+    # Close connections
+    research_conn.close()
+    if sensor_conn:
+        sensor_conn.close()
     
     print("="*80)
     print("✅ Test completed successfully!")

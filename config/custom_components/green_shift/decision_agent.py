@@ -8,7 +8,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 import random
 
 from .storage import StorageManager
-from .helpers import get_friendly_name
+from .helpers import get_friendly_name, should_ai_be_active
 from .translations_runtime import get_language, get_notification_templates, get_time_of_day_name
 from .const import (
     UPDATE_INTERVAL_SECONDS,
@@ -27,7 +27,8 @@ from .const import (
     CRITICAL_OPPORTUNITY_THRESHOLD,
     SHADOW_EXPLORATION_RATE,
     SHADOW_LEARNING_RATE,
-    SHADOW_INTERVAL_MULTIPLIER
+    SHADOW_INTERVAL_MULTIPLIER,
+    ENVIRONMENT_OFFICE
 )
 
 _LOGGER = logging.getLogger(f"{__name__}.ai_model")
@@ -44,11 +45,12 @@ class DecisionAgent:
     - γ: Discount factor for future rewards
     """
     
-    def __init__(self, hass: HomeAssistant, discovered_sensors: dict, data_collector, storage_manager: StorageManager = None):
+    def __init__(self, hass: HomeAssistant, discovered_sensors: dict, data_collector, storage_manager: StorageManager = None, config_data: dict = None):
         self.hass = hass
         self.sensors = discovered_sensors
         self.data_collector = data_collector
         self.storage = storage_manager
+        self.config_data = config_data or {}
         self.start_date = datetime.now()
         self._process_count = 0
         self.phase = PHASE_BASELINE 
@@ -401,6 +403,11 @@ class DecisionAgent:
     
     async def _decide_action(self):
         """Selects action A_t using epsilon-greedy policy with Q-learning.""" 
+        # Check if AI should be active (working hours for office mode)
+        if not should_ai_be_active(self.config_data):
+            _LOGGER.debug("Outside working hours - AI notifications paused")
+            return
+        
         # Check notification limits
         if self.notification_count_today >= MAX_NOTIFICATIONS_PER_DAY:
             _LOGGER.info("Max notifications reached for today (%d/%d)", self.notification_count_today, MAX_NOTIFICATIONS_PER_DAY)
@@ -482,6 +489,12 @@ class DecisionAgent:
         - No notifications sent, no engagement/fatigue tracking modified
         - Episodes logged with action_source="shadow" for research differentiation
         """
+
+        # Check if AI should be active (working hours for office mode)
+        if not should_ai_be_active(self.config_data):
+            _LOGGER.debug("Outside working hours - shadow learning paused")
+            return
+        
         # Get current state
         state_key = self._discretize_state()
 
@@ -915,7 +928,7 @@ class DecisionAgent:
         Log when a notification attempt was blocked in active phase.
         
         Args:
-            reason: Reason for blocking (max_daily_limit, cooldown, fatigue_threshold, no_available_actions)
+            reason: Reason for blocking (fatigue_threshold, no_available_actions)
             opportunity_score: Calculated opportunity score at time of block
             time_since_last: Minutes since last notification (for cooldown blocks)
             required_cooldown: Required cooldown that wasn't met (for cooldown blocks)
@@ -1390,8 +1403,17 @@ class DecisionAgent:
         """
         Calculate baseline values for each area during the baseline phase.
         Called at the end of the baseline phase.
+        
+        In office mode, only uses working hours data to avoid weekend/off-hours bias.
         """
         areas = self.data_collector.get_all_areas()
+        
+        # Determine if we should filter to working hours only (office mode)
+        is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+        working_hours_filter = True if is_office_mode else None
+        
+        if is_office_mode:
+            _LOGGER.info("Office mode detected - calculating area baselines from working hours data only")
         
         for area in areas:
             if area == "No Area":
@@ -1400,21 +1422,27 @@ class DecisionAgent:
             baselines = {}
             
             # Temperature baseline
-            temp_history = await self.data_collector.get_area_history(area, "temperature", days=14)
+            temp_history = await self.data_collector.get_area_history(
+                area, "temperature", days=14, working_hours_only=working_hours_filter
+            )
             if temp_history:
                 temp_values = [val for ts, val in temp_history if val is not None]
                 if temp_values:
                     baselines["temperature"] = round(np.mean(temp_values), 2)
             
             # Power baseline
-            power_history = await self.data_collector.get_area_history(area, "power", days=14)
+            power_history = await self.data_collector.get_area_history(
+                area, "power", days=14, working_hours_only=working_hours_filter
+            )
             if power_history:
                 power_values = [val for ts, val in power_history if val is not None]
                 if power_values:
                     baselines["power"] = round(np.mean(power_values), 2)
             
             # Humidity baseline
-            hum_history = await self.data_collector.get_area_history(area, "humidity", days=14)
+            hum_history = await self.data_collector.get_area_history(
+                area, "humidity", days=14, working_hours_only=working_hours_filter
+            )
             if hum_history:
                 hum_values = [val for ts, val in hum_history if val is not None]
                 if hum_values:
@@ -1423,7 +1451,7 @@ class DecisionAgent:
             if baselines:
                 self.area_baselines[area] = baselines
         
-        _LOGGER.info("Calculated baselines for %d areas", len(self.area_baselines))
+        _LOGGER.info("Calculated baselines for %d areas (office mode: %s)", len(self.area_baselines), is_office_mode)
         
         # Save baselines
         if self.storage:
@@ -1456,7 +1484,14 @@ class DecisionAgent:
         days_in_current_week = (today - self.current_week_start_date).days + 1  # +1 to include today
         
         # Get power history from the start of the current week
-        power_history_data = await self.data_collector.get_power_history(days=days_in_current_week)
+        # In office mode, only compare working hours to baseline (which was also working hours only)
+        is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+        working_hours_filter = True if is_office_mode else None
+        
+        power_history_data = await self.data_collector.get_power_history(
+            days=days_in_current_week,
+            working_hours_only=working_hours_filter
+        )
         power_values = [power for timestamp, power in power_history_data]
         
         # Calculate readings per day based on data collection interval

@@ -1,6 +1,8 @@
 from typing import Tuple, Optional, Dict, List
+from datetime import datetime, time
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar, entity_registry as er, device_registry as dr
+from .const import ENVIRONMENT_HOME, ENVIRONMENT_OFFICE
 
 def get_normalized_value(state, sensor_type: str) -> Tuple[Optional[float], Optional[str]]:
         """
@@ -157,3 +159,95 @@ def get_friendly_name(hass: HomeAssistant, entity_id: str) -> str:
         return entity.original_name
     
     return entity_id
+
+
+def is_within_working_hours(config_data: Dict, check_time: datetime = None) -> bool:
+    """
+    Check if the current (or specified) time is within configured working hours.
+    Only applies to office environments.
+    
+    Args:
+        config_data: Configuration data from config entry
+        check_time: Time to check (defaults to current time)
+    
+    Returns:
+        True if within working hours OR if in home mode (always active)
+        False if outside working hours in office mode
+    """
+    # Home mode is always active
+    environment_mode = config_data.get("environment_mode", ENVIRONMENT_HOME)
+    if environment_mode == ENVIRONMENT_HOME:
+        return True
+    
+    # Office mode - check working hours
+    if check_time is None:
+        check_time = datetime.now()
+    
+    # Check if today is a working day
+    weekday = check_time.weekday()  # Monday=0, Sunday=6
+    working_days = get_working_days_from_config(config_data)
+    
+    if weekday not in working_days:
+        return False
+    
+    # Check if current time is within working hours
+    working_start = config_data.get("working_start", "08:00")
+    working_end = config_data.get("working_end", "18:00")
+    
+    try:
+        start_time = datetime.strptime(working_start, "%H:%M").time()
+        end_time = datetime.strptime(working_end, "%H:%M").time()
+        current_time = check_time.time()
+        
+        return start_time <= current_time <= end_time
+    except (ValueError, AttributeError):
+        # If parsing fails, assume within working hours
+        return True
+
+
+def get_working_days_from_config(config_data: Dict) -> List[int]:
+    """
+    Extract working days from config data.
+    
+    Args:
+        config_data: Configuration data from config entry
+    
+    Returns:
+        List of working days (0=Monday, 6=Sunday)
+    """
+    working_days = []
+    
+    if config_data.get("working_monday", False):
+        working_days.append(0)
+    if config_data.get("working_tuesday", False):
+        working_days.append(1)
+    if config_data.get("working_wednesday", False):
+        working_days.append(2)
+    if config_data.get("working_thursday", False):
+        working_days.append(3)
+    if config_data.get("working_friday", False):
+        working_days.append(4)
+    if config_data.get("working_saturday", False):
+        working_days.append(5)
+    if config_data.get("working_sunday", False):
+        working_days.append(6)
+    
+    return working_days
+
+
+def should_ai_be_active(config_data: Dict, check_time: datetime = None) -> bool:
+    """
+    Determine if AI operations (tasks, notifications) should be active.
+    
+    This is a convenience wrapper around is_within_working_hours()
+    with clearer naming for AI-specific checks.
+    
+    Args:
+        config_data: Configuration data from config entry
+        check_time: Time to check (defaults to current time)
+    
+    Returns:
+        True if AI should be active (generate tasks/notifications)
+        False if AI should be paused
+    """
+    return is_within_working_hours(config_data, check_time)

@@ -126,6 +126,7 @@ class TestDataGenerator:
                 humidity REAL,
                 illuminance REAL,
                 occupancy INTEGER,
+                within_working_hours INTEGER DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -142,6 +143,7 @@ class TestDataGenerator:
                 humidity REAL,
                 illuminance REAL,
                 occupancy INTEGER,
+                within_working_hours INTEGER DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -412,11 +414,17 @@ class TestDataGenerator:
             illuminance = (500 if is_day else 50) + random.uniform(-50, 100)
             occupancy = 1 if is_day else random.choice([0, 0, 0, 1])
             
+            # Determine if within working hours (Mon-Fri 8am-6pm for test data)
+            is_working_hours = (
+                current.weekday() < 5 and  # Monday=0 to Friday=4
+                8 <= hour <= 18
+            )
+            
             # Global sensor readings
             cursor.execute("""
                 INSERT INTO sensor_history
-                (timestamp, power, energy, temperature, humidity, illuminance, occupancy)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (timestamp, power, energy, temperature, humidity, illuminance, occupancy, within_working_hours)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 int(current.timestamp()),
                 power,
@@ -424,7 +432,8 @@ class TestDataGenerator:
                 temperature,
                 humidity,
                 illuminance,
-                occupancy
+                occupancy,
+                1 if is_working_hours else 0
             ))
             readings_count += 1
             
@@ -438,8 +447,8 @@ class TestDataGenerator:
                 
                 cursor.execute("""
                     INSERT INTO area_sensor_history
-                    (timestamp, area_name, power, energy, temperature, humidity, illuminance, occupancy)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (timestamp, area_name, power, energy, temperature, humidity, illuminance, occupancy, within_working_hours)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     int(current.timestamp()),
                     area,
@@ -448,7 +457,8 @@ class TestDataGenerator:
                     area_temp,
                     area_humidity,
                     area_illum,
-                    area_occ
+                    area_occ,
+                    1 if is_working_hours else 0
                 ))
                 area_readings_count += 1
             
@@ -461,7 +471,11 @@ class TestDataGenerator:
         print(f"  ✅ Generated {area_readings_count:,} area sensor readings ({len(areas)} areas)")
     
     def _populate_baseline_phase(self):
-        """Generate baseline phase data (shadow learning only)."""
+        """Generate baseline phase data (shadow learning only).
+        
+        Note: Shadow learning respects working hours in office mode,
+        just like real AI decisions.
+        """
         conn = sqlite3.connect(self.research_db_path)
         cursor = conn.cursor()
         
@@ -469,12 +483,25 @@ class TestDataGenerator:
         end = self.active_start
         
         rl_episodes = 0
+        rl_episodes_skipped = 0
         
         # AI processes every AI_FREQUENCY_SECONDS * SHADOW_INTERVAL_MULTIPLIER in baseline
         interval = AI_FREQUENCY_SECONDS * SHADOW_INTERVAL_MULTIPLIER
         
         while current < end:
             hour = current.hour
+            weekday = current.weekday()
+            
+            # Check if within working hours (Mon-Fri 8am-6pm for office mode)
+            # Shadow learning follows same working hours logic as active phase
+            is_working_hours = weekday < 5 and 8 <= hour <= 18
+            
+            # In office mode, shadow learning only happens during working hours
+            # This prevents learning from weekend/off-hours patterns
+            if not is_working_hours:
+                rl_episodes_skipped += 1
+                current += timedelta(seconds=interval)
+                continue
             
             # Simulate shadow learning decision
             state_vector = self._generate_state_vector(current, "baseline")
@@ -519,6 +546,8 @@ class TestDataGenerator:
         conn.close()
         
         print(f"  ✅ Generated {rl_episodes:,} shadow RL episodes (baseline phase)")
+        print(f"     - Skipped {rl_episodes_skipped:,} episodes outside working hours")
+        print(f"     - Only Mon-Fri 8am-6pm (simulating office mode)")
         print(f"     - No notifications sent (shadow learning only)")
         print(f"     - No blocked notifications (blocking logic inactive)")
     
@@ -1052,12 +1081,17 @@ class TestDataGenerator:
     
     def _print_summary(self):
         """Print database summary."""
-        conn = sqlite3.connect(self.research_db_path)
-        cursor = conn.cursor()
+        research_conn = sqlite3.connect(self.research_db_path)
+        research_cursor = research_conn.cursor()
+        
+        sensor_conn = sqlite3.connect(self.sensor_db_path)
+        sensor_cursor = sensor_conn.cursor()
         
         print("\n📊 Database Summary:")
         print("-" * 80)
         
+        # Research database tables
+        print("Research Database (research_data.db):")
         tables = [
             'research_daily_aggregates',
             'research_rl_episodes',
@@ -1070,11 +1104,35 @@ class TestDataGenerator:
         ]
         
         for table in tables:
-            cursor.execute(f"SELECT COUNT(*) FROM {table}")
-            count = cursor.fetchone()[0]
+            research_cursor.execute(f"SELECT COUNT(*) FROM {table}")
+            count = research_cursor.fetchone()[0]
             print(f"  {table:<40} {count:>6} rows")
         
-        conn.close()
+        # Sensor database tables
+        print("\nSensor Database (sensor_data.db):")
+        sensor_cursor.execute("SELECT COUNT(*) FROM sensor_history")
+        sensor_count = sensor_cursor.fetchone()[0]
+        print(f"  {'sensor_history':<40} {sensor_count:>6} rows")
+        
+        sensor_cursor.execute("SELECT COUNT(*) FROM area_sensor_history")
+        area_sensor_count = sensor_cursor.fetchone()[0]
+        print(f"  {'area_sensor_history':<40} {area_sensor_count:>6} rows")
+        
+        # Working hours distribution in sensor data
+        print("\nWorking Hours Distribution:")
+        sensor_cursor.execute("""
+            SELECT 
+                SUM(CASE WHEN within_working_hours = 1 THEN 1 ELSE 0 END) as working,
+                SUM(CASE WHEN within_working_hours = 0 THEN 1 ELSE 0 END) as non_working
+            FROM sensor_history
+        """)
+        working, non_working = sensor_cursor.fetchone()
+        total = working + non_working
+        print(f"  Working hours (Mon-Fri 8am-6pm):      {working:>6} ({working/total*100:.1f}%)")
+        print(f"  Non-working hours:                     {non_working:>6} ({non_working/total*100:.1f}%)")
+        
+        research_conn.close()
+        sensor_conn.close()
         print("-" * 80)
     
     def _print_expected_results(self):
@@ -1140,6 +1198,11 @@ class TestDataGenerator:
         print("   - Phase comparison (baseline vs active)")
         print("   - Correlation analysis (indices vs energy)")
         print("   - Gamification effectiveness (task difficulty vs completion)")
+        
+        print("\n✅ Query 30 - Working Hours Data Distribution:")
+        print("   - Shows split between working hours (Mon-Fri 8am-6pm) and non-working hours")
+        print("   - ~40% working hours, ~60% non-working hours (includes weekends + nights)")
+        print("   - Used for office mode to filter baseline calculations")
         
         print("\n" + "=" * 80)
         print("💡 Run test_research_db.py to see actual results")

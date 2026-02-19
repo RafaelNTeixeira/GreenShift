@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import TASK_GENERATION_TIME
 from .translations_runtime import get_language, get_task_templates, get_difficulty_display
+from .helpers import should_ai_be_active
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,12 +18,13 @@ _LOGGER = logging.getLogger(__name__)
 class TaskManager:
     """Manages daily energy-saving tasks with automatic verification and difficulty adjustment."""
     
-    def __init__(self, hass: HomeAssistant, sensors: dict, data_collector, storage, decision_agent=None):
+    def __init__(self, hass: HomeAssistant, sensors: dict, data_collector, storage, decision_agent=None, config_data: dict = None):
         self.hass = hass
         self.sensors = sensors
         self.data_collector = data_collector
         self.storage = storage
         self.decision_agent = decision_agent  # For accessing phase and other agent state
+        self.config_data = config_data or {}
         
         # Task difficulty adjustments (multipliers for targets)
         self.difficulty_multipliers = {
@@ -38,6 +40,11 @@ class TaskManager:
         Generates 3 verifiable daily tasks based on available sensors and historical data.
         Tasks are measurable and can be automatically verified.
         """
+        # Check if AI should be active (working hours for office mode)
+        if not should_ai_be_active(self.config_data):
+            _LOGGER.debug("Outside working hours - task generation paused")
+            return []
+        
         today = datetime.now().strftime("%Y-%m-%d")
         
         # Check if tasks already exist for today

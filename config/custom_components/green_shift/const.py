@@ -5,6 +5,15 @@ DOMAIN = "green_shift"
 GS_UPDATE_SIGNAL = "green_shift_update"
 GS_AI_UPDATE_SIGNAL = "green_shift_ai_update"
 
+# Environment modes
+ENVIRONMENT_HOME = "home"
+ENVIRONMENT_OFFICE = "office"
+
+# Working hours (for office environments)
+DEFAULT_WORKING_DAYS = [0, 1, 2, 3, 4]  # Monday=0 to Friday=4
+DEFAULT_WORKING_START = "08:00"
+DEFAULT_WORKING_END = "18:00"
+
 # System phases
 PHASE_BASELINE = "baseline"
 PHASE_ACTIVE = "active"

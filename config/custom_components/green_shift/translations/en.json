@@ -13,6 +13,10 @@
           "electricity_price": "Price per kWh"
         }
       },
+      "working_hours": {
+        "title": "Define Your Schedule",
+        "description": "Select your typical working hours. This helps the AI understand when you're likely away from home, allowing it to provide more accurate insights and personalized energy-saving recommendations."
+      },
       "sensor_confirmation": {
         "title": "Sensor Validation",
         "description": "We found **{discovered_count}** compatible sensors. Please review the classification below to ensure calculation accuracy.",

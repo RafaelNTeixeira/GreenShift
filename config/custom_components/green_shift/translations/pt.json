@@ -13,6 +13,10 @@
           "electricity_price": "Preço por kWh"
         }
       },
+      "working_hours": {
+        "title": "Defina o Seu Horário",
+        "description": "Selecione as suas horas de trabalho típicas. Isso ajuda a IA a entender quando você provavelmente está fora de casa, permitindo que ela forneça insights mais precisos e recomendações personalizadas de economia de energia."
+      },
       "sensor_confirmation": {
         "title": "Validação de Sensores",
         "description": "Encontrámos **{discovered_count}** sensores compatíveis. Por favor, reveja a classificação abaixo para garantir a precisão dos cálculos.",

@@ -1,13 +1,13 @@
 import logging
 import numpy as np
 from collections import deque
-from datetime import timedelta
+from datetime import datetime, timedelta
 from homeassistant.core import HomeAssistant, callback, Event
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_change, async_track_time_interval
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import UPDATE_INTERVAL_SECONDS, GS_UPDATE_SIGNAL, AREA_BASED_SENSORS
-from .helpers import get_normalized_value, get_entity_area, group_sensors_by_area, get_environmental_impact
+from .const import UPDATE_INTERVAL_SECONDS, GS_UPDATE_SIGNAL, AREA_BASED_SENSORS, ENVIRONMENT_OFFICE
+from .helpers import get_normalized_value, get_entity_area, group_sensors_by_area, get_environmental_impact, is_within_working_hours
 from .storage import StorageManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -20,12 +20,13 @@ class DataCollector:
     Completely independent from AI processing.
     """
     
-    def __init__(self, hass: HomeAssistant, discovered_sensors: dict, main_energy_sensor: str = None, main_power_sensor: str = None, storage_manager: StorageManager = None):
+    def __init__(self, hass: HomeAssistant, discovered_sensors: dict, main_energy_sensor: str = None, main_power_sensor: str = None, storage_manager: StorageManager = None, config_data: dict = None):
         self.hass = hass
         self.sensors = discovered_sensors
         self.main_energy_sensor = main_energy_sensor # Sensor that reads building energy consumption (kWh)
         self.main_power_sensor = main_power_sensor # Sensor that reads current building power consumption (kW) 
         self.storage = storage_manager
+        self.config_data = config_data or {}
         
         # Current readings (latest values - global aggregates)
         self.current_total_power = 0.0
@@ -472,6 +473,9 @@ class DataCollector:
             _LOGGER.warning("Storage not available - snapshot not saved")
             return
         
+        # Check if within working hours (for office mode filtering)
+        within_working_hours = is_within_working_hours(self.config_data, now)
+        
         # Store global aggregate snapshot
         self.hass.async_create_task(
             self.storage.store_sensor_snapshot(
@@ -481,7 +485,8 @@ class DataCollector:
                 temperature=self.current_temperature,
                 humidity=self.current_humidity,
                 illuminance=self.current_illuminance,
-                occupancy=self.current_occupancy
+                occupancy=self.current_occupancy,
+                within_working_hours=within_working_hours
             )
         )
         
@@ -496,15 +501,17 @@ class DataCollector:
                     temperature=data.get("temperature"),
                     humidity=data.get("humidity"),
                     illuminance=data.get("illuminance"),
-                    occupancy=data.get("occupancy")
+                    occupancy=data.get("occupancy"),
+                    within_working_hours=within_working_hours
                 )
             )
         
         _LOGGER.debug(
-            "Snapshot stored: Power=%.2f W | Energy=%.2f kWh | %d areas",
+            "Snapshot stored: Power=%.2f W | Energy=%.2f kWh | %d areas | Working hours: %s",
             self.current_total_power,
             self.current_daily_energy,
-            len(self.area_data)
+            len(self.area_data),
+            within_working_hours
         )
     
     def get_current_state(self) -> dict:
@@ -531,18 +538,32 @@ class DataCollector:
         """Get list of all tracked areas."""
         return list(self.area_data.keys())
     
-    async def get_area_history(self, area_name: str, metric: str, hours: int = None, days: int = None) -> list:
+    async def get_area_history(self, area_name: str, metric: str, hours: int = None, days: int = None, working_hours_only: bool = None) -> list:
         """
         Get historical data for a specific area.
-        Metric options: 'temperature', 'humidity', 'illuminance', 'occupancy', 'power', 'energy'
+        
+        Args:
+            area_name: Name of the area
+            metric: Metric to retrieve ('temperature', 'humidity', 'illuminance', 'occupancy', 'power', 'energy')
+            hours: Number of hours to retrieve
+            days: Number of days to retrieve
+            working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
+        
+        Returns:
+            List of (datetime, value) tuples
         """
         if not self.storage:
             return []
-        return await self.storage.get_area_history(area_name, metric, hours=hours, days=days)
+        return await self.storage.get_area_history(area_name, metric, hours=hours, days=days, working_hours_only=working_hours_only)
     
-    async def get_power_history(self, hours: int = None, days: int = None) -> list:
+    async def get_power_history(self, hours: int = None, days: int = None, working_hours_only: bool = None) -> list:
         """
         Get power history with timestamps from SQLite.
+        
+        Args:
+            hours: Number of hours to retrieve
+            days: Number of days to retrieve
+            working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
         
         Returns:
             List of (datetime, value) tuples
@@ -551,11 +572,16 @@ class DataCollector:
             return []
         
         # Returns [(2026-02-04 10:00:00, power), ...]
-        return await self.storage.get_history("power", hours=hours, days=days)
+        return await self.storage.get_history("power", hours=hours, days=days, working_hours_only=working_hours_only)
     
-    async def get_energy_history(self, hours: int = None, days: int = None) -> list:
+    async def get_energy_history(self, hours: int = None, days: int = None, working_hours_only: bool = None) -> list:
         """
         Get energy history with timestamps from SQLite.
+        
+        Args:
+            hours: Number of hours to retrieve
+            days: Number of days to retrieve
+            working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
         
         Returns:
             List of (datetime, value) tuples
@@ -564,7 +590,7 @@ class DataCollector:
             return []
         
         # Returns [(2026-02-04 10:00:00, energy), ...]
-        return await self.storage.get_history("energy", hours=hours, days=days)
+        return await self.storage.get_history("energy", hours=hours, days=days, working_hours_only=working_hours_only)
     
     async def get_temperature_history(self, hours: int = None, days: int = None) -> list:
         """
@@ -650,19 +676,29 @@ class DataCollector:
         }
 
     async def calculate_baseline_summary(self) -> dict:
-        """Calculates summary stats for the baseline phase."""
+        """Calculates summary stats for the baseline phase.
+        
+        For office mode, only uses working hours data to avoid weekend/off-hours bias.
+        """
         if not self.storage:
             return {}
+        
+        # Determine if we should filter to working hours only (office mode)
+        is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+        working_hours_filter = True if is_office_mode else None
+        
+        if is_office_mode:
+            _LOGGER.info("Office mode detected - baseline calculations will use working hours data only")
 
         # Avg Daily Usage (kWh)
         # Query the total energy history for the last 14 days
-        energy_history = await self.get_energy_history(days=14)
+        energy_history = await self.get_energy_history(days=14, working_hours_only=working_hours_filter)
         energy_values = [val for ts, val in energy_history]
         avg_daily = np.mean(energy_values) if energy_values else 0.0
 
         # Peak Time Interval
         # Analyze power history to find which hour of the day has the highest average load
-        power_history = await self.get_power_history(days=14)
+        power_history = await self.get_power_history(days=14, working_hours_only=working_hours_filter)
         peak_time = "Unknown"
         if power_history:
             hourly_buckets = {}
@@ -682,7 +718,7 @@ class DataCollector:
             if area == "No Area":
                 continue
             # Use the existing area history method from StorageManager
-            area_stats = await self.storage.get_area_stats(area, "power", days=14)
+            area_stats = await self.storage.get_area_stats(area, "power", days=14, working_hours_only=working_hours_filter)
             if area_stats["mean"] > max_area_avg:
                 max_area_avg = area_stats["mean"]
                 top_area = area

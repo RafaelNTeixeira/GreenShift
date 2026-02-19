@@ -15,7 +15,14 @@ from homeassistant.helpers.selector import (
 
 from . import async_discover_sensors
 from .helpers import get_normalized_value, get_entity_area_id
-from .const import DOMAIN
+from .const import (
+    DOMAIN, 
+    ENVIRONMENT_HOME, 
+    ENVIRONMENT_OFFICE,
+    DEFAULT_WORKING_DAYS,
+    DEFAULT_WORKING_START,
+    DEFAULT_WORKING_END
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,11 +47,17 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="user", last_step=False)
 
     async def async_step_settings(self, user_input=None):
-        """Step 2: Currency and energy cost configuration."""
+        """Step 2: Currency, energy cost and environment configuration."""
         errors = {}
 
         if user_input is not None:
             self.data.update(user_input)
+            
+            # If office mode selected, proceed to working hours configuration
+            if user_input.get("environment_mode") == ENVIRONMENT_OFFICE:
+                return await self.async_step_working_hours()
+            
+            # If home mode, skip working hours and proceed
             return await self.async_step_sensor_confirmation()
 
         data_schema = vol.Schema({
@@ -56,10 +69,53 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             ),
             vol.Required("electricity_price", default=0.25): vol.Coerce(float),
+            vol.Required("environment_mode", default=ENVIRONMENT_HOME): SelectSelector(
+                SelectSelectorConfig(
+                    options=[ENVIRONMENT_HOME, ENVIRONMENT_OFFICE],
+                    mode=SelectSelectorMode.DROPDOWN,
+                    translation_key="environment_mode"
+                )
+            ),
         })
 
         return self.async_show_form(
             step_id="settings",
+            data_schema=data_schema,
+            errors=errors,
+            last_step=False,
+        )
+    
+    async def async_step_working_hours(self, user_input=None):
+        """Step 2.5: Working hours configuration (only for office mode)."""
+        errors = {}
+
+        if user_input is not None:
+            self.data.update(user_input)
+            return await self.async_step_sensor_confirmation()
+
+        # Convert default working days to checkboxes format
+        default_mon = 0 in DEFAULT_WORKING_DAYS
+        default_tue = 1 in DEFAULT_WORKING_DAYS
+        default_wed = 2 in DEFAULT_WORKING_DAYS
+        default_thu = 3 in DEFAULT_WORKING_DAYS
+        default_fri = 4 in DEFAULT_WORKING_DAYS
+        default_sat = 5 in DEFAULT_WORKING_DAYS
+        default_sun = 6 in DEFAULT_WORKING_DAYS
+
+        data_schema = vol.Schema({
+            vol.Required("working_start", default=DEFAULT_WORKING_START): vol.Coerce(str),
+            vol.Required("working_end", default=DEFAULT_WORKING_END): vol.Coerce(str),
+            vol.Required("working_monday", default=default_mon): vol.Coerce(bool),
+            vol.Required("working_tuesday", default=default_tue): vol.Coerce(bool),
+            vol.Required("working_wednesday", default=default_wed): vol.Coerce(bool),
+            vol.Required("working_thursday", default=default_thu): vol.Coerce(bool),
+            vol.Required("working_friday", default=default_fri): vol.Coerce(bool),
+            vol.Required("working_saturday", default=default_sat): vol.Coerce(bool),
+            vol.Required("working_sunday", default=default_sun): vol.Coerce(bool),
+        })
+
+        return self.async_show_form(
+            step_id="working_hours",
             data_schema=data_schema,
             errors=errors,
             last_step=False,

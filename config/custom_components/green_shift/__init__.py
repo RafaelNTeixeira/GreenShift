@@ -22,7 +22,8 @@ from .const import (
     BACKUP_INTERVAL_HOURS,
     KEEP_AUTO_BACKUPS,
     KEEP_STARTUP_BACKUPS,
-    KEEP_SHUTDOWN_BACKUPS
+    KEEP_SHUTDOWN_BACKUPS,
+    ENVIRONMENT_OFFICE
 )
 from .data_collector import DataCollector
 from .decision_agent import DecisionAgent
@@ -64,15 +65,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await backup_manager.create_backup(backup_type="startup")
 
     # Initialize the real-time data collector
-    collector = DataCollector(hass, discovered_sensors, main_energy_sensor, main_power_sensor, storage)
+    collector = DataCollector(hass, discovered_sensors, main_energy_sensor, main_power_sensor, storage, config_data=entry.data)
     await collector.setup()
     
     # Initialize the decision agent (AI)
-    agent = DecisionAgent(hass, discovered_sensors, collector, storage)
+    agent = DecisionAgent(hass, discovered_sensors, collector, storage, config_data=entry.data)
     await agent.setup()
 
     # Initialize task manager (pass agent for phase access)
-    task_manager = TaskManager(hass, discovered_sensors, collector, storage, agent)
+    task_manager = TaskManager(hass, discovered_sensors, collector, storage, agent, config_data=entry.data)
 
     # Record initial phase if fresh install
     state = await storage.load_state()
@@ -90,6 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN]["task_manager"] = task_manager
     hass.data[DOMAIN]["backup_manager"] = backup_manager
     hass.data[DOMAIN]["discovered_sensors"] = discovered_sensors
+    hass.data[DOMAIN]["config_data"] = entry.data  # Store config for working hours checks
     
     # Platform setup
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -110,12 +112,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # During baseline phase: continuously update baseline_consumption
         if agent.phase == PHASE_BASELINE:
-            power_history_data = await collector.get_power_history(days=days_running if days_running > 0 else None)
+            # In office mode, only use working hours data for baseline calculation
+            is_office_mode = entry.data.get("environment_mode") == ENVIRONMENT_OFFICE
+            working_hours_filter = True if is_office_mode else None
+            
+            power_history_data = await collector.get_power_history(
+                days=days_running if days_running > 0 else None,
+                working_hours_only=working_hours_filter
+            )
             power_values = [power for timestamp, power in power_history_data]
 
             if len(power_values) > 0:
                 agent.baseline_consumption = np.mean(power_values)
-                _LOGGER.debug("Baseline consumption updated: %.2f W", agent.baseline_consumption)
+                _LOGGER.debug("Baseline consumption updated: %.2f W (office mode: %s, working hours only: %s)", 
+                             agent.baseline_consumption, is_office_mode, working_hours_filter is not None)
         
         # Verify if the baseline phase is complete
         if days_running >= BASELINE_DAYS and agent.phase == PHASE_BASELINE:
@@ -420,6 +430,9 @@ async def async_setup_services(hass: HomeAssistant):
             
             # Occupancy
             occupancy = 7 <= hour <= 23 and random.random() > 0.3
+
+            weekday = timestamp.weekday()
+            working_hours = (weekday < 5 and 8 <= hour <= 18)
             
             # Store data
             await storage.store_sensor_snapshot(
@@ -428,7 +441,8 @@ async def async_setup_services(hass: HomeAssistant):
                 temperature=temperature,
                 humidity=humidity,
                 illuminance=illuminance,
-                occupancy=occupancy
+                occupancy=occupancy,
+                working_hours=working_hours
             )
         
         _LOGGER.info(f"Successfully injected {data_points} data points ({hours} hours)")

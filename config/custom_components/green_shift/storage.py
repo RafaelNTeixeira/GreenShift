@@ -72,6 +72,7 @@ class StorageManager:
                     humidity REAL,
                     illuminance REAL,
                     occupancy INTEGER,
+                    within_working_hours INTEGER DEFAULT 1,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -88,6 +89,7 @@ class StorageManager:
                     humidity REAL,
                     illuminance REAL,
                     occupancy INTEGER,
+                    within_working_hours INTEGER DEFAULT 1,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -485,7 +487,8 @@ class StorageManager:
         temperature: float = None,
         humidity: float = None,
         illuminance: float = None,
-        occupancy: bool = None
+        occupancy: bool = None,
+        within_working_hours: bool = True
     ):
         """Store a single sensor snapshot."""
         def _insert():
@@ -496,8 +499,8 @@ class StorageManager:
                 
                 cursor.execute("""
                     INSERT INTO sensor_history 
-                    (timestamp, power, energy, temperature, humidity, illuminance, occupancy)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (timestamp, power, energy, temperature, humidity, illuminance, occupancy, within_working_hours)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     timestamp.timestamp(),
                     power,
@@ -505,7 +508,8 @@ class StorageManager:
                     temperature,
                     humidity,
                     illuminance,
-                    1 if occupancy else 0 if occupancy is not None else None
+                    1 if occupancy else 0 if occupancy is not None else None,
+                    1 if within_working_hours else 0
                 ))
                 
                 conn.commit()
@@ -529,7 +533,8 @@ class StorageManager:
         temperature: float = None,
         humidity: float = None,
         illuminance: float = None,
-        occupancy: bool = None
+        occupancy: bool = None,
+        within_working_hours: bool = True
     ):
         """Store a sensor snapshot for a specific area."""
         def _insert():
@@ -540,8 +545,8 @@ class StorageManager:
                 
                 cursor.execute("""
                     INSERT INTO area_sensor_history 
-                    (timestamp, area_name, power, energy, temperature, humidity, illuminance, occupancy)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (timestamp, area_name, power, energy, temperature, humidity, illuminance, occupancy, within_working_hours)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     timestamp.timestamp(),
                     area_name,
@@ -550,7 +555,8 @@ class StorageManager:
                     temperature,
                     humidity,
                     illuminance,
-                    1 if occupancy else 0 if occupancy is not None else None
+                    1 if occupancy else 0 if occupancy is not None else None,
+                    1 if within_working_hours else 0
                 ))
                 
                 conn.commit()
@@ -569,7 +575,8 @@ class StorageManager:
         self,
         metric: str,
         hours: int = None,
-        days: int = None
+        days: int = None,
+        working_hours_only: bool = None
     ) -> List[Tuple[datetime, float]]:
         """
         Get historical data for a specific metric.
@@ -578,6 +585,7 @@ class StorageManager:
             metric: One of 'power', 'energy', 'temperature', 'humidity', 'illuminance', 'occupancy'
             hours: Number of hours to retrieve (optional)
             days: Number of days to retrieve (optional)
+            working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
         
         Returns:
             List of (timestamp, value) tuples
@@ -595,6 +603,12 @@ class StorageManager:
                 cutoff = (datetime.now() - timedelta(days=days)).timestamp()
                 query += f" AND timestamp >= {cutoff}"
             
+            # Filter by working hours if specified
+            if working_hours_only is True:
+                query += " AND within_working_hours = 1"
+            elif working_hours_only is False:
+                query += " AND within_working_hours = 0"
+            
             query += " ORDER BY timestamp ASC"
             
             cursor.execute(query)
@@ -611,7 +625,8 @@ class StorageManager:
         area_name: str,
         metric: str,
         hours: int = None,
-        days: int = None
+        days: int = None,
+        working_hours_only: bool = None
     ) -> List[Tuple[datetime, float]]:
         """
         Get historical data for a specific metric in a specific area.
@@ -621,6 +636,7 @@ class StorageManager:
             metric: One of 'temperature', 'humidity', 'illuminance', 'occupancy'
             hours: Number of hours to retrieve (optional)
             days: Number of days to retrieve (optional)
+            working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
         
         Returns:
             List of (timestamp, value) tuples
@@ -645,6 +661,12 @@ class StorageManager:
                 cutoff = (datetime.now() - timedelta(days=days)).timestamp()
                 query += " AND timestamp >= ?"
                 params.append(cutoff)
+            
+            # Filter by working hours if specified
+            if working_hours_only is True:
+                query += " AND within_working_hours = 1"
+            elif working_hours_only is False:
+                query += " AND within_working_hours = 0"
             
             query += " ORDER BY timestamp ASC"
             
@@ -681,15 +703,23 @@ class StorageManager:
         area_name: str,
         metric: str,
         hours: int = None,
-        days: int = None
+        days: int = None,
+        working_hours_only: bool = None
     ) -> Dict[str, float]:
         """
         Get statistical summary for an area's metric.
         
+        Args:
+            area_name: Name of the area
+            metric: Metric to analyze
+            hours: Number of hours to retrieve
+            days: Number of days to retrieve
+            working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
+        
         Returns:
             Dictionary with 'mean', 'min', 'max', 'std' keys
         """
-        history = await self.get_area_history(area_name, metric, hours, days)
+        history = await self.get_area_history(area_name, metric, hours, days, working_hours_only)
         
         if not history:
             return {"mean": 0, "min": 0, "max": 0, "std": 0}
