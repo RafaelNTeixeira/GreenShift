@@ -10,6 +10,10 @@ def get_normalized_value(state, sensor_type: str) -> Tuple[Optional[float], Opti
         Power -> W
         Energy -> kWh
         """
+        # Check if state exists
+        if state is None:
+            return None, None
+            
         try:
             value = float(state.state)
             unit = state.attributes.get("unit_of_measurement")
