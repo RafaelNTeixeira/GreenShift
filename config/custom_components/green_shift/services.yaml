@@ -142,3 +142,66 @@ list_backups:
   name: List Backups
   description: List all available backups (check logs for output)
   fields: {}
+
+test_data_retention:
+  name: Test Data Retention
+  description: Test and debug data retention mechanisms (notifications & RL episodes)
+  fields:
+    test_type:
+      name: Test Type
+      description: Type of retention test to run
+      required: true
+      example: "status"
+      selector:
+        select:
+          options:
+            - label: "Show Status"
+              value: "status"
+            - label: "Inject Notifications (test 100-limit)"
+              value: "inject_notifications"
+            - label: "Inject Old Episodes (test 4-month retention)"
+              value: "inject_old_episodes"
+            - label: "Set Overdue Cleanup (test 24h check)"
+              value: "set_overdue_cleanup"
+            - label: "Run Cleanup Manually"
+              value: "run_cleanup"
+    count:
+      name: Notification Count
+      description: Number of notifications to inject (for inject_notifications test)
+      required: false
+      example: 150
+      selector:
+        number:
+          min: 1
+          max: 500
+          mode: box
+    months:
+      name: Months of Data
+      description: Months of old data to inject (for inject_old_episodes test)
+      required: false
+      example: 5
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
+    episodes_per_day:
+      name: Episodes Per Day
+      description: Episodes per day to inject (for inject_old_episodes test)
+      required: false
+      example: 100
+      selector:
+        number:
+          min: 10
+          max: 5000
+          mode: box
+    hours_ago:
+      name: Hours Ago
+      description: Set last cleanup this many hours ago (for set_overdue_cleanup test)
+      required: false
+      example: 48
+      selector:
+        number:
+          min: 1
+          max: 168
+          mode: box

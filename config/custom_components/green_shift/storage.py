@@ -14,7 +14,7 @@ from typing import List, Tuple, Dict, Optional, Any
 import numpy as np
 import asyncio
 from homeassistant.core import HomeAssistant
-from .const import UPDATE_INTERVAL_SECONDS
+from .const import UPDATE_INTERVAL_SECONDS, RL_EPISODE_RETENTION_DAYS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -474,6 +474,30 @@ class StorageManager:
             
             if deleted_global > 0 or deleted_area > 0 or deleted_tasks > 0:
                 _LOGGER.info("Cleaned up %d global, %d area, and %d task records", deleted_global, deleted_area, deleted_tasks)
+        
+        await self.hass.async_add_executor_job(_cleanup)
+    
+    async def _cleanup_old_rl_episodes(self):
+        """Remove RL episodes older than RL_EPISODE_RETENTION_DAYS from research_data.db."""
+        def _cleanup():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            
+            # Calculate cutoff (RL_EPISODE_RETENTION_DAYS ago)
+            cutoff = (datetime.now() - timedelta(days=RL_EPISODE_RETENTION_DAYS)).timestamp()
+            
+            # Clean old RL episodes
+            cursor.execute(
+                "DELETE FROM research_rl_episodes WHERE timestamp < ?",
+                (cutoff,)
+            )
+            deleted_episodes = cursor.rowcount
+            
+            conn.commit()
+            conn.close()
+            
+            if deleted_episodes > 0:
+                _LOGGER.info("Cleaned up %d old RL episodes (older than %d days)", deleted_episodes, RL_EPISODE_RETENTION_DAYS)
         
         await self.hass.async_add_executor_job(_cleanup)
     

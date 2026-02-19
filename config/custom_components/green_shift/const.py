@@ -32,6 +32,10 @@ KEEP_AUTO_BACKUPS = 10     # Keep last N auto backups (~2.5 days with 6h interva
 KEEP_STARTUP_BACKUPS = 3   # Keep last N startup backups (prevents accumulation)
 KEEP_SHUTDOWN_BACKUPS = 3  # Keep last N shutdown backups (prevents accumulation)
 
+# Data retention settings
+RL_EPISODE_RETENTION_DAYS = 120  # Keep RL episodes for 120 days (4 months)
+NOTIFICATION_HISTORY_LIMIT = 100  # Keep last N notifications in JSON state
+
 # Sensor categories and keywords for auto-discovery
 SENSOR_MAPPING = {
     "power": {

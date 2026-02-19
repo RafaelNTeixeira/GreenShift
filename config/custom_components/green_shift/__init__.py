@@ -8,6 +8,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import async_track_time_interval, async_track_state_change_event, async_track_time_change
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+import sqlite3
 
 from .const import (
     DOMAIN,
@@ -23,7 +24,10 @@ from .const import (
     KEEP_AUTO_BACKUPS,
     KEEP_STARTUP_BACKUPS,
     KEEP_SHUTDOWN_BACKUPS,
-    ENVIRONMENT_OFFICE
+    ENVIRONMENT_OFFICE,
+    UPDATE_INTERVAL_SECONDS,
+    ACTIONS,
+    GAMMA
 )
 from .data_collector import DataCollector
 from .decision_agent import DecisionAgent
@@ -241,6 +245,46 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, auto_backup_callback, timedelta(hours=BACKUP_INTERVAL_HOURS)
     )
 
+    # Daily RL episode cleanup (runs at 3 AM)
+    async def rl_cleanup_callback(now):
+        """Clean up old RL episodes to manage database size."""
+        _LOGGER.debug("Running RL episode cleanup...")
+        try:
+            await storage._cleanup_old_rl_episodes()
+            
+            # Update last cleanup timestamp in state
+            current_state = await storage.load_state()
+            current_state["last_rl_cleanup"] = datetime.now().isoformat()
+            await storage.save_state(current_state)
+            
+            _LOGGER.info("RL episode cleanup completed successfully")
+        except Exception as e:
+            _LOGGER.error("RL episode cleanup error: %s", e)
+    
+    # Check if cleanup is needed on startup (in case HA was shut down for days)
+    state = await storage.load_state()
+    last_cleanup_str = state.get("last_rl_cleanup") if state else None
+    
+    if last_cleanup_str:
+        try:
+            last_cleanup = datetime.fromisoformat(last_cleanup_str)
+            hours_since_cleanup = (datetime.now() - last_cleanup).total_seconds() / 3600
+            
+            if hours_since_cleanup >= 24:
+                _LOGGER.info("RL cleanup overdue (%.1f hours since last run), running now...", hours_since_cleanup)
+                await rl_cleanup_callback(None)
+        except Exception as e:
+            _LOGGER.warning("Could not parse last RL cleanup date: %s", e)
+    else:
+        # First time running, do cleanup
+        _LOGGER.info("No previous RL cleanup found, running initial cleanup...")
+        await rl_cleanup_callback(None)
+    
+    # Schedule daily cleanup at 3:00 AM
+    hass.data[DOMAIN]["rl_cleanup_listener"] = async_track_time_change(
+        hass, rl_cleanup_callback, hour=3, minute=0, second=0
+    )
+
     # Generate tasks immediately if none exist for today (only in active phase)
     if agent.phase == PHASE_ACTIVE:
         today_tasks = await storage.get_today_tasks()
@@ -371,10 +415,7 @@ async def async_setup_services(hass: HomeAssistant):
         _LOGGER.info("Forced notification decision complete")
     
     async def inject_test_data(call: ServiceCall):
-        """Inject synthetic test data for testing."""
-        import random
-        from .const import UPDATE_INTERVAL_SECONDS
-        
+        """Inject synthetic test data for testing."""   
         hours = call.data.get("hours", 24)
         collector = hass.data[DOMAIN]["collector"]
         storage = hass.data[DOMAIN]["storage"]
@@ -469,7 +510,6 @@ async def async_setup_services(hass: HomeAssistant):
     async def inspect_q_table(call: ServiceCall):
         """Inspect Q-table contents and state space usage."""
         agent = hass.data[DOMAIN]["agent"]
-        from .const import ACTIONS
         
         _LOGGER.info("="*60)
         _LOGGER.info("Q-TABLE INSPECTION")
@@ -552,7 +592,6 @@ async def async_setup_services(hass: HomeAssistant):
         
         # Check if state exists in Q-table
         if state_before not in agent.q_table:
-            from .const import ACTIONS
             agent.q_table[state_before] = {a: 0.0 for a in ACTIONS.values()}
             _LOGGER.info(f"State initialized in Q-table")
         
@@ -568,7 +607,6 @@ async def async_setup_services(hass: HomeAssistant):
         _LOGGER.info(f"\nSimulating: action={test_action}, reward={test_reward:.4f}")
         
         # Manually perform Q-learning update
-        from .const import ACTIONS, GAMMA
         current_q = agent.q_table[state_before].get(test_action, 0.0)
         
         # Get next state (same as current for this test)
@@ -668,6 +706,151 @@ async def async_setup_services(hass: HomeAssistant):
         _LOGGER.info("Use 'green_shift.restore_backup' with backup_name to restore")
 
 
+    async def test_data_retention(call: ServiceCall):
+        """Service to test data retention mechanisms."""
+        test_type = call.data.get("test_type", "status")
+        agent = hass.data[DOMAIN]["agent"]
+        storage = hass.data[DOMAIN]["storage"]
+        
+        _LOGGER.info("="*60)
+        _LOGGER.info("DATA RETENTION TEST - Type: %s", test_type)
+        _LOGGER.info("="*60)
+        
+        if test_type == "status":
+            # Show current status
+            _LOGGER.info("\n📊 CURRENT STATUS:")
+            
+            # Check notification count in JSON
+            state = await storage.load_state()
+            notification_history = state.get("notification_history", [])
+            _LOGGER.info(f"  Notifications in JSON: {len(notification_history)} (limit: 100)")
+            
+            # Check RL episodes in database
+            def _count_episodes():
+                conn = sqlite3.connect(str(storage.research_db_path))
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM research_rl_episodes")
+                count, min_ts, max_ts = cursor.fetchone()
+                conn.close()
+                return count, min_ts, max_ts
+            
+            count, min_ts, max_ts = await hass.async_add_executor_job(_count_episodes)
+            
+            if count > 0:
+                min_date = datetime.fromtimestamp(min_ts).strftime("%Y-%m-%d")
+                max_date = datetime.fromtimestamp(max_ts).strftime("%Y-%m-%d")
+                days_span = (max_ts - min_ts) / 86400
+                _LOGGER.info(f"  RL Episodes in DB: {count:,}")
+                _LOGGER.info(f"  Date range: {min_date} to {max_date} ({days_span:.1f} days)")
+            else:
+                _LOGGER.info(f"  RL Episodes in DB: 0")
+            
+            # Check last cleanup
+            last_cleanup = state.get("last_rl_cleanup")
+            if last_cleanup:
+                last = datetime.fromisoformat(last_cleanup)
+                hours_ago = (datetime.now() - last).total_seconds() / 3600
+                _LOGGER.info(f"  Last RL cleanup: {hours_ago:.1f} hours ago ({last_cleanup})")
+            else:
+                _LOGGER.info(f"  Last RL cleanup: Never")
+        
+        elif test_type == "inject_notifications":
+            # Inject 150 notifications to test 100-limit trimming
+            count = call.data.get("count", 150)
+            _LOGGER.info(f"\n🔧 Injecting {count} test notifications...")
+            
+            for i in range(count):
+                agent.notification_history.append({
+                    "notification_id": f"test_notification_{i}",
+                    "timestamp": datetime.now().isoformat(),
+                    "action_type": "test",
+                    "accepted": None,
+                    "responded": False
+                })
+            
+            # Save and reload to trigger trimming
+            await agent._save_persistent_state()
+            
+            state = await storage.load_state()
+            notification_history = state.get("notification_history", [])
+            _LOGGER.info(f"  ✓ Saved state with trimming")
+            _LOGGER.info(f"  Notifications in memory: {len(agent.notification_history)}")
+            _LOGGER.info(f"  Notifications in JSON: {len(notification_history)} (should be 100)")
+            
+        elif test_type == "inject_old_episodes":
+            # Inject RL episodes from 5 months ago
+            months = call.data.get("months", 5)
+            episodes_per_day = call.data.get("episodes_per_day", 100)
+            
+            _LOGGER.info(f"\n🔧 Injecting episodes from {months} months ago ({episodes_per_day}/day)...")
+            
+            def _inject():
+                conn = sqlite3.connect(str(storage.research_db_path))
+                cursor = conn.cursor()
+                
+                days = months * 30
+                total_inserted = 0
+                
+                for day in range(days):
+                    date = datetime.now() - timedelta(days=days - day)
+                    
+                    for ep in range(episodes_per_day):
+                        timestamp = (date + timedelta(seconds=ep * 15)).timestamp()
+                        
+                        cursor.execute("""
+                            INSERT INTO research_rl_episodes 
+                            (timestamp, phase, state_vector, action, reward, opportunity_score, action_source)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            timestamp,
+                            "active",
+                            "0,0,0,0,0,0,0,0,0,0",
+                            0,  # no-op
+                            0.0,
+                            0.0,
+                            "test_injection"
+                        ))
+                        total_inserted += 1
+                    
+                    if (day + 1) % 30 == 0:
+                        conn.commit()
+                        _LOGGER.info(f"  Inserted {total_inserted:,} episodes so far...")
+                
+                conn.commit()
+                conn.close()
+                return total_inserted
+            
+            total = await hass.async_add_executor_job(_inject)
+            _LOGGER.info(f"  ✓ Injected {total:,} test episodes spanning {months} months")
+            
+        elif test_type == "set_overdue_cleanup":
+            # Set last cleanup to 48 hours ago
+            hours = call.data.get("hours_ago", 48)
+            _LOGGER.info(f"\n🔧 Setting last cleanup to {hours} hours ago...")
+            
+            state = await storage.load_state()
+            fake_cleanup_time = datetime.now() - timedelta(hours=hours)
+            state["last_rl_cleanup"] = fake_cleanup_time.isoformat()
+            await storage.save_state(state)
+            
+            _LOGGER.info(f"  ✓ Last cleanup set to: {fake_cleanup_time.isoformat()}")
+            _LOGGER.info(f"  Restart HA to trigger overdue cleanup check")
+            
+        elif test_type == "run_cleanup":
+            # Manually trigger cleanup
+            _LOGGER.info(f"\n🔧 Running RL episode cleanup manually...")
+            
+            await storage._cleanup_old_rl_episodes()
+            
+            # Update timestamp
+            state = await storage.load_state()
+            state["last_rl_cleanup"] = datetime.now().isoformat()
+            await storage.save_state(state)
+            
+            _LOGGER.info(f"  ✓ Cleanup completed - check logs above for deletion count")
+        
+        _LOGGER.info("="*60)
+    
     # Register services
     hass.services.async_register(DOMAIN, "submit_task_feedback", submit_task_feedback)
     hass.services.async_register(DOMAIN, "verify_tasks", verify_tasks)
@@ -676,6 +859,7 @@ async def async_setup_services(hass: HomeAssistant):
     hass.services.async_register(DOMAIN, "create_backup", create_backup)
     hass.services.async_register(DOMAIN, "restore_backup", restore_backup)
     hass.services.async_register(DOMAIN, "list_backups", list_backups)
+    hass.services.async_register(DOMAIN, "test_data_retention", test_data_retention)
     
     _LOGGER.info("Services registered successfully")
 
@@ -789,6 +973,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, "create_backup")
     hass.services.async_remove(DOMAIN, "restore_backup")
     hass.services.async_remove(DOMAIN, "list_backups")
+    hass.services.async_remove(DOMAIN, "test_data_retention")
 
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN]["update_listener"]()
@@ -810,6 +995,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Cancel backup listener
         if "auto_backup_listener" in hass.data[DOMAIN]:
             hass.data[DOMAIN]["auto_backup_listener"]()
+        
+        # Cancel RL cleanup listener
+        if "rl_cleanup_listener" in hass.data[DOMAIN]:
+            hass.data[DOMAIN]["rl_cleanup_listener"]()
 
         # Close storage connections
         storage = hass.data[DOMAIN].get("storage")

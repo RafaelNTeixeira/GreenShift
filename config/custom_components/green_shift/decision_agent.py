@@ -28,7 +28,8 @@ from .const import (
     SHADOW_EXPLORATION_RATE,
     SHADOW_LEARNING_RATE,
     SHADOW_INTERVAL_MULTIPLIER,
-    ENVIRONMENT_OFFICE
+    ENVIRONMENT_OFFICE,
+    NOTIFICATION_HISTORY_LIMIT
 )
 
 _LOGGER = logging.getLogger(f"{__name__}.ai_model")
@@ -65,7 +66,7 @@ class DecisionAgent:
         
         # Engagement history
         self.engagement_history = deque(maxlen=100)
-        self.notification_history = deque(maxlen=50)  # Track recent notifications
+        self.notification_history = deque(maxlen=NOTIFICATION_HISTORY_LIMIT)  # Track recent notifications
         self.notification_count_today = 0
         self.last_notification_date = None
         self.last_notification_time = None
@@ -156,7 +157,7 @@ class DecisionAgent:
 
         # Load notification history
         if "notification_history" in state:
-            self.notification_history = deque(state["notification_history"], maxlen=50)
+            self.notification_history = deque(state["notification_history"], maxlen=NOTIFICATION_HISTORY_LIMIT)
         
         # Load Q-table (convert string keys back to tuples, and ensure action keys are ints)
         if "q_table" in state and state["q_table"]:
@@ -211,6 +212,9 @@ class DecisionAgent:
             for state_key, actions in self.q_table.items()
         }
         
+        # Keep only last NOTIFICATION_HISTORY_LIMIT notifications in JSON (sliding window)
+        trimmed_notification_history = list(self.notification_history)[-NOTIFICATION_HISTORY_LIMIT:]
+        
         ai_state = {
             "start_date": safe_start_date,
             "phase": self.phase,
@@ -223,7 +227,7 @@ class DecisionAgent:
             "notification_count_today": self.notification_count_today,
             "last_notification_date": self.last_notification_date.isoformat() if self.last_notification_date else None,
             "last_notification_time": self.last_notification_time.isoformat() if self.last_notification_time else None,
-            "notification_history": list(self.notification_history),
+            "notification_history": trimmed_notification_history,
             "q_table": serializable_q_table,
             "shadow_episode_number": self.shadow_episode_number,
         }
