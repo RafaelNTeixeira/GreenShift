@@ -386,14 +386,39 @@ All data is stored in: `config/green_shift_data/`
 - `research_data.db` - Permanent research and analytics data
 - `state.json` - AI model state (Q-table, indices)
 - `backups/` - Organized backup snapshots:
-  - `auto/` - Every 4 hours (keeps last 18)
-  - `startup/` - On integration startup (keeps last 10)
-  - `shutdown/` - On integration shutdown (keeps last 10)
+  - `auto/` - Every 6 hours (keeps last 10)
+  - `startup/` - On integration startup (keeps last 3)
+  - `shutdown/` - On integration shutdown (keeps last 3)
   - `manual/` - User-created backups (never auto-deleted)
 
 ---
 
-## 🤝 Contributing
+## 🧪 Testing
+
+Green Shift includes currently **117 comprehensive tests** covering AI logic, backup systems and utility functions.
+
+### Quick Start
+
+```bash
+# Install test dependencies
+pip install -r requirements-test.txt
+
+# Run all tests
+cd tests/
+pytest
+```
+
+**Test Coverage:**
+- ✅ **19 tests** - Backup management
+- ✅ **56 tests** - AI decision agent & Q-learning
+- ✅ **28 tests** - Helper functions & conversions
+- ✅ **14 tests** - Task generation & difficulty
+
+📚 **[Full Testing Documentation](./tests/TESTING.md)** - Detailed test structure and CI/CD information
+
+---
+
+# 🤝 Contributing
 
 We welcome contributions! Whether you want to:
 - 🌍 Add translations for your language

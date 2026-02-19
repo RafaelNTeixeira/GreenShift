@@ -20,5 +20,11 @@ config/.storage/
 config/*.log
 config/backups/
 
+tests/__pycache__/
+tests/.pytest_cache/
+
+__pycache__/
+.pytest_cache/
+
 commands.MD
 TESTING_GUIDE.MD
