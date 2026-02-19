@@ -121,7 +121,7 @@ The dashboard configuration is defined in `ui-lovelace.yaml`.
 
 ---
 
-## 🧪 How It Works
+## 🧠 How It Works
 
 ### Phase 1: Baseline (Days 0-14)
 
@@ -174,34 +174,6 @@ Green Shift **automatically discovers** sensors based on keywords:
 | **Occupancy** | occupancy, motion, presence, binary_sensor |
 
 **No manual configuration needed!** Simply add sensors to Home Assistant and Green Shift finds them automatically.
-
----
-
-## 📊 Created Entities
-
-Green Shift creates the following sensors:
-
-| Entity | Description | Unit |
-|--------|-------------|------|
-| `sensor.research_phase` | Current phase (baseline/active) | text |
-| `sensor.energy_baseline` | Learned average consumption | W |
-| `sensor.current_consumption` | Real-time power draw | W |
-| `sensor.savings_accumulated` | Total savings | EUR |
-| `sensor.co2_saved` | CO2 avoided | kg |
-| `sensor.tasks_completed` | Completed tasks count | number |
-| `sensor.collaborative_goal_progress` | Group goal progress | % |
-| `sensor.behaviour_index` | User adherence score | 0-1 |
-| `sensor.fatigue_index` | Notification fatigue risk | 0-1 |
-
-### Helper Entities (Auto-Created)
-
-| Entity | Type | Purpose |
-|--------|------|---------|
-| `input_number.energy_saving_target` | Number | Target savings % |
-| `input_number.electricity_price` | Number | Local electricity cost |
-| `input_select.currency` | Select | Display currency (EUR/USD/GBP) |
-| `input_select.task_difficulty` | Select | Rate task difficulty |
-| `input_boolean.task_1/2/3` | Boolean | Daily task completion |
 
 ---
 
