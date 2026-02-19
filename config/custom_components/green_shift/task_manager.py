@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from homeassistant.core import HomeAssistant
 
-from .const import TASK_GENERATION_TIME
+from .const import TASK_GENERATION_TIME, ENVIRONMENT_OFFICE
 from .translations_runtime import get_language, get_task_templates, get_difficulty_display
 from .helpers import should_ai_be_active
 
@@ -133,8 +133,11 @@ class TaskManager:
         stats = await self.storage.get_task_difficulty_stats('temperature_reduction')
         difficulty = await self._calculate_task_difficulty(stats)
         
-        # Get average temperature from last 7 days
-        temp_history = await self.data_collector.get_temperature_history(days=7)
+        # Get average temperature from last 7 days (working hours only in office mode)
+        is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+        working_hours_filter = True if is_office_mode else None
+        
+        temp_history = await self.data_collector.get_temperature_history(days=7, working_hours_only=working_hours_filter)
         if not temp_history:
             return None
         
@@ -453,8 +456,11 @@ class TaskManager:
         
         try:
             if task_type == 'temperature_reduction':
-                # Check average temperature today
-                temp_history = await self.data_collector.get_temperature_history(hours=int(hours_passed))
+                # Check average temperature today (working hours only in office mode)
+                is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+                working_hours_filter = True if is_office_mode else None
+                
+                temp_history = await self.data_collector.get_temperature_history(hours=int(hours_passed), working_hours_only=working_hours_filter)
                 if not temp_history:
                     return False
                 avg_temp = np.mean([temp for _, temp in temp_history])
