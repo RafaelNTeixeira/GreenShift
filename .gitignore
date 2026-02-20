@@ -1,30 +1,44 @@
+# Home Assistant config - ignore everything by default
 config/*
 
+# Allow specific custom component files
 !config/custom_components/
-!config/configuration.yaml
-!config/ui-lovelace-en.yaml
-!config/ui-lovelace-pt.yaml
-!config/input_booleans.yaml 
-!config/input_numbers.yaml 
-!config/input_selects.yaml
-!config/lovelace-views/
-!config/customize_en.yaml
-!config/customize_pt.yaml
 !config/locales/
 
-config/custom_components/green_shift/__pycache__/
+# Allow example helper configurations
+!config/input_booleans.yaml
+!config/input_numbers.yaml
+!config/input_selects.yaml
 
+# Allow minimal configuration example
+!config/configuration.yaml
+
+# Explicitly ignore sensitive/runtime files
 config/secrets.yaml
-config/home-assistant_v2.db
+config/home-assistant_v2.db*
 config/.storage/
-config/*.log
+config/*.log*
 config/backups/
+config/green_shift_data/
+config/.cloud/
+config/.HA_VERSION
+config/.ha_run.lock
+config/deps/
+config/tts/
+config/automations.yaml
+config/scripts.yaml
+config/scenes.yaml
 
+# Python cache
+config/custom_components/green_shift/__pycache__/
 tests/__pycache__/
 tests/.pytest_cache/
-
 __pycache__/
 .pytest_cache/
+*.pyc
 
+# Personal/development files
 commands.MD
-TESTING_GUIDE.MD
+export_research.py
+populate_test_data.py
+test_research_db.py
