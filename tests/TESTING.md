@@ -4,14 +4,19 @@ Green Shift includes a comprehensive test suite covering core functionality and 
 
 ## Test Coverage
 
-**117 tests** across 4 modules:
+
+
+**199 tests** (plus 33 parametrized tests) across 7 modules:
 
 | Module | Tests | Coverage |
 |--------|-------|----------|
 | `test_backup_manager.py` | 19 | Backup creation, cleanup, restoration |
-| `test_decision_agent.py` | 56 | AI model, Q-learning, fatigue tracking |
+| `test_data_collector.py` | 28 | Real-time monitoring, energy tracking |
+| `test_decision_agent.py` | 37 | AI model, Q-learning, fatigue tracking |
 | `test_helpers.py` | 28 | Utility functions, conversions |
+| `test_storage.py` | 33 | Database operations, data persistence |
 | `test_task_manager.py` | 14 | Task generation, difficulty adjustment |
+| `test_translations_runtime.py` | 40 | Multilingual support, templates |
 
 ## Running Tests
 
@@ -52,6 +57,14 @@ Tests are organized by component:
 - Backup restoration
 - Edge cases (missing backups, corrupted files)
 
+### `test_data_collector.py`
+- Real-time sensor monitoring
+- Energy midnight point tracking
+- Daily kWh calculations
+- Area-based data aggregation
+- Working hours filtering
+- Sensor cache management
+
 ### `test_decision_agent.py`
 - State discretization (power bins, indices)
 - Fatigue index calculation (rejection rate, time decay)
@@ -60,12 +73,24 @@ Tests are organized by component:
 - Q-learning updates
 - Phase transitions (baseline -> active)
 - Notification limits
+- Daily notification counter
+- Weekly challenge tracking
 
 ### `test_helpers.py`
 - Unit conversions (kW->W, Wh->kWh)
 - Environmental impact calculations (CO2, metaphors)
 - Working hours validation
 - Configuration parsing
+- Area assignment utilities
+
+### `test_storage.py`
+- Database initialization (SQLite)
+- Sensor snapshot storage
+- Area-based data tracking
+- Historical data queries
+- Task persistence
+- Data retention and cleanup
+- State file operations (JSON)
 
 ### `test_task_manager.py`
 - Task generation with sensor constraints
@@ -73,6 +98,15 @@ Tests are organized by component:
 - Working hours enforcement
 - Difficulty multipliers
 - Idempotence (no duplicate tasks)
+
+### `test_translations_runtime.py`
+- Language detection and selection
+- Notification template rendering
+- Task template localization
+- Time period translations
+- Difficulty level labels
+- Phase transition messages
+- English and Portuguese coverage
 
 ---
 

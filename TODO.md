@@ -77,7 +77,7 @@ Checklist to track remaining features, fixes and tests before completion.
 
 
 ### Validation
-- [ ] Add Unit tests
+- [x] Add Unit tests
 - [ ] Check .gitignore
-
+- [ ] Add pre-commit hook to run tests before executing a commit
 ---

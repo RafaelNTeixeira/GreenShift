@@ -182,7 +182,9 @@ class DataCollector:
             # Avoid double-counting if main_power_sensor is in the cache but currently None
             if self.main_power_sensor and entity_id == self.main_power_sensor:
                 continue
-            total_power += val
+
+            if val is not None:
+                total_power += val
             
         self.current_total_power = total_power
         # _LOGGER.debug("Power recalculated by summing: %.2f W", total_power)

@@ -275,7 +275,7 @@ class TestUpdateFatigueIndex:
         await agent._update_fatigue_index()
         # time_decay_factor at 3 hours = max(0.5, 1.0 - 2*0.1) = 0.8
         # base_fatigue = 0.6*1.0 + 0.4*1.0 = 1.0, final = 1.0 * 0.8 = 0.8
-        assert round(agent.fatigue_index, 1) == 0.8
+        assert agent.fatigue_index == pytest.approx(0.8)
 
     @pytest.mark.asyncio
     async def test_fatigue_clipped_between_0_and_1(self):
@@ -411,7 +411,7 @@ class TestWeeklyChallenge:
     async def test_insufficient_data_returns_pending(self):
         agent = make_agent()
         agent.baseline_consumption = 1000.0
-        # Return only 1 data point — well below minimum
+        # Return only 1 data point: well below minimum
         agent.data_collector.get_power_history = AsyncMock(
             return_value=[(datetime.now().timestamp(), 900.0)]
         )

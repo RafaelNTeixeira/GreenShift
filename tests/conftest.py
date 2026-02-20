@@ -67,7 +67,7 @@ def home_config():
 
 @pytest.fixture
 def office_config():
-    """Office-mode configuration with Mon–Fri 08:00–18:00."""
+    """Office-mode configuration with Mon-Fri 08:00-18:00."""
     return {
         "environment_mode": "office",
         "working_start": "08:00",
