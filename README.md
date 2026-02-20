@@ -367,7 +367,7 @@ All data is stored in: `config/green_shift_data/`
 
 ## 🧪 Testing
 
-Green Shift includes currently **232 comprehensive tests** covering AI logic, backup systems and utility functions.
+Green Shift includes currently **256 comprehensive tests** covering AI logic, backup systems, configuration and utility functions.
 
 ### Quick Start
 
@@ -382,6 +382,7 @@ pytest
 
 **Test Coverage:**
 - ✅ **19 tests** - Backup management
+- ✅ **24 tests** - Config flow & sensor discovery
 - ✅ **28 tests** - Real-time data collection & energy tracking
 - ✅ **37 tests** - AI decision agent & Q-learning
 - ✅ **28 tests** - Helper functions & conversions

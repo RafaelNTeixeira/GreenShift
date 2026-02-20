@@ -80,4 +80,5 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Add Unit tests
 - [ ] Check .gitignore
 - [ ] Add pre-commit hook to run tests before executing a commit
+- [ ] Improve code documentation where needed
 ---
