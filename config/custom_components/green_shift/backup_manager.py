@@ -1,7 +1,10 @@
 """
-Backup management for Green Shift data.
-Provides automatic backups and recovery mechanisms.
+File: backup_manager.py
+Description: This module defines the BackupManager class, which is responsible for managing automated backups of the SQLite databases and JSON state files used by the Green Shift component. 
+It provides functionality to create timestamped backups, organize them by type (automatic, manual, startup, shutdown), clean up old backups to save space and restore from specific backups when needed. 
+The backup operations are designed to be safe for active databases and are executed asynchronously to avoid blocking the main thread.
 """
+
 import logging
 import shutil
 import sqlite3

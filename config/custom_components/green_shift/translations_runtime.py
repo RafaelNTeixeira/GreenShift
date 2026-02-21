@@ -1,3 +1,12 @@
+"""
+File: translations_runtime.py
+Description: This module provides runtime translation support for the Green Shift Home Assistant component.
+It includes functions to detect the user's preferred language from Home Assistant's configuration and retrieve the appropriate notification and task templates based on that language.
+The module defines a set of notification templates for different categories (specific, anomaly, behavioural, normative, phase_transition) in both English and Portuguese, as well as task templates and difficulty display names.
+This allows the component to dynamically generate notifications and tasks in the user's preferred language, enhancing the user experience and making the energy-saving suggestions more relatable and actionable.
+"""
+
+
 import logging
 
 _LOGGER = logging.getLogger(__name__)

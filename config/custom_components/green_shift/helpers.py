@@ -1,3 +1,11 @@
+"""
+File: helpers.py
+Description: This module provides helper functions for the Green Shift Home Assistant component.
+It includes functions for normalizing sensor values, calculating environmental impact from energy savings, retrieving entity area information, grouping sensors by area, getting friendly names for entities and checking if the current time is within configured working hours. 
+These helpers are used throughout the component to maintain consistency and simplify common operations related to sensor data handling, environmental impact calculations and time-based logic for AI activity.
+"""
+
+
 from typing import Tuple, Optional, Dict, List
 from datetime import datetime, time
 from homeassistant.core import HomeAssistant

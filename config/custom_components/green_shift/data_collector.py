@@ -1,3 +1,10 @@
+"""
+File: data_collector.py
+Description: This module defines the DataCollector class, which is responsible for real-time monitoring and collection of sensor data in the Green Shift Home Assistant component.
+The DataCollector continuously listens for state changes in relevant sensors (power, energy, temperature, humidity, illuminance, occupancy) and updates its internal state accordingly. 
+It also organizes sensors by Home Assistant areas to provide area-specific insights.
+"""
+
 import logging
 import numpy as np
 from collections import deque

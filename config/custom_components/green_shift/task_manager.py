@@ -1,6 +1,8 @@
 """
-Task Management System for Green Shift
-Handles generation, verification, and difficulty adjustment of daily tasks
+File: task_manager.py
+Description: This module defines the TaskManager class, which is responsible for managing daily energy-saving tasks in the Green Shift Home Assistant component.
+The TaskManager generates 3 verifiable tasks each day based on available sensors and historical data, with difficulty levels adjusted according to user feedback.
+Tasks are designed to be automatically verifiable using sensor data, and the TaskManager includes methods for verifying task completion and adjusting future task difficulty based on user feedback.
 """
 import logging
 import numpy as np

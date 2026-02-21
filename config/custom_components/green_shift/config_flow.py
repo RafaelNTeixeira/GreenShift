@@ -1,3 +1,11 @@
+"""
+File: config_flow.py
+Description: This module defines the configuration flow for the Green Shift Home Assistant component.
+It guides users through a multi-step setup process, including a welcome slide, configuration of currency and environment mode, working hours (if office mode is selected), sensor confirmation with suggestions based on discovered sensors, area assignment for selected sensors and a final informational slide. 
+The flow is designed to be user-friendly and flexible, allowing users to skip optional steps while still providing sensible defaults and suggestions based on the user's Home Assistant setup.
+"""
+
+
 import logging
 import voluptuous as vol
 from homeassistant import config_entries

@@ -1,3 +1,11 @@
+"""
+File: const.py
+Description: This module defines constants used throughout the Green Shift Home Assistant component.
+It includes domain definitions, signal names, environment modes, working hours defaults, system phases, update intervals, backup settings, data retention settings, sensor categories for auto-discovery, RL action spaces, reward function weights, notification settings and shadow learning parameters. 
+These constants help maintain consistency across the component and make it easier to manage configuration and behavior in a centralized manner.
+"""
+
+
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 

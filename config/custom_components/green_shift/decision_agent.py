@@ -1,3 +1,13 @@
+"""
+File: decision_agent.py
+Description: This module defines the DecisionAgent class, which implements the AI decision-making logic for the Green Shift Home Assistant component.
+The agent uses a Markov Decision Process (MDP) framework to model the environment and make informed decisions about when and how to notify users about energy-saving opportunities.
+The agent builds a state vector from sensor data, calculates indices for anomaly detection, user behaviour and fatigue and maintains an action mask to determine which actions are available based on the current context.
+The agent uses a Q-learning algorithm to learn the best actions to take in different states, with a reward function that considers energy savings potential, user engagement and context alignment.
+The agent also includes a shadow learning mode during the baseline phase, where it simulates decisions without executing actions to pre-train the Q-table on energy patterns and temporal context.
+"""
+
+
 import logging
 import numpy as np
 import ast
@@ -194,7 +204,7 @@ class DecisionAgent:
         _LOGGER.info("Persistent AI state loaded successfully")
 
     async def _save_persistent_state(self):
-        """Save AI state to JSON storage."""
+        """Save AI state to persistent storage."""
         if not self.storage:
             return
 
@@ -332,7 +342,7 @@ class DecisionAgent:
 
         # 6. Occupancy
         occ = 1.0 if current_state.get("occupancy", False) else 0.0
-        state.extend([occ, 1.0])
+        state.extend([occ, 1.0]) # TODO: set flag to 0 if occupancy sensor is missing (currently assumes it's always present)
 
         # 7-9. Indices
         state.extend([
@@ -343,7 +353,7 @@ class DecisionAgent:
         _LOGGER.debug("Anomaly index: %.2f, Behaviour index: %.2f, Fatigue index: %.2f", self.anomaly_index, self.behaviour_index, self.fatigue_index)
 
         # 10. Area anomaly count (spatial awareness)
-        area_anomaly_count = len([a for a in self.area_anomalies.values() if any(v > 0.3 for v in a.values())])
+        area_anomaly_count = len([a for a in self.area_anomalies.values() if any(v > 0.3 for v in a.values())]) # Count areas with significant anomalies
         state.append(area_anomaly_count)
         _LOGGER.debug("Area anomaly count: %d", area_anomaly_count)
 
@@ -362,7 +372,12 @@ class DecisionAgent:
         _LOGGER.debug("State vector built: %s", state)
 
     async def _get_top_power_consumer(self) -> float:
-        """Get the power consumption of the highest consuming device."""
+        """
+        Get the power consumption of the highest consuming device.
+        
+        Returns:
+            float: Power consumption of the top consumer in watts. Returns 0.0 if no valid power sensors are found.
+        """
         power_sensors = self.sensors.get("power", [])
         if not power_sensors:
             return 0.0
@@ -479,13 +494,10 @@ class DecisionAgent:
 
     async def _shadow_decide_action(self):
         """
-        Shadow learning: simulates RL decisions during baseline phase WITHOUT
-        executing any actions (no notifications sent to the user).
+        Shadow learning: simulates RL decisions during baseline phase WITHOUT executing any actions (no notifications sent to the user).
 
-        This allows the Q-table to be pre-trained on energy consumption patterns
-        and temporal context so the agent is already warm-started when the active
-        phase begins. Because no user interaction exists during baseline, the
-        reward function uses only energy-pattern and context-based components.
+        This allows the Q-table to be pre-trained on energy consumption patterns and temporal context so the agent is already warm-started when the active phase begins. 
+        Because no user interaction exists during baseline, the reward function uses only energy-pattern and context-based components.
 
         Key differences from _decide_action():
         - Higher exploration rate (SHADOW_EXPLORATION_RATE) since bad exploration has no cost
@@ -543,20 +555,21 @@ class DecisionAgent:
         """
         Calculates an estimated reward during baseline without user interaction.
 
-        Components:
-        1. Energy savings potential: how much current consumption deviates above
-           the running baseline mean (higher deviation = more opportunity for the
-           action to be useful, higher reward for actions that address it)
-        2. Action-context alignment: whether the selected action type matches the
-           current environmental context (e.g., anomaly action when anomaly_index
-           is high, specific action when a single device dominates)
-        3. Temporal appropriateness: reward actions chosen at good times (occupied,
-           reasonable hour) more than those at bad times
-
         Formula:
             R_shadow = α · savings_potential + β_ctx · context_alignment + δ_time · time_score
 
+        Key Components:
+        1. savings_potential: how much current consumption deviates above the running baseline mean (higher deviation = more opportunity for the action to be useful, higher reward for actions that address it)
+        2. context_alignment: whether the selected action type matches the current environmental context (e.g., anomaly action when anomaly_index is high, specific action when a single device dominates)
+        3. time_score: reward actions chosen at good times (occupied, reasonable hour) more than those at bad times
+
         The weights are intentionally conservative since these are estimated rewards.
+
+        Args:
+            action (int): The action for which to calculate the shadow reward.
+
+        Returns:
+            float: The calculated shadow reward for the given action.
         """
         power_history_data = await self.data_collector.get_power_history(hours=1)
         power_values = [power for timestamp, power in power_history_data]
@@ -648,11 +661,15 @@ class DecisionAgent:
 
     async def _shadow_update_q_table(self, state_key: tuple, action: int, reward: float):
         """
-        Updates Q-table with shadow learning rate (lower than active learning rate).
-        Uses the same Q-learning formula but with SHADOW_LEARNING_RATE to avoid
-        over-committing to estimated rewards.
+        Updates Q-table with SHADOW_LEARNING_RATE (shadow learning rate),lower than active learning rate, to avoid over-committing to estimated rewards.
 
-        Q(s,a) ← Q(s,a) + α_shadow[R_shadow + γ max Q(s',a') - Q(s,a)]
+        Formula:
+            Q(s,a) ← Q(s,a) + α_shadow[R_shadow + γ max Q(s',a') - Q(s,a)]
+
+        Args:
+            state_key (tuple): The discretized state key for the current state.
+            action (int): The action taken.
+            reward (float): The calculated shadow reward for the action.
         """
         if state_key not in self.q_table:
             self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
@@ -676,7 +693,14 @@ class DecisionAgent:
     async def _update_q_table(self, state_key: tuple, action: int, reward: float):
         """
         Updates Q-table using Q-learning update rule:
-        Q(s,a) ← Q(s,a) + α[R + γ max Q(s',a') - Q(s,a)]
+
+        Formula:
+            Q(s,a) ← Q(s,a) + α[R + γ max Q(s',a') - Q(s,a)]
+
+        Args:
+            state_key (tuple): The discretized state key for the current state.
+            action (int): The action taken.
+            reward (float): The calculated reward for the action.
         """
         if state_key not in self.q_table:
             self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
@@ -697,7 +721,12 @@ class DecisionAgent:
         _LOGGER.debug("Q-table updated: state=%s, action=%d, reward=%.2f, Q: %.2f → %.2f", state_key[:3], action, reward, current_q, new_q)
 
     async def _execute_action(self, action: int):
-        """Executes selected action by sending a notification."""
+        """
+        Executes selected action by sending a notification.
+        
+        Args:
+            action (int): The action to execute, corresponding to a notification type.
+        """
         action_name = [k for k, v in ACTIONS.items() if v == action][0]
 
         # Get appropriate notification template
@@ -743,6 +772,12 @@ class DecisionAgent:
     async def _generate_notification(self, action_type: str) -> dict:
         """
         Generates context-aware notification based on action type.
+
+        Args:
+            action_type (str): The type of action/notification to generate (e.g., "specific", "anomaly", "behavioural", "normative").
+
+        Returns:
+            dict: A dictionary containing the notification title, message and template index used. Returns None if no suitable template is found or if there's an error in formatting.
         """
         # Get user's language
         language = await get_language(self.hass)
@@ -777,6 +812,12 @@ class DecisionAgent:
     async def _gather_notification_context(self, action_type: str) -> dict:
         """
         Gathers contextual information for notification templates.
+
+        Args:
+            action_type (str): The type of action/notification to gather context for.
+
+        Returns:
+            dict: A dictionary containing contextual information for notification templates.
         """
         context = {}
 
@@ -828,7 +869,12 @@ class DecisionAgent:
         return context
 
     async def _find_top_consumer(self) -> tuple:
-        """Find the device consuming the most power."""
+        """
+        Find the device consuming the most power.
+        
+        Returns:
+            tuple: (device_name, power) where device_name is the friendly name of the top consuming device and power is its consumption in watts. Returns (None, 0.0) if no valid power sensors are found.
+        """
         power_sensors = self.sensors.get("power", [])
         if not power_sensors:
             return None, 0.0
@@ -850,7 +896,12 @@ class DecisionAgent:
         return top_device, max_power
 
     async def _find_highest_anomaly_area(self) -> tuple:
-        """Find the area with the highest anomaly score."""
+        """
+        Find the area with the highest anomaly score.
+        
+        Returns:
+            tuple: (area_name, metric) where area_name is the name of the area with the highest anomaly and metric is the type of anomaly detected (e.g., "temperature", "power"). Returns (None, None) if no anomalies are detected.
+        """
         if not self.area_anomalies:
             return None, None
 
@@ -868,7 +919,13 @@ class DecisionAgent:
         return anomaly_area, anomaly_metric
 
     async def _register_notification_handler(self, notification_id: str, action_type: str):
-        """Register handler for notification feedback."""
+        """
+        Register handler for notification feedback.
+        
+        Args:
+            notification_id (str): The unique ID of the notification to track responses for.
+            action_type (str): The type of action/notification (e.g., "specific", "anomaly", "behavioural", "normative") for contextual handling if needed.
+        """
         async def handle_accept(call):
             """Handle acceptance of notification."""
             await self._handle_notification_feedback(notification_id, accepted=True)
@@ -894,6 +951,10 @@ class DecisionAgent:
         """
         Handle user feedback on notifications.
         Updates behaviour index and engagement history.
+
+        Args:
+            notification_id: The unique ID of the notification being responded to.
+            accepted: True if the user accepted the nudge, False if rejected.
         """
         # Find notification in history
         for notif in self.notification_history:
@@ -973,7 +1034,17 @@ class DecisionAgent:
     async def _calculate_reward(self) -> float:
         """
         Calculates reward R_t based on energy savings, engagement and fatigue.
-        Formula: R_t = α·ΔE + β·I_engagement - δ·I_fatigue
+
+        Formula: 
+            R_t = α·ΔE + β·I_engagement - δ·I_fatigue
+
+        Key components:
+        1. Energy savings (ΔE): Calculated as the percentage reduction in power consumption compared to a baseline (either the running mean or a predefined baseline). Higher savings yield higher rewards.
+        2. User engagement (I_engagement): Positive reward for user interactions with notifications (accepting nudges), negative for rejections. This encourages the agent to learn which actions are more effective for the user.
+        3. Fatigue penalty (I_fatigue): Negative reward that increases with the fatigue index, discouraging the agent from sending too many notifications when the user is likely to be fatigued.
+
+        Returns:
+            float: The calculated reward for the current action.
         """
         power_history_data = await self.data_collector.get_power_history(hours=1) # Last hour
         power_values = [power for timestamp, power in power_history_data]
@@ -1004,7 +1075,16 @@ class DecisionAgent:
         return reward
 
     async def _log_rl_episode(self, state_key: tuple, action: int, reward: float, action_source: str, opportunity_score: float = None):
-        """Log RL decision episode to research database for convergence analysis."""
+        """
+        Log RL decision episode to research database for convergence analysis.
+        
+        Args:
+            state_key (tuple): The discretized state key for the current state.
+            action (int): The action taken.
+            reward (float): The calculated reward for the action.
+            action_source (str): Whether the action was selected through exploration, exploitation, or shadow learning (values: "explore", "exploit", "shadow_explore", "shadow_exploit").
+            opportunity_score (float): The calculated opportunity score at the time of action selection (for active episodes). None for shadow episodes since it's not calculated there.
+        """
         if not self.storage:
             return
 
@@ -1050,9 +1130,7 @@ class DecisionAgent:
         await self.storage.log_rl_decision(episode_data)
 
     async def _update_anomaly_index(self):
-        """
-        Detects anomalies in consumption using z-score.
-        """
+        """Detects anomalies in consumption using z-score."""
         power_history_data = await self.data_collector.get_power_history(hours=1) # Last hour
         power_values = [power for timestamp, power in power_history_data]
 
@@ -1230,6 +1308,9 @@ class DecisionAgent:
         - has_area_anomaly: 0=no area anomalies, 1=area anomalies present
         - time_period: 0=night, 1=morning, 2=afternoon, 3=evening
         - is_occupied: 0=not occupied, 1=occupied
+
+        Returns:
+            tuple: Discretized state key for Q-table lookup.
         """
         if self.state_vector is None or len(self.state_vector) < 18:
             return (0, 0, 0, 0, 0, 0)
@@ -1285,7 +1366,8 @@ class DecisionAgent:
         - User receptiveness (0-1)
         - Context appropriateness (0-1)
 
-        Returns: Combined score 0-1, higher = better opportunity
+        Returns:
+            float: Opportunity score between 0 and 1, higher means better opportunity for notification.
         """
         current_state = self.data_collector.get_current_state()
         current_power = current_state.get("power", 0)
@@ -1345,7 +1427,8 @@ class DecisionAgent:
         Checks if notification can be sent based on adaptive cooldown.
         Allows bypassing cooldown for high-opportunity situations.
 
-        Returns: True if notification allowed, False if in cooldown
+        Returns:
+            bool: True if notification can be sent, False if still in cooldown.
         """
         if self.last_notification_time is None:
             return True  # First notification always allowed
@@ -1465,6 +1548,16 @@ class DecisionAgent:
         """
         Calculates weekly challenge status (consumption reduction goal).
         Tracks energy from the start of the current week (Monday) and compares to baseline.
+
+        Args:
+            target_percentage: The percentage reduction target for the challenge (e.g., 15 for 15% reduction)
+
+        Returns:
+            dict:
+            - status: "pending", "in_progress" or "completed"
+            - current_avg: Current average consumption for the week
+            - target_avg: Target average consumption based on baseline and reduction goal
+            - progress: Percentage of target consumption (current_avg / target_avg * 100)
         """
         # Use fixed baseline from baseline phase for consistent comparison
         if self.baseline_consumption is None or self.baseline_consumption == 0:
@@ -1535,10 +1628,7 @@ class DecisionAgent:
         #     len(power_values), np.mean(power_values), self.baseline_consumption, target_percentage
         # )
 
-        # days_in_current_week = 7
-
-        if today.weekday() == 6 and days_in_current_week >= 7:  # Sunday and full week complete
-        # if days_in_current_week >= 7:
+        if today.weekday() == 6 and days_in_current_week >= 7: # Sunday and full week complete
             # Check if we've already logged this week
             week_key = self.current_week_start_date.isoformat()
             if not hasattr(self, '_logged_weeks'):

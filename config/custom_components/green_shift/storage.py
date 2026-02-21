@@ -1,8 +1,9 @@
 """
-Storage management for Green Shift integration.
-- SQLite sensor_data.db: Temporal sensor data (14 days rolling window) with area-based tracking + Daily tasks
-- SQLite research_data.db: Permanent research data (never purged) for post-intervention analysis
-- JSON: Persistent state (AI configuration, indices, Q-table)
+File: storage.py
+Description: This module defines the StorageManager class, which manages the SQLite databases and JSON state files for the Green Shift Home Assistant component.
+The StorageManager handles the initialization of the databases with appropriate schemas, periodic cleanup of old data, and provides methods for storing sensor snapshots, area-specific snapshots and retrieving historical data.
+The storage system is designed to be robust, with WAL mode enabled for crash protection and asynchronous operations to avoid blocking the main thread.
+The module also includes a separate research database that is never purged, allowing for long-term storage of data for research and analysis purposes.
 """
 import logging
 import sqlite3
@@ -1087,6 +1088,9 @@ class StorageManager:
         """
         Save persistent state to JSON using atomic write.
 
+        Args:
+            state_data (Dict[str, Any]): The state data to save.
+
         Expected keys:
         - phase: Current system phase
         - baseline_consumption: Baseline consumption value
@@ -1132,7 +1136,7 @@ class StorageManager:
         """
         Load persistent state from JSON.
 
-        Returns empty dict if file doesn't exist.
+        Returns empty dict if file doesn't exist or on error.
         """
         def _read():
             if not self.state_file.exists():
@@ -1162,7 +1166,15 @@ class StorageManager:
     # ==================== RESEARCH DATA (Permanent SQLite) ====================
 
     async def record_phase_change(self, phase: str, baseline_consumption: float = None, baseline_occupancy: float = None, notes: str = None):
-        """Record when system phase changes."""
+        """
+        Record when system phase changes.
+        
+        Args:
+            phase (str): The new system phase.
+            baseline_consumption (float, optional): Baseline consumption value.
+            baseline_occupancy (float, optional): Baseline occupancy value.
+            notes (str, optional): Notes about the phase change.
+        """
         def _insert():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
@@ -1411,7 +1423,21 @@ class StorageManager:
         await self.hass.async_add_executor_job(_update)
 
     async def log_weekly_challenge(self, challenge_data: dict):
-        """Log weekly challenge progress for gamification analysis."""
+        """
+        Log weekly challenge progress for gamification analysis.
+        
+        Args:
+            challenge_data (dict): Data about the weekly challenge, expected keys:
+                - week_start_date (str): Start date of the week (YYYY-MM-DD)
+                - week_end_date (str): End date of the week (YYYY-MM-DD)
+                - phase (str): System phase during the challenge
+                - target_percentage (float): Target energy reduction percentage
+                - baseline_W (float): Baseline power in watts
+                - actual_W (float): Actual average power during the week in watts
+                - savings_W (float): Power savings in watts
+                - savings_percentage (float): Energy savings percentage achieved
+                - achieved (bool): Whether the challenge was achieved or not
+        """
         def _insert():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()

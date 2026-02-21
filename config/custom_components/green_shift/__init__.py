@@ -1,3 +1,11 @@
+"""
+File: __init__.py
+Description: Main initialization and setup for the Green Shift Home Assistant component.
+This module handles the setup of the component, including initializing the data collector, decision agent, task manager and backup manager. 
+It also sets up periodic tasks for AI model updates, task generation and verification, daily aggregation for research data and automatic backups. 
+Additionally, it defines services for submitting task feedback, verifying tasks, regenerating tasks, responding to notifications, and testing various functionalities.
+"""
+
 import logging
 from datetime import datetime, timedelta
 import numpy as np
@@ -41,7 +49,16 @@ PLATFORMS = ["sensor", "select"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Setup of the component through config entry."""
+    """
+    Setup of the component through config entry.
+    
+    Args:
+        hass (HomeAssistant): The Home Assistant instance.
+        entry (ConfigEntry): The configuration entry containing user settings and discovered sensors.
+
+    Returns:
+        bool: True if setup was successful, False otherwise.
+    """
     hass.data.setdefault(DOMAIN, {})
 
     # Use sensors selected from the user configuration
@@ -296,10 +313,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_setup_services(hass: HomeAssistant):
-    """Setup services for task management."""
+    """
+    Setup services for task management.
+    
+    Args:
+        hass (HomeAssistant): The Home Assistant instance.
+    """
 
     async def submit_task_feedback(call: ServiceCall):
-        """Service to submit task difficulty feedback."""
+        """
+        Service to submit task difficulty feedback.
+        
+        Args:
+            call (ServiceCall): The service call containing 'task_index' and 'feedback' in call.data.
+        """
         task_index = call.data.get("task_index")
         feedback = call.data.get("feedback")
 
@@ -358,7 +385,12 @@ async def async_setup_services(hass: HomeAssistant):
         async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
 
     async def respond_to_selection(call: ServiceCall):
-        """Service to respond to the notification currently selected in the dropdown."""
+        """
+        Service to respond to the notification currently selected in the dropdown.
+        
+        Args:
+            call (ServiceCall): The service call containing 'decision' in call.data, which should be 'accept' or 'reject'.
+        """
         decision = call.data.get("decision") # 'accept' or 'reject'
 
         # Get the state of the selector entity
@@ -415,7 +447,12 @@ async def async_setup_services(hass: HomeAssistant):
         _LOGGER.info("Forced notification decision complete")
 
     async def inject_test_data(call: ServiceCall):
-        """Inject synthetic test data for testing."""
+        """
+        Inject synthetic test data for testing.
+        
+        Args:
+             call (ServiceCall): The service call containing 'hours' in call.data, which specifies how many hours of data to inject (default 24).
+        """
         hours = call.data.get("hours", 24)
         collector = hass.data[DOMAIN]["collector"]
         storage = hass.data[DOMAIN]["storage"]
@@ -489,7 +526,12 @@ async def async_setup_services(hass: HomeAssistant):
         _LOGGER.info(f"Successfully injected {data_points} data points ({hours} hours)")
 
     async def set_test_indices(call: ServiceCall):
-        """Set AI indices for testing."""
+        """
+        Set AI indices for testing.
+        
+        Args:
+            call (ServiceCall): The service call containing 'fatigue', 'behavior' and/or 'anomaly' in call.data to set the respective indices.
+        """
         agent = hass.data[DOMAIN]["agent"]
 
         if "fatigue" in call.data:
@@ -668,7 +710,12 @@ async def async_setup_services(hass: HomeAssistant):
             _LOGGER.error("Manual backup failed")
 
     async def restore_backup(call: ServiceCall):
-        """Service to restore from a backup."""
+        """
+        Service to restore from a backup.
+        
+        Args:
+            call (ServiceCall): The service call containing 'backup_name' in call.data, which specifies the name of the backup to restore.
+        """
         backup_manager = hass.data[DOMAIN].get("backup_manager")
         if not backup_manager:
             _LOGGER.error("Backup manager not initialized")
@@ -707,7 +754,12 @@ async def async_setup_services(hass: HomeAssistant):
 
 
     async def test_data_retention(call: ServiceCall):
-        """Service to test data retention mechanisms."""
+        """
+        Service to test data retention mechanisms.
+        
+        Args:
+            call (ServiceCall): The service call containing 'test_type' in call.data, which specifies the type of test to perform (e.g., 'status', 'inject_notifications', 'inject_old_episodes', 'set_overdue_cleanup').
+        """
         test_type = call.data.get("test_type", "status")
         agent = hass.data[DOMAIN]["agent"]
         storage = hass.data[DOMAIN]["storage"]
@@ -865,7 +917,14 @@ async def async_setup_services(hass: HomeAssistant):
 
 
 async def trigger_phase_transition_notification(hass, agent, collector):
-    """Calculates baseline summary and sends the transition notification."""
+    """
+    Calculates baseline summary and sends the transition notification.
+    
+    Args:
+        hass: Home Assistant instance
+        agent: The AI agent instance
+        collector: The data collector instance
+    """
 
     # Get user's language
     language = await get_language(hass)
@@ -909,7 +968,13 @@ async def trigger_phase_transition_notification(hass, agent, collector):
 
 
 async def sync_helper_entities(hass: HomeAssistant, entry: ConfigEntry):
-    """Syncs the options chosen in the Config Flow to the corresponding helper entities in Home Assistant."""
+    """
+    Syncs the options chosen in the Config Flow to the corresponding helper entities in Home Assistant.
+    
+    Args:
+        hass (HomeAssistant): The Home Assistant instance.
+        entry (ConfigEntry): The configuration entry containing the user-selected options.
+    """
     chosen_currency = entry.data.get("currency", "EUR")
     chosen_price = entry.data.get("electricity_price", 0.25)
 
@@ -938,7 +1003,16 @@ async def sync_helper_entities(hass: HomeAssistant, entry: ConfigEntry):
         _LOGGER.warning("Could not sync input_number.electricity_price: %s", e)
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload of the config entry."""
+    """
+    Unload of the config entry.
+    
+    Args:
+        hass (HomeAssistant): The Home Assistant instance.
+        entry (ConfigEntry): The configuration entry to unload.
+
+    Returns:
+        bool: True if unload was successful, False otherwise.
+    """
     _LOGGER.info("Green Shift shutting down - saving state and creating backup...")
 
     # Save AI state before shutdown
@@ -1012,6 +1086,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_discover_sensors(hass: HomeAssistant) -> dict:
+    """
+    Discover relevant sensors based on device class, unit, and keywords.
+    
+    Args:
+        hass (HomeAssistant): The Home Assistant instance.
+
+    Returns:
+        dict: A dictionary categorizing discovered sensor entity IDs by their respective categories.
+    """
     entity_reg = er.async_get(hass)
     device_reg = dr.async_get(hass)
     discovered = {cat: [] for cat in SENSOR_MAPPING}

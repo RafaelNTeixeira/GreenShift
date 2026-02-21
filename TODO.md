@@ -27,6 +27,7 @@ Checklist to track remaining features, fixes and tests before completion.
     - [x] Check during baseline
 - [x] Check notification report when transitioning from baseline to active intervention
 - [x] Test interface on mobile
+- [ ] Mention that user level is based in completed tasks from the last 30 days
 
 
 ### 🎮 Gamification
