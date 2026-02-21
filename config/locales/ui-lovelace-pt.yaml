@@ -78,7 +78,7 @@ views:
                   {%- for area in ns.areas | sort -%}
                     {# Verificar Filtro #}
                     {%- if filter in ['All Areas', 'Todas as Áreas', 'unknown', 'unavailable', 'None'] or filter == area -%}
-                      
+
                       <h3>📍 {{ area }}</h3>
                       <table width="100%">
                       {%- for c in cats -%}
@@ -105,7 +105,7 @@ views:
                       {%- endfor -%}
                       </table>
                       <hr style="border: 0; border-bottom: 1px solid var(--divider-color); margin: 15px 0;">
-                      
+
                     {%- endif -%}
                   {%- endfor -%}
                 {%- endif -%}
@@ -121,9 +121,9 @@ views:
 
             {% if p and p | length > 0 %}
             **⚡ Potência (Watts):** *O "Velocímetro"*
-            > Mostra quanta eletricidade está a usar **neste momento**. 
+            > Mostra quanta eletricidade está a usar **neste momento**.
             > *Dica:* Se este valor estiver alto, um aparelho "pesado" como o Forno ou AC está ligado.
-            
+
             ---
             {% endif %}
 
@@ -131,7 +131,7 @@ views:
             **🔋 Energia (kWh):** *O "Contador"*
             > A quantidade total usada ao longo do tempo. Isto é o que aparece na sua **Conta de Luz**.
             > *Escala:* **1 unidade (kWh)** equivale aproximadamente a uma carga completa de roupa.
-            
+
             ---
             {% endif %}
 
@@ -139,7 +139,7 @@ views:
             **💡 Luz (Lux):** *Luminosidade*
             > Mede o quão brilhante está a divisão.
             > *Escala:* **0** (Escuro Total) → **150** (Sala Típica) → **500+** (Escritório Luminoso).
-            
+
             ---
             {% endif %}
 
@@ -148,7 +148,7 @@ views:
             > **40-60%** é a "Zona de Conforto."
             > *Aviso:* Acima de **70%** sente-se "abafado" e há risco de bolor; abaixo de **30%** sente-se muito seco.
             {% endif %}
-          
+
 # ========== TAB 2: DASHBOARD ==========
 - title: Dashboard
   path: dashboard
@@ -159,7 +159,7 @@ views:
       cards:
         - type: markdown
           content: |
-            # 📊 Dashboard 
+            # 📊 Dashboard
             Analise os seus padrões de consumo de energia e identifique oportunidades de poupança.
 
         # --- SECÇÃO DE GRÁFICO ---
@@ -172,7 +172,7 @@ views:
                   ℹ️ <b>O que é "Consumo Baseline"?</b><br>
                   Esta linha representa o seu consumo médio de energia. Será ajustada ao longo do tempo.
                 </div>
-            
+
             - type: history-graph
               hours_to_show: 168
               entities:
@@ -180,12 +180,12 @@ views:
                   name: Uso Atual
                 - entity: sensor.energy_baseline
                   name: Consumo Baseline
-        
+
         # --- TABELA DE CONSUMO POR ÁREA ---
         - type: markdown
           content: |
             ### ⚡ Uso de Energia por Área
-            
+
             {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
             {%- set ns = namespace(area_sums={}, total=0) -%}
 
@@ -205,9 +205,9 @@ views:
             </br>
             📭 Nenhum dado de área recolhido.
             {%- else -%}
-            
+
             </br>
-            
+
             <table width="100%">
               <thead>
                 <tr>
@@ -327,15 +327,15 @@ views:
                             {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
                             {% if tasks and tasks | length > 0 %}
                             {% set t = tasks[0] %}
-                            
+
                             ### {{ t.status_emoji }} Tarefa 1: {{ t.title }}
-                            
+
                             {{ t.description }}
-                            
-                            **Meta:** {{ t.target_value }}{{ t.target_unit }} (de {{ t.baseline_value }}{{ t.target_unit }})  
-                            **📊 Dificuldade:** {{ t.difficulty_display }}  
+
+                            **Meta:** {{ t.target_value }}{{ t.target_unit }} (de {{ t.baseline_value }}{{ t.target_unit }})
+                            **📊 Dificuldade:** {{ t.difficulty_display }}
                             {% if t.area_name %}**📍 Área:** {{ t.area_name }}{% endif %}
-                            
+
                             {% if t.verified %}
                             ✅ **VERIFICADA!** Atingiu a meta!
                             {% else %}
@@ -344,7 +344,7 @@ views:
                             {% endif %}
 
                     - type: horizontal-stack
-                      cards:  
+                      cards:
                         - type: button
                           name: Muito Fácil
                           icon: mdi:emoticon-happy-outline
@@ -357,7 +357,7 @@ views:
                               feedback: too_easy
                           entity: sensor.daily_tasks
                           show_state: false
-                        
+
                         - type: button
                           name: Adequada
                           icon: mdi:emoticon-neutral-outline
@@ -370,7 +370,7 @@ views:
                               feedback: just_right
                           entity: sensor.daily_tasks
                           show_state: false
-                        
+
                         - type: button
                           name: Muito Difícil
                           icon: mdi:emoticon-sad-outline
@@ -405,13 +405,13 @@ views:
                             ---
 
                             ### {{ t.status_emoji }} Tarefa 2: {{ t.title }}
-                            
+
                             {{ t.description }}
-                            
-                            **🎯 Meta:** {{ t.target_value }}{{ t.target_unit }} (de {{ t.baseline_value }}{{ t.target_unit }})  
-                            **📊 Dificuldade:** {{ t.difficulty_display }}  
+
+                            **🎯 Meta:** {{ t.target_value }}{{ t.target_unit }} (de {{ t.baseline_value }}{{ t.target_unit }})
+                            **📊 Dificuldade:** {{ t.difficulty_display }}
                             {% if t.area_name %}**📍 Área:** {{ t.area_name }}{% endif %}
-                            
+
                             {% if t.verified %}
                             ✅ **VERIFICADA!** Atingiu a meta!
                             {% else %}
@@ -433,7 +433,7 @@ views:
                               feedback: too_easy
                           entity: sensor.daily_tasks
                           show_state: false
-                        
+
                         - type: button
                           name: Adequada
                           icon: mdi:emoticon-neutral-outline
@@ -446,7 +446,7 @@ views:
                               feedback: just_right
                           entity: sensor.daily_tasks
                           show_state: false
-                        
+
                         - type: button
                           name: Muito Difícil
                           icon: mdi:emoticon-sad-outline
@@ -481,13 +481,13 @@ views:
                             ---
 
                             ### {{ t.status_emoji }} Tarefa 3: {{ t.title }}
-                            
+
                             {{ t.description }}
-                            
-                            **🎯 Meta:** {{ t.target_value }}{{ t.target_unit }} (de {{ t.baseline_value }}{{ t.target_unit }})  
-                            **📊 Dificuldade:** {{ t.difficulty_display }}  
+
+                            **🎯 Meta:** {{ t.target_value }}{{ t.target_unit }} (de {{ t.baseline_value }}{{ t.target_unit }})
+                            **📊 Dificuldade:** {{ t.difficulty_display }}
                             {% if t.area_name %}**📍 Área:** {{ t.area_name }}{% endif %}
-                            
+
                             {% if t.verified %}
                             ✅ **VERIFICADA!** Atingiu a meta!
                             {% else %}
@@ -509,7 +509,7 @@ views:
                               feedback: too_easy
                           entity: sensor.daily_tasks
                           show_state: false
-                        
+
                         - type: button
                           name: Adequada
                           icon: mdi:emoticon-neutral-outline
@@ -522,7 +522,7 @@ views:
                               feedback: just_right
                           entity: sensor.daily_tasks
                           show_state: false
-                       
+
                         - type: button
                           name: Muito Difícil
                           icon: mdi:emoticon-sad-outline
@@ -565,12 +565,12 @@ views:
                   content: |
                     ---
                     ### 💡 Como Funciona o Feedback
-                    
+
                     Avalie a dificuldade de cada tarefa para ajudar o sistema a ajustar desafios futuros:
                     - **😊 Muito Fácil** → Próxima vez será mais difícil
                     - **😐 Adequada** → Dificuldade mantém-se igual
                     - **😰 Muito Difícil** → Próxima vez será mais fácil
-                    
+
                     ⏱️ As tarefas são verificadas de 15 em 15 minutos, mas também pode acionar manualmente a verificação clicando no botão "Verificar Todas as Tarefas" para ver se completou alguma tarefa e obter feedback em tempo real!
 
 # ========== TAB 4: META COLABORATIVA ==========
@@ -590,11 +590,11 @@ views:
             type: markdown
             content: |
               ## 🔒 Meta Bloqueada
-              
+
               🔧 O sistema está atualmente a aprender os hábitos baseline do edifício.
-              
+
               **⏳ Tempo Restante:** {{ state_attr('sensor.research_phase', 'days_remaining') }} dias
-              
+
               *Assim que a calibração estiver completa, os seus desafios semanais de energia aparecerão aqui.* 🎯
 
         # --- FASE ATIVA (DESBLOQUEADA) ---
@@ -609,11 +609,11 @@ views:
               - type: markdown
                 content: |
                   # 🎯 Desafio Semana {{ state_attr('sensor.weekly_challenge', 'week_start') }}
-                  
+
                   {% set current = state_attr('sensor.weekly_challenge', 'current_avg_w') | float(0) %}
                   {% set target = state_attr('sensor.weekly_challenge', 'target_avg_w') | float(0) %}
                   {% set pct = state_attr('sensor.weekly_challenge', 'progress') | float(0) %}
-                  
+
                   {% if pct <= 100 %}
                   ### Estado: ✅ No Caminho Certo ({{ pct }}%)
                   Continue assim! A equipa está abaixo do orçamento de energia. 🎉
@@ -636,25 +636,25 @@ views:
                       green: 0
                       yellow: 90
                       red: 105
-                  
+
                   # Incentivo Monetário Calculado
                   - type: markdown
                     content: |
                       ### 🏆 A Recompensa
-                      
+
                       {% set baseline = state_attr('sensor.weekly_challenge', 'baseline_w') | float(0) %}
                       {% set target = state_attr('sensor.weekly_challenge', 'target_avg_w') | float(0) %}
                       {% set price = states('input_number.electricity_price') | float(0.25) %}
                       {% set currency = states('input_select.currency') %}
-                      
+
                       {# Calcular Poupanças Semanais Potenciais: (Watts Poupados * 24h * 7d / 1000) * Preço #}
                       {% set potential_watts = baseline - target %}
                       {% set potential_eur = (potential_watts * 24 * 7 / 1000 * price) | round(2) %}
-                      
+
                       Se atingir esta meta, poderá poupar esta semana aproximadamente:
-                      
+
                       # 💰 {{ potential_eur }} {{ currency }}
-                      
+
                       *comparado com a sua semana baseline padrão.*
 
               # BARRA DE ESTATÍSTICAS
@@ -679,7 +679,7 @@ views:
                 content: |
                   ### 🕵️‍♂️ Áreas de Foco ao Vivo
                   *Onde a equipa pode ajudar agora?* 🤔
-                  
+
                   {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
                   {%- set ns = namespace(area_sums={}) -%}
 
@@ -715,7 +715,7 @@ views:
                   {%- endfor -%}
                   </tbody>
                   </table>
-                  
+
                   <small><i>💡 Verifique as áreas com uso "Alto" para ver se pode desligar luzes ou dispositivos!</i></small>
 
 # ========== TAB 5: NOTIFICAÇÕES ==========
@@ -726,7 +726,7 @@ views:
   cards:
     - type: vertical-stack
       cards:
-        
+
         # --- ESTADO BLOQUEADO (BASELINE) ---
         - type: conditional
           conditions:
@@ -736,7 +736,7 @@ views:
             type: markdown
             content: |
               ## 🔒 Notificações Bloqueadas
-              
+
               Estamos atualmente a aprender os seus hábitos baseline.
               Alertas inteligentes e nudges serão ativados em **{{ state_attr('sensor.research_phase', 'days_remaining') }} dias**. ⏳
 
@@ -770,19 +770,19 @@ views:
                   {%- set notifs = state_attr('sensor.active_notifications', 'notifications') -%}
                   {%- set safe_notifs = notifs if notifs else [] -%}
                   {%- set pending = safe_notifs | selectattr('responded', 'equalto', false) | list -%}
-                  
+
                   {%- if pending | length == 0 -%}
                   ### ✅ Tudo em Dia!
                   Sem alertas pendentes no momento. 😎
                   {%- else -%}
-                  
+
                   {%- for n in pending -%}
                   ---
                   ### 📢 {{ n.title }}
                   **ID:** `{{ n.notification_id }}` • **⏰ Tempo:** *{{ n.time_ago }}*
-                  
+
                   {{ n.message }}
-                  
+
                   {%- endfor -%}
                   {%- endif -%}
 
@@ -810,7 +810,7 @@ views:
                           service: green_shift.respond_to_selection
                           data:
                             decision: accept
-                      
+
                       - type: tile
                         entity: select.notification_selector
                         name: Rejeitar
@@ -868,7 +868,7 @@ views:
             type: markdown
             content: |
               ## 🚧 Perfil em Construção...
-              🔧 Estamos atualmente a calibrar o seu baseline. 
+              🔧 Estamos atualmente a calibrar o seu baseline.
               As suas estatísticas ecológicas pessoais e níveis serão desbloqueados em **{{ state_attr('sensor.research_phase', 'days_remaining') }} dias**. ⏳
 
         - type: conditional
@@ -895,7 +895,7 @@ views:
                   # 👑 Nível 4: Mestre Planetário
                   *É uma lenda da poupança de energia.* 🏆
                   {% endif %}
-                  
+
                   ---
                   **📊 Total de Tarefas Completadas:** {{ tasks }}
 
@@ -911,7 +911,7 @@ views:
                       red: 0
                       yellow: 0.4
                       green: 0.8
-                  
+
                   - type: gauge
                     entity: sensor.fatigue_index
                     name: 😴 Risco de Fadiga
@@ -941,7 +941,7 @@ views:
                   {% set trees = state_attr('sensor.co2_saved', 'trees') %}
                   {% set flights = state_attr('sensor.co2_saved', 'flights') %}
                   {% set km = state_attr('sensor.co2_saved', 'car_km') %}
-                  
+
                   As suas poupanças até agora equivalem a:
                   * 🌲 Plantar **{{ trees }} árvores maduras**
                   * ✈️ Compensar **{{ flights }} voos de curta distância**
@@ -970,7 +970,7 @@ views:
               name: Fase Atual
               icon: mdi:flask-outline
               secondary_info: last-updated
-            
+
             - entity: sensor.energy_baseline
               name: Baseline Aprendida
               icon: mdi:chart-bell-curve-cumulative
@@ -983,7 +983,7 @@ views:
             # --- SECÇÃO: METAS ---
             - type: section
               label: "Metas de Energia"
-            
+
             - type: conditional
               conditions:
                 - entity: sensor.research_phase
@@ -1008,11 +1008,11 @@ views:
             # --- SECÇÃO: ECONÓMICA ---
             - type: section
               label: "Custos & Moeda"
-            
+
             - entity: input_select.currency
               name: 💵 Moeda
               icon: mdi:cash-100
-            
+
             - entity: input_number.electricity_price
               name: Preço da Eletricidade (por kWh)
               icon: mdi:lightning-bolt-circle

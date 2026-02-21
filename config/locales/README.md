@@ -61,7 +61,7 @@ To add a new language (e.g., Spanish):
    ```yaml
    homeassistant:
      customize: !include locales/customize_es.yaml
-   
+
    lovelace:
      dashboards:
        lovelace-green-shift:

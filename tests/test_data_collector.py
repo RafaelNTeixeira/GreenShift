@@ -230,7 +230,7 @@ class TestEnergyMonitoring:
         dc.main_energy_sensor = "sensor.energy_1"
         dc._energy_midnight_points["sensor.energy_1"] = 10.0
         dc._energy_sensor_cache["sensor.energy_1"] = 12.5
-        
+
         dc.get_daily_kwh()  # Updates current_daily_energy
         assert dc.current_daily_energy == pytest.approx(2.5)
 
@@ -239,7 +239,7 @@ class TestEnergyMonitoring:
         dc.main_energy_sensor = "sensor.energy_1"
         dc._energy_midnight_points = {}
         dc._energy_sensor_cache["sensor.energy_1"] = 12.5
-        
+
         dc.get_daily_kwh()  # Won't update if no midnight point
         # When there's no midnight point for main sensor, it returns early
         assert dc.current_daily_energy == 0.0  # Initial value
@@ -249,7 +249,7 @@ class TestEnergyMonitoring:
         dc.main_energy_sensor = "sensor.energy_1"
         dc._energy_midnight_points["sensor.energy_1"] = 10.0
         dc._energy_sensor_cache = {}
-        
+
         dc.get_daily_kwh()  # Won't update if no current value
         assert dc.current_daily_energy == 0.0  # Initial value
 
@@ -259,7 +259,7 @@ class TestEnergyMonitoring:
         dc.main_energy_sensor = "sensor.energy_1"
         dc._energy_midnight_points["sensor.energy_1"] = 100.0
         dc._energy_sensor_cache["sensor.energy_1"] = 50.0  # Reset occurred
-        
+
         dc.get_daily_kwh()
         # When current < midnight, it sets current_daily_energy to current_val
         assert dc.current_daily_energy == 50.0
@@ -278,7 +278,7 @@ class TestGetCurrentState:
         dc.current_humidity = 50.0
         dc.current_illuminance = 100.0
         dc.current_occupancy = True
-        
+
         result = dc.get_current_state()
         assert result["power"] == 500.0
         assert result["temperature"] == 21.0
@@ -289,10 +289,10 @@ class TestGetCurrentState:
     def test_returns_copy_not_reference(self):
         dc = make_collector()
         dc.current_total_power = 500.0
-        
+
         result = dc.get_current_state()
         result["power"] = 999.0
-        
+
         # Original should be unchanged
         assert dc.current_total_power == 500.0
 
@@ -309,14 +309,14 @@ class TestGetAreaState:
             "Living Room": {"temperature": 22.0, "humidity": 50.0, "illuminance": 300.0, "occupancy": True},
             "Kitchen": {"temperature": 20.0, "humidity": 45.0, "illuminance": 200.0, "occupancy": False},
         }
-        
+
         result = dc.get_area_state("Living Room")
         assert result["temperature"] == 22.0
 
     def test_returns_empty_dict_for_unknown_area(self):
         dc = make_collector()
         dc.area_data = {}
-        
+
         result = dc.get_area_state("NonExistent")
         # Should return default structure, not empty dict
         assert "temperature" in result
@@ -325,10 +325,10 @@ class TestGetAreaState:
     def test_modifying_returned_state_affects_original(self):
         dc = make_collector()
         dc.area_data = {"Kitchen": {"temperature": 20.0, "humidity": 50.0}}
-        
+
         result = dc.get_area_state("Kitchen")
         result["temperature"] = 999.0
-        
+
         # The returned dict IS the reference from area_data
         assert dc.area_data["Kitchen"]["temperature"] == 999.0
 
@@ -346,14 +346,14 @@ class TestGetAllAreas:
             "Kitchen": {"temperature": None},
             "Bedroom": {"temperature": None},
         }
-        
+
         result = dc.get_all_areas()
         assert set(result) == {"Living Room", "Kitchen", "Bedroom"}
 
     def test_returns_empty_list_when_no_areas(self):
         dc = make_collector()
         dc.area_data = {}
-        
+
         result = dc.get_all_areas()
         assert result == []
 
@@ -368,10 +368,10 @@ class TestHistoryMethods:
     async def test_get_power_history_delegates_to_storage(self):
         storage = AsyncMock()
         storage.get_history = AsyncMock(return_value=[(datetime.now(), 500.0)])
-        
+
         dc = make_collector(storage=storage)
         result = await dc.get_power_history(hours=1)
-        
+
         storage.get_history.assert_called_once()
         assert len(result) == 1
 
@@ -379,10 +379,10 @@ class TestHistoryMethods:
     async def test_get_area_history_delegates_to_storage(self):
         storage = AsyncMock()
         storage.get_area_history = AsyncMock(return_value=[(datetime.now(), 200.0)])
-        
+
         dc = make_collector(storage=storage)
         result = await dc.get_area_history("Kitchen", "power", hours=1)
-        
+
         storage.get_area_history.assert_called_once()
         assert len(result) == 1
 
@@ -390,10 +390,10 @@ class TestHistoryMethods:
     async def test_working_hours_filter_passed_through(self):
         storage = AsyncMock()
         storage.get_history = AsyncMock(return_value=[])
-        
+
         dc = make_collector(storage=storage)
         await dc.get_power_history(hours=1, working_hours_only=True)
-        
+
         # Check that working_hours_only was passed to storage
         call_kwargs = storage.get_history.call_args[1]
         assert call_kwargs.get("working_hours_only") is True
@@ -412,10 +412,10 @@ class TestAreaGrouping:
             "power": ["sensor.living_room_power", "sensor.kitchen_power"],
             "temperature": ["sensor.living_room_temp"],
         }
-        
+
         dc = DataCollector(mock_hass, sensors, None, None, mock_storage)
         await dc.setup()
-        
+
         # Verify area data was initialized (even if empty)
         assert isinstance(dc.area_data, dict)
 
@@ -432,10 +432,10 @@ class TestWorkingHours:
         dc = DataCollector(
             mock_hass, {}, None, None, mock_storage, config_data=home_config
         )
-        
+
         # Mock the helper
         helpers_stub.is_within_working_hours = MagicMock(return_value=True)
-        
+
         # In home mode, helper should always return True
         # This is tested in test_helpers.py, here we just verify integration
         assert dc.config_data["environment_mode"] == "home"
@@ -446,7 +446,7 @@ class TestWorkingHours:
         dc = DataCollector(
             mock_hass, {}, None, None, mock_storage, config_data=office_config
         )
-        
+
         assert dc.config_data["environment_mode"] == "office"
         assert dc.config_data["working_start"] == "08:00"
         assert dc.config_data["working_end"] == "18:00"
@@ -472,6 +472,6 @@ class TestMemoryManagement:
         dc = make_collector()
         dc._power_sensor_cache["sensor.test"] = 123.4
         dc._energy_sensor_cache["sensor.test"] = 56.7
-        
+
         assert dc._power_sensor_cache["sensor.test"] == 123.4
         assert dc._energy_sensor_cache["sensor.test"] == 56.7

@@ -37,6 +37,15 @@ __pycache__/
 .pytest_cache/
 *.pyc
 
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+tests/htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+
 # Personal/development files
 commands.MD
 export_research.py

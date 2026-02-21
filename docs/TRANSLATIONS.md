@@ -103,7 +103,7 @@ message = templates["specific"][0]["message"].format(
   - Anomaly detection warnings
   - Behavioural suggestions
   - Normative comparisons
-  
+
 - **Daily Tasks** (6 types):
   - Temperature reduction
   - Power reduction

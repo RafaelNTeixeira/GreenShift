@@ -51,7 +51,7 @@ Test new features and provide feedback on pre-release versions.
 
 ### Prerequisites
 
-- Home Assistant installation 
+- Home Assistant installation
 - Git for version control
 - Text editor (VS Code recommended)
 
@@ -145,11 +145,11 @@ To test translations, set your Home Assistant system language:
 async def example_function(hass: HomeAssistant, param: str) -> dict:
     """
     Brief description of what the function does.
-    
+
     Args:
         hass: Home Assistant instance
         param: Description of parameter
-    
+
     Returns:
         Dictionary with results
     """
@@ -242,7 +242,7 @@ Translate AI notifications and tasks in [`translations_runtime.py`](../config/cu
    ```yaml
    homeassistant:
      customize: !include locales/customize_XX.yaml
-   
+
    lovelace:
      dashboards:
        lovelace-green-shift:

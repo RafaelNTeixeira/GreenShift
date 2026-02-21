@@ -19,7 +19,7 @@ NOTIFICATION_TEMPLATES = {
                 "message": "⚡ Your {device_name} is drawing {device_power}W right now. If you're not actively using it, switching it off could save energy."
             }
         ],
-        
+
         "anomaly": [
             {
                 "title": "Unusual Consumption Pattern",
@@ -42,7 +42,7 @@ NOTIFICATION_TEMPLATES = {
                 "message": "📈 Your consumption pattern has changed significantly. Current usage is {percent_above}% above normal. New devices recently added?"
             }
         ],
-        
+
         "behavioural": [
             {
                 "title": "Bedtime Energy Tip",
@@ -69,7 +69,7 @@ NOTIFICATION_TEMPLATES = {
                 "message": "🍂 As seasons change, so should energy habits. Review your heating/cooling settings to match the current weather patterns."
             }
         ],
-        
+
         "normative": [
             {
                 "title": "Weekly Goal Update",
@@ -88,13 +88,13 @@ NOTIFICATION_TEMPLATES = {
                 "message": "🌟 Great progress! You're {percent_above}% away from your weekly reduction target. A few small changes could close the gap."
             }
         ],
-        
+
         "phase_transition": {
             "title": "Green Shift: Action Phase Started",
             "message": "### Baseline Phase Complete! 🎉\n\n**Daily Average:** {avg_daily_kwh} kWh\n**Peak Usage:** {peak_time}\n{top_area_section}**Target:** We've set a **{target}%** reduction goal for you (you can change this in the Settings tab)\n\n---\n### Your Potential Impact 🌍\nBy hitting your **{target}%** reduction goal, in one year you would save:\n* **{co2_kg} kg** of CO₂\n* The equivalent of planting **{trees}** mature trees\n* The carbon offset of **{flights}** short-haul flights\n"
         }
     },
-    
+
     "pt": {
         "specific": [
             {
@@ -110,7 +110,7 @@ NOTIFICATION_TEMPLATES = {
                 "message": "⚡ O seu {device_name} está a consumir {device_power}W neste momento. Se não o está a usar ativamente, desligá-lo pode poupar energia."
             }
         ],
-        
+
         "anomaly": [
             {
                 "title": "Padrão de Consumo Incomum",
@@ -133,7 +133,7 @@ NOTIFICATION_TEMPLATES = {
                 "message": "📈 O seu padrão de consumo mudou significativamente. O uso atual está {percent_above}% acima do normal. Adicionou novos dispositivos recentemente?"
             }
         ],
-        
+
         "behavioural": [
             {
                 "title": "Dica de Energia para a Noite",
@@ -160,7 +160,7 @@ NOTIFICATION_TEMPLATES = {
                 "message": "🍂 À medida que as estações mudam, os hábitos de energia também devem mudar. Reveja as suas configurações de aquecimento/arrefecimento para corresponder aos padrões climáticos atuais."
             }
         ],
-        
+
         "normative": [
             {
                 "title": "Atualização de Meta Semanal",
@@ -179,7 +179,7 @@ NOTIFICATION_TEMPLATES = {
                 "message": "🌟 Ótimo progresso! Está a {percent_above}% de distância da sua meta de redução semanal. Algumas pequenas mudanças podem fechar a diferença."
             }
         ],
-        
+
         "phase_transition": {
             "title": "Green Shift: Fase de Ação Iniciada",
             "message": "### Fase de Baseline Completa! 🎉\n\n**Média Diária:** {avg_daily_kwh} kWh\n**Pico de Uso:** {peak_time}\n{top_area_section}**Meta:** Definimos uma meta de redução de **{target}%** para si (pode alterá-la no separador Definições)\n\n---\n### O Seu Impacto Potencial 🌍\nAo atingir a sua meta de redução de **{target}%**, num ano pouparia:\n* **{co2_kg} kg** de CO₂\n* O equivalente a plantar **{trees}** árvores maduras\n* A compensação de carbono de **{flights}** voos de curta distância\n"
@@ -215,7 +215,7 @@ TASK_TEMPLATES = {
             "description": "Keep power below {target_power:.0f}W during {peak_hour:02d}:00-{next_hour:02d}:00"
         }
     },
-    
+
     "pt": {
         "temperature_reduction": {
             "title": "Reduzir Temperatura em {reduction:.1f}°C",
@@ -302,7 +302,7 @@ async def get_language(hass) -> str:
 
         _LOGGER.info("No specific language detected, defaulting to English")
 
-        # Default fallback    
+        # Default fallback
         return "en"
     except Exception as e:
         _LOGGER.warning("Error detecting language, defaulting to English: %s", e)

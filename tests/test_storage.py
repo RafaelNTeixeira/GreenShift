@@ -429,18 +429,19 @@ class TestDailyTasks:
 
     @pytest.mark.asyncio
     async def test_save_and_retrieve_tasks(self, storage):
+        today = datetime.now().strftime("%Y-%m-%d")
         tasks = [
             {
                 "task_id": "t1",
                 "task_type": "power_reduction",
-                "date": "2026-02-20",
+                "date": today,
                 "title": "Reduce power",
                 "description": "Test task 1"
             },
             {
                 "task_id": "t2",
                 "task_type": "temperature",
-                "date": "2026-02-20",
+                "date": today,
                 "title": "Adjust temperature",
                 "description": "Test task 2"
             },
@@ -453,11 +454,14 @@ class TestDailyTasks:
 
     @pytest.mark.asyncio
     async def test_get_today_tasks_filters_by_date(self, storage):
+        today = datetime.now().strftime("%Y-%m-%d")
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
         yesterday_tasks = [
             {
                 "task_id": "old",
                 "task_type": "power",
-                "date": "2026-02-19",
+                "date": yesterday,
                 "title": "Old task",
                 "description": "Yesterday's task"
             }
@@ -466,7 +470,7 @@ class TestDailyTasks:
             {
                 "task_id": "new",
                 "task_type": "power",
-                "date": "2026-02-20",
+                "date": today,
                 "title": "New task",
                 "description": "Today's task"
             }
@@ -476,8 +480,9 @@ class TestDailyTasks:
         await storage.save_daily_tasks(today_tasks)
 
         retrieved = await storage.get_today_tasks()
-        # Should only get today's tasks (depends on current date)
-        assert all(t["task_id"] == "new" for t in retrieved if t["task_id"] in ["old", "new"])
+        # Should only get today's tasks
+        assert len(retrieved) == 1
+        assert retrieved[0]["task_id"] == "new"
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_no_tasks(self, storage):

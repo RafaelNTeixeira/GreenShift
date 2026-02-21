@@ -1,0 +1,12 @@
+repos:
+  # Run tests before commit
+  - repo: local
+    hooks:
+      - id: pytest
+        name: Run pytest
+        entry: pytest
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit]
+        verbose: true

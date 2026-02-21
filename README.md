@@ -26,19 +26,19 @@ Green Shift is **fully translated** including dynamic content (AI notifications 
 
 **To switch languages:**
 
-1. **Update your Home Assistant system language**: 
+1. **Update your Home Assistant system language**:
    - Go to **Settings → System → General**
    - Scroll to **Language**
    - Select your language (e.g., Português)
    - Click **Save**
-   
+
    ⚠️ **Note**: The Profile language (Settings → Profile → Language) only changes the Home Assistant UI language, not the integration language. You must change the **System Language** for Green Shift to detect it.
 
 2. **Update [`configuration.yaml`](./config/configuration.yaml)**:
    ```yaml
    homeassistant:
      customize: !include locales/customize_pt.yaml  # or locales/customize_en.yaml
-   
+
    lovelace:
      mode: yaml
      dashboards:
@@ -187,7 +187,7 @@ $$\langle S, A, M, P, R, \gamma \rangle$$
 
 **S - State Vector** (12 components):
 1. Global power consumption + existence flag
-2. Top appliance power + existence flag  
+2. Top appliance power + existence flag
 3. Temperature + existence flag
 4. Humidity + existence flag
 5. Illuminance + existence flag
@@ -276,14 +276,14 @@ area_anomalies = {
 
 When you receive a recommendation from Green Shift:
 
-1. **Positive** ✅ "Helpful": 
+1. **Positive** ✅ "Helpful":
    - Engagement score: +1.0
    - Behaviour index increases
    - Q-table: Positive reward for (state, action) pair
-   
+
 2. **Negative** ✗ "Not useful":
    - Engagement score: -0.5
-   - Behaviour index decreases  
+   - Behaviour index decreases
    - Fatigue index increases
    - Q-table: Negative reward for (state, action) pair
 
@@ -373,12 +373,25 @@ Green Shift includes currently **256 comprehensive tests** covering AI logic, ba
 
 ```bash
 # Install test dependencies
-pip install -r requirements-test.txt
+pip install -r requirements.txt
 
-# Run all tests
+# Navigate to tests directory
 cd tests/
+
+# Run all tests with coverage
 pytest
+
+# Run without coverage (faster for quick checks)
+pytest --no-cov
+
+# Run specific test file
+pytest test_decision_agent.py -v
+
+# View HTML coverage report
+# After running tests, open htmlcov/index.html in your browser
 ```
+
+**Coverage is automatically generated** in `tests/htmlcov/` when you run pytest.
 
 **Test Coverage:**
 - ✅ **19 tests** - Backup management
@@ -390,6 +403,23 @@ pytest
 - ✅ **14 tests** - Task generation & difficulty
 - ✅ **40 tests** - Multilingual support & translations
 - ✅ **33 tests** - Additional coverage (parametrized & integration tests)
+
+### Pre-Commit Hooks
+
+To automatically run tests before every commit, install pre-commit hooks:
+
+```bash
+# Install pre-commit (already in requirements.txt)
+pip install -r requirements.txt
+
+# Install the git hook scripts
+pre-commit install
+
+# (Optional) Run against all files manually
+pre-commit run --all-files
+```
+
+Once installed, tests will automatically run before each commit. If tests fail, the commit will be blocked until issues are fixed. This ensures code quality and prevents broken code from being committed.
 
 📚 **[Full Testing Documentation](./tests/TESTING.md)** - Detailed test structure and CI/CD information
 

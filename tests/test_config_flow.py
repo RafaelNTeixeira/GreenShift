@@ -140,17 +140,17 @@ class TestAsyncStepUser:
     async def test_shows_form_on_first_load(self, config_flow):
         """First visit shows the welcome form."""
         result = await config_flow.async_step_user()
-        
+
         assert result["type"] == "form"
         assert result["step_id"] == "user"
         assert result["last_step"] is False
 
     async def test_proceeds_to_settings_after_submit(self, config_flow, discovered_sensors):
         """Submitting welcome proceeds to settings step."""
-        with patch.object(config_flow_mod, "async_discover_sensors", 
+        with patch.object(config_flow_mod, "async_discover_sensors",
                          new_callable=AsyncMock, return_value=discovered_sensors):
             result = await config_flow.async_step_user(user_input={})
-            
+
             assert result["type"] == "form"
             assert result["step_id"] == "settings"
             assert config_flow.discovered_cache == discovered_sensors
@@ -166,7 +166,7 @@ class TestAsyncStepSettings:
     async def test_shows_settings_form(self, config_flow):
         """Settings step shows form with currency and environment options."""
         result = await config_flow.async_step_settings()
-        
+
         assert result["type"] == "form"
         assert result["step_id"] == "settings"
         assert result["last_step"] is False
@@ -178,9 +178,9 @@ class TestAsyncStepSettings:
             "electricity_price": 0.25,
             "environment_mode": "home"
         }
-        
+
         result = await config_flow.async_step_settings(user_input)
-        
+
         assert result["type"] == "form"
         assert result["step_id"] == "sensor_confirmation"
         assert config_flow.data["environment_mode"] == "home"
@@ -192,9 +192,9 @@ class TestAsyncStepSettings:
             "electricity_price": 0.30,
             "environment_mode": "office"
         }
-        
+
         result = await config_flow.async_step_settings(user_input)
-        
+
         assert result["type"] == "form"
         assert result["step_id"] == "working_hours"
         assert config_flow.data["environment_mode"] == "office"
@@ -206,9 +206,9 @@ class TestAsyncStepSettings:
             "electricity_price": 0.28,
             "environment_mode": "home"
         }
-        
+
         await config_flow.async_step_settings(user_input)
-        
+
         assert config_flow.data["currency"] == "GBP"
         assert config_flow.data["electricity_price"] == 0.28
 
@@ -223,7 +223,7 @@ class TestAsyncStepWorkingHours:
     async def test_shows_working_hours_form(self, config_flow):
         """Working hours step shows form with time and day options."""
         result = await config_flow.async_step_working_hours()
-        
+
         assert result["type"] == "form"
         assert result["step_id"] == "working_hours"
         assert result["last_step"] is False
@@ -241,9 +241,9 @@ class TestAsyncStepWorkingHours:
             "working_saturday": False,
             "working_sunday": False,
         }
-        
+
         result = await config_flow.async_step_working_hours(user_input)
-        
+
         assert config_flow.data["working_start"] == "09:00"
         assert config_flow.data["working_end"] == "17:00"
         assert config_flow.data["working_monday"] is True
@@ -262,9 +262,9 @@ class TestAsyncStepWorkingHours:
             "working_saturday": False,
             "working_sunday": False,
         }
-        
+
         result = await config_flow.async_step_working_hours(user_input)
-        
+
         assert result["type"] == "form"
         assert result["step_id"] == "sensor_confirmation"
 
@@ -279,9 +279,9 @@ class TestAsyncStepSensorConfirmation:
     async def test_shows_sensor_confirmation_form(self, config_flow, discovered_sensors):
         """Sensor confirmation step shows form with discovered sensors."""
         config_flow.discovered_cache = discovered_sensors
-        
+
         result = await config_flow.async_step_sensor_confirmation()
-        
+
         assert result["type"] == "form"
         assert result["step_id"] == "sensor_confirmation"
         assert result["last_step"] is False
@@ -292,18 +292,18 @@ class TestAsyncStepSensorConfirmation:
         config_flow.discovered_cache = {
             "energy": ["sensor.energy_low", "sensor.energy_high", "sensor.energy_mid"]
         }
-        
+
         # Mock sensor states with different values
         def get_state(entity_id):
             state = MagicMock()
             state.state = "10.0" if "low" in entity_id else "100.0" if "high" in entity_id else "50.0"
             state.attributes = {"unit_of_measurement": "kWh"}
             return state
-        
+
         mock_hass.states.get = get_state
-        
+
         sorted_entities = config_flow._get_sorted_entities("energy")
-        
+
         assert sorted_entities[0] == "sensor.energy_high"
         assert sorted_entities[1] == "sensor.energy_mid"
         assert sorted_entities[2] == "sensor.energy_low"
@@ -314,17 +314,17 @@ class TestAsyncStepSensorConfirmation:
         config_flow.discovered_cache = {
             "power": ["sensor.power_100w", "sensor.power_500w", "sensor.power_200w"]
         }
-        
+
         def get_state(entity_id):
             state = MagicMock()
             state.state = "100" if "100w" in entity_id else "500" if "500w" in entity_id else "200"
             state.attributes = {"unit_of_measurement": "W"}
             return state
-        
+
         mock_hass.states.get = get_state
-        
+
         sorted_entities = config_flow._get_sorted_entities("power")
-        
+
         assert sorted_entities[0] == "sensor.power_500w"
         assert sorted_entities[1] == "sensor.power_200w"
         assert sorted_entities[2] == "sensor.power_100w"
@@ -335,7 +335,7 @@ class TestAsyncStepSensorConfirmation:
         config_flow.discovered_cache = {
             "power": ["sensor.available", "sensor.unavailable"]
         }
-        
+
         def get_state(entity_id):
             state = MagicMock()
             if "unavailable" in entity_id:
@@ -344,11 +344,11 @@ class TestAsyncStepSensorConfirmation:
                 state.state = "100"
             state.attributes = {"unit_of_measurement": "W"}
             return state
-        
+
         mock_hass.states.get = get_state
-        
+
         sorted_entities = config_flow._get_sorted_entities("power")
-        
+
         # Available sensor should be first
         assert sorted_entities[0] == "sensor.available"
 
@@ -364,9 +364,9 @@ class TestAsyncStepSensorConfirmation:
             "confirmed_lux": [],
             "confirmed_occ": ["binary_sensor.motion_living"],
         }
-        
+
         result = await config_flow.async_step_sensor_confirmation(user_input)
-        
+
         assert config_flow.data["main_total_energy_sensor"] == "sensor.energy_total"
         assert config_flow.data["main_total_power_sensor"] == "sensor.power_total"
         assert "sensor.energy_total" in config_flow.data["discovered_sensors"]["energy"]
@@ -384,9 +384,9 @@ class TestAsyncStepSensorConfirmation:
             "confirmed_lux": [],
             "confirmed_occ": [],
         }
-        
+
         await config_flow.async_step_sensor_confirmation(user_input)
-        
+
         # Main sensors should be injected
         assert "sensor.energy_main" in config_flow.data["discovered_sensors"]["energy"]
         assert "sensor.power_main" in config_flow.data["discovered_sensors"]["power"]
@@ -401,9 +401,9 @@ class TestAsyncStepSensorConfirmation:
             "confirmed_lux": [],
             "confirmed_occ": [],
         }
-        
+
         result = await config_flow.async_step_sensor_confirmation(user_input)
-        
+
         assert result["type"] == "form"
         assert result["step_id"] == "area_assignment"
 
@@ -429,11 +429,11 @@ class TestAsyncStepAreaAssignment:
                 "occupancy": [],
             }
         }
-        
+
         with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=mock_entity_registry):
             with patch.object(helpers_mod, "get_entity_area_id", return_value=None):
                 result = await config_flow.async_step_area_assignment()
-                
+
                 # Should only show non-main sensors in schema
                 assert result["type"] == "form"
                 assert result["step_id"] == "area_assignment"
@@ -450,18 +450,18 @@ class TestAsyncStepAreaAssignment:
                 "occupancy": [],
             }
         }
-        
+
         user_input = {
             "sensor.energy_room": "area_living_room"
         }
-        
+
         with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=mock_entity_registry):
             with patch.object(helpers_mod, "get_entity_area_id", return_value=None):
                 await config_flow.async_step_area_assignment(user_input)
-        
+
         # Verify entity registry was updated
         mock_entity_registry.async_update_entity.assert_called_with(
-            "sensor.energy_room", 
+            "sensor.energy_room",
             area_id="area_living_room"
         )
 
@@ -477,15 +477,15 @@ class TestAsyncStepAreaAssignment:
                 "occupancy": [],
             }
         }
-        
+
         user_input = {
             "sensor.power_device": None  # No area selected
         }
-        
+
         with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=mock_entity_registry):
             with patch.object(helpers_mod, "get_entity_area_id", return_value=None):
                 await config_flow.async_step_area_assignment(user_input)
-        
+
         # Should not update registry for None values
         mock_entity_registry.async_update_entity.assert_not_called()
 
@@ -501,11 +501,11 @@ class TestAsyncStepAreaAssignment:
                 "occupancy": [],
             }
         }
-        
+
         with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=MagicMock()):
             with patch.object(helpers_mod, "get_entity_area_id", return_value=None):
                 result = await config_flow.async_step_area_assignment({})
-        
+
         assert result["type"] == "form"
         assert result["step_id"] == "intervention_info"
 
@@ -520,7 +520,7 @@ class TestAsyncStepInterventionInfo:
     async def test_shows_info_form(self, config_flow):
         """Info step shows final form."""
         result = await config_flow.async_step_intervention_info()
-        
+
         assert result["type"] == "form"
         assert result["step_id"] == "intervention_info"
         assert result["last_step"] is True
@@ -533,9 +533,9 @@ class TestAsyncStepInterventionInfo:
             "environment_mode": "home",
             "discovered_sensors": {"energy": [], "power": []},
         }
-        
+
         result = await config_flow.async_step_intervention_info(user_input={})
-        
+
         assert result["type"] == "create_entry"
         assert result["title"] == "Green Shift"
         assert result["data"] == config_flow.data
@@ -552,22 +552,22 @@ class TestConfigFlowIntegration:
         """Complete config flow for home mode."""
         flow = GreenShiftConfigFlow()
         flow.hass = mock_hass
-        
+
         # Step 1: Welcome
         with patch.object(config_flow_mod, "async_discover_sensors",
                          new_callable=AsyncMock, return_value=discovered_sensors):
             result = await flow.async_step_user(user_input={})
-        
+
         # Step 2: Settings (home mode)
         result = await flow.async_step_settings({
             "currency": "EUR",
             "electricity_price": 0.25,
             "environment_mode": "home"
         })
-        
+
         # Should skip working hours and go to sensor confirmation
         assert result["step_id"] == "sensor_confirmation"
-        
+
         # Step 3: Sensor confirmation
         result = await flow.async_step_sensor_confirmation({
             "confirmed_energy": ["sensor.energy_total"],
@@ -577,15 +577,15 @@ class TestConfigFlowIntegration:
             "confirmed_lux": [],
             "confirmed_occ": [],
         })
-        
+
         # Step 4: Area assignment
         with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=MagicMock()):
             with patch.object(helpers_mod, "get_entity_area_id", return_value=None):
                 result = await flow.async_step_area_assignment({})
-        
+
         # Step 5: Final info
         result = await flow.async_step_intervention_info({})
-        
+
         assert result["type"] == "create_entry"
         assert flow.data["environment_mode"] == "home"
 
@@ -593,22 +593,22 @@ class TestConfigFlowIntegration:
         """Complete config flow for office mode with working hours."""
         flow = GreenShiftConfigFlow()
         flow.hass = mock_hass
-        
+
         # Step 1: Welcome
         with patch.object(config_flow_mod, "async_discover_sensors",
                          new_callable=AsyncMock, return_value=discovered_sensors):
             result = await flow.async_step_user(user_input={})
-        
+
         # Step 2: Settings (office mode)
         result = await flow.async_step_settings({
             "currency": "USD",
             "electricity_price": 0.30,
             "environment_mode": "office"
         })
-        
+
         # Should proceed to working hours
         assert result["step_id"] == "working_hours"
-        
+
         # Step 2.5: Working hours
         result = await flow.async_step_working_hours({
             "working_start": "09:00",
@@ -621,10 +621,10 @@ class TestConfigFlowIntegration:
             "working_saturday": False,
             "working_sunday": False,
         })
-        
+
         # Should proceed to sensor confirmation
         assert result["step_id"] == "sensor_confirmation"
-        
+
         # Step 3: Sensor confirmation
         result = await flow.async_step_sensor_confirmation({
             "confirmed_energy": [],
@@ -634,15 +634,15 @@ class TestConfigFlowIntegration:
             "confirmed_lux": [],
             "confirmed_occ": [],
         })
-        
+
         # Step 4: Area assignment
         with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=MagicMock()):
             with patch.object(helpers_mod, "get_entity_area_id", return_value=None):
                 result = await flow.async_step_area_assignment({})
-        
+
         # Step 5: Final info
         result = await flow.async_step_intervention_info({})
-        
+
         assert result["type"] == "create_entry"
         assert flow.data["environment_mode"] == "office"
         assert flow.data["working_start"] == "09:00"

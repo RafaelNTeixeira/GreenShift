@@ -65,8 +65,8 @@ SENSOR_MAPPING = {
     },
     "occupancy": {
         "classes": [
-            BinarySensorDeviceClass.OCCUPANCY, 
-            BinarySensorDeviceClass.MOTION, 
+            BinarySensorDeviceClass.OCCUPANCY,
+            BinarySensorDeviceClass.MOTION,
             BinarySensorDeviceClass.PRESENCE
         ],
         "units": [],

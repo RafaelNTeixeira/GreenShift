@@ -1,0 +1,30 @@
+[run]
+# Source can be specified relative to where coverage is run
+# When run from tests/ directory, use ../config/...
+source = 
+    ../config/custom_components/green_shift
+    config/custom_components/green_shift
+omit = 
+    */tests/*
+    */test_*.py
+    */__pycache__/*
+    */venv/*
+    */virtualenv/*
+
+[report]
+# Show missing lines in the report
+show_missing = True
+# Require at least this percentage for the run to be considered successful
+fail_under = 70
+# Exclude lines with these patterns from coverage
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+
+[html]
+directory = tests/htmlcov

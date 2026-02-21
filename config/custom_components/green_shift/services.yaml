@@ -62,12 +62,12 @@ force_ai_process:
   name: Force AI Processing
   description: Manually trigger AI model processing (for testing)
   fields: {}
-  
+
 force_notification:
   name: Force Notification
   description: Bypass cooldowns and force a notification decision
   fields: {}
-  
+
 inject_test_data:
   name: Inject Test Data
   description: Generate synthetic historical data for testing. Note - 1 hour = 240 data points (15s intervals), so large values may take time.

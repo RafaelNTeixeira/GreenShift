@@ -102,7 +102,7 @@ class TestGetLanguage:
         hass = MagicMock()
         hass.config = MagicMock()
         hass.config.language = None
-        
+
         result = await get_language(hass)
         assert result == "en"
 
@@ -112,7 +112,7 @@ class TestGetLanguage:
         hass = MagicMock()
         hass.config = MagicMock()
         hass.config.language = "fr"  # French not supported
-        
+
         result = await get_language(hass)
         # Should default to en when unsupported
         assert result == "en"
@@ -371,7 +371,7 @@ class TestTemplateContent:
         """Portuguese should have translations, not English fallbacks."""
         pt_templates = get_notification_templates("pt")
         en_templates = get_notification_templates("en")
-        
+
         # At least some templates should be different between languages
         differences = 0
         for key in pt_templates:
@@ -382,7 +382,7 @@ class TestTemplateContent:
                 # Compare first template in lists
                 if pt_templates[key][0].get("title") != en_templates[key][0].get("title"):
                     differences += 1
-        
+
         assert differences > 0, "Portuguese templates appear to be empty or English fallbacks"
 
 

@@ -13,12 +13,12 @@ PORT = 1883
 
 # Device Metadata Templates
 HUB_BASE = {
-    "name": "Environment Hub", 
-    "manufacturer": "Custom-Labs", 
+    "name": "Environment Hub",
+    "manufacturer": "Custom-Labs",
     "model": "Multi-Sensor-v1"
 }
 PLUG_DEV = {
-    "manufacturer": "Custom-Labs", 
+    "manufacturer": "Custom-Labs",
     "model": "Power-Meter-v1"
 }
 
@@ -118,13 +118,13 @@ def clear_legacy_configs():
         "hub_feup", "plug_fridge", "plug_coffee",
         "hub_home", "hub_living", "plug_tv", "plug_lamp", "hub_kitchen", "plug_fridge_home","plug_dishwasher", "plug_kettle", "hub_bedroom", "plug_heater", "hub_office", "plug_pc", "plug_monitor"
     ]
-    
+
     # Common keys used across all versions of the script
     keys_to_clear = [
-        "energy", "power", "presence", "presence1", "presence2", 
+        "energy", "power", "presence", "presence1", "presence2",
         "temp", "temp1", "temp2", "hum1", "hum2", "lux1", "lux2"
     ]
-    
+
     for dev in target_ids:
         for s_type in ["sensor", "binary_sensor"]:
             for key in keys_to_clear:
@@ -140,7 +140,7 @@ def publish_discovery():
 
         device_payload = dev_info.copy()
         device_payload["identifiers"] = [dev_id]
-        
+
         if area and area != "No Area":
             device_payload["suggested_area"] = area
 
@@ -151,18 +151,18 @@ def publish_discovery():
             "value_template": f"{{{{ value_json.{v_key} }}}}",
             "device": device_payload
         }
-        
+
         if d_class: payload["device_class"] = d_class
         if unit: payload["unit_of_measurement"] = unit
         if s_class: payload["state_class"] = s_class
-        
+
         client.publish(config_topic, json.dumps(payload), retain=True)
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print("Connected to MQTT Broker.")
         clear_legacy_configs()
-        time.sleep(1) 
+        time.sleep(1)
         publish_discovery()
 
 client.on_connect = on_connect
@@ -186,7 +186,7 @@ for sensor in active_env["sensors"]:
 try:
     while True:
         devices_to_update = list(set([s[0] for s in active_env["sensors"]]))
-        
+
         for dev_id in devices_to_update:
             dev_sensors = [s for s in active_env["sensors"] if s[0] == dev_id]
 
@@ -213,7 +213,7 @@ try:
 
             for s_type, payload in type_groups.items():
                 client.publish(f"homeassistant/{s_type}/{dev_id}/state", json.dumps(payload))
-            
+
         time.sleep(5)
 
 except KeyboardInterrupt:

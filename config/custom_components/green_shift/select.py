@@ -17,10 +17,10 @@ async def async_setup_entry(
     """Setup of the select entities."""
     collector = hass.data[DOMAIN]["collector"]
     agent = hass.data[DOMAIN]["agent"]
-    
+
     area_selector = GreenShiftAreaViewSelect(collector)
     notification_selector = GreenShiftNotificationSelect(agent)
-    
+
     async_add_entities([area_selector, notification_selector])
 
 
@@ -57,13 +57,13 @@ class GreenShiftAreaViewSelect(SelectEntity):
         """Rebuild the list of options based on discovered areas."""
         # Get areas from collector
         raw_areas = self._collector.get_all_areas()
-        
+
         # Filter out 'No Area' and sort
         clean_areas = sorted([a for a in raw_areas if a != "No Area"])
-        
+
         # Build options list
         new_options = ["All Areas"] + clean_areas
-        
+
         # If options changed, update them
         if new_options != self._attr_options:
             self._attr_options = new_options
@@ -110,11 +110,11 @@ class GreenShiftNotificationSelect(SelectEntity):
     def _update_options(self):
         """Fetch pending notification IDs from the agent."""
         pending = [
-            n["notification_id"] 
-            for n in self._agent.notification_history 
+            n["notification_id"]
+            for n in self._agent.notification_history
             if not n.get("responded", False)
         ]
-        
+
         if not pending:
             self._attr_options = ["No pending notifications"]
             self._attr_current_option = "No pending notifications"

@@ -19,15 +19,15 @@ class DataCollector:
     Continuously monitors sensors and stores readings instantly.
     Completely independent from AI processing.
     """
-    
+
     def __init__(self, hass: HomeAssistant, discovered_sensors: dict, main_energy_sensor: str = None, main_power_sensor: str = None, storage_manager: StorageManager = None, config_data: dict = None):
         self.hass = hass
         self.sensors = discovered_sensors
         self.main_energy_sensor = main_energy_sensor # Sensor that reads building energy consumption (kWh)
-        self.main_power_sensor = main_power_sensor # Sensor that reads current building power consumption (kW) 
+        self.main_power_sensor = main_power_sensor # Sensor that reads current building power consumption (kW)
         self.storage = storage_manager
         self.config_data = config_data or {}
-        
+
         # Current readings (latest values - global aggregates)
         self.current_total_power = 0.0
         self.current_daily_energy = 0.0
@@ -35,7 +35,7 @@ class DataCollector:
         self.current_humidity = 0.0 # Global average
         self.current_illuminance = 0.0 # Global average
         self.current_occupancy = False # Any area occupied
-        
+
         # Instant sensor cache
         self._power_sensor_cache = {} # Stores the current readings of each power sensor (including the main one)
         self._energy_sensor_cache = {} # Stores the current readings of each energy sensor (including the main one)
@@ -43,8 +43,8 @@ class DataCollector:
         self._humidity_sensor_cache = {} # Stores the current readings of each humidity sensor
         self._illuminance_sensor_cache = {} # Stores the current readings of each illuminance sensor
         self._occupancy_sensor_cache = {} # Stores the current readings of each occupancy sensor
-        
-        self._energy_midnight_points = {} 
+
+        self._energy_midnight_points = {}
 
         self.area_sensors = {}  # Maps sensor_type -> area_name -> [entity_ids]
         self.area_data = {}  # Maps area_name -> {temperature, humidity, illuminance, occupancy}
@@ -53,16 +53,16 @@ class DataCollector:
         """Load persistent data from JSON storage."""
         if not self.storage:
             return
-        
+
         state = await self.storage.load_state()
-        
+
         # Load energy midnight points
         if "energy_midnight_points" in state:
             self._energy_midnight_points = state["energy_midnight_points"]
             _LOGGER.info("Loaded %d midnight energy points from storage", len(self._energy_midnight_points))
-        
+
         _LOGGER.info("Persistent data loaded successfully")
-        
+
     async def setup(self):
         """Setup real-time monitoring of all sensors."""
 
@@ -77,8 +77,8 @@ class DataCollector:
         async_track_time_change(self.hass, self._reset_midnight_listener, hour=0, minute=0, second=0) # Schedule at midnight daily
 
         async_track_time_interval(
-            self.hass, 
-            self._record_periodic_snapshot, 
+            self.hass,
+            self._record_periodic_snapshot,
             timedelta(seconds=UPDATE_INTERVAL_SECONDS)
         )
 
@@ -94,10 +94,10 @@ class DataCollector:
 
             if not entity_ids:
                 continue
-            
+
             grouped = group_sensors_by_area(self.hass, entity_ids)
             self.area_sensors[sensor_type] = grouped
-            
+
             _LOGGER.info(
                 "Grouped %d %s sensors into %d areas: %s",
                 len(entity_ids),
@@ -105,12 +105,12 @@ class DataCollector:
                 len(grouped),
                 list(grouped.keys())
             )
-        
+
         # Initialize area data structure
         all_areas = set()
         for grouped in self.area_sensors.values():
             all_areas.update(grouped.keys())
-        
+
         for area in all_areas:
             self.area_data[area] = {
                 "temperature": None,
@@ -118,30 +118,30 @@ class DataCollector:
                 "illuminance": None,
                 "occupancy": False
             }
-    
+
     async def _setup_power_monitoring(self):
         """Setup instant monitoring for power sensors."""
         power_sensors = self.sensors.get("power", [])
         if not power_sensors:
             _LOGGER.warning("No power sensors found for monitoring")
             return
-        
+
         @callback
         def handle_power_change(event: Event):
             """Handle power sensor state changes instantly."""
             entity_id = event.data.get("entity_id")
             new_state = event.data.get("new_state")
-            
+
             if new_state is None or entity_id not in power_sensors:
                 return
-            
+
             # Update cache instantly
             try:
                 value, _ = get_normalized_value(new_state, "power")
 
                 if value is None:
                     return
-                
+
                 self._power_sensor_cache[entity_id] = value
 
                 # Update area-specific data
@@ -162,7 +162,7 @@ class DataCollector:
             except (ValueError, TypeError):
                 _LOGGER.debug("Invalid power value for %s: %s", entity_id, new_state.state)
                 pass
-        
+
         async_track_state_change_event(self.hass, power_sensors, handle_power_change)
         _LOGGER.info("Real-time power monitoring active for %d sensors", len(power_sensors))
 
@@ -185,26 +185,26 @@ class DataCollector:
 
             if val is not None:
                 total_power += val
-            
+
         self.current_total_power = total_power
         # _LOGGER.debug("Power recalculated by summing: %.2f W", total_power)
 
     async def _setup_energy_monitoring(self):
-        """Setup instant monitoring for energy sensors.""" 
+        """Setup instant monitoring for energy sensors."""
         energy_sensors = self.sensors.get("energy", [])
         if not energy_sensors:
             _LOGGER.warning("No energy sensors found for monitoring")
             return
-        
+
         @callback
         def handle_energy_change(event: Event):
             """Handle energy sensor state changes instantly."""
-            entity_id = event.data.get("entity_id") 
+            entity_id = event.data.get("entity_id")
             new_state = event.data.get("new_state")
-            
+
             if new_state is None or entity_id not in energy_sensors:
                 return
-            
+
             try:
                 value, _ = get_normalized_value(new_state, "energy")
 
@@ -224,26 +224,26 @@ class DataCollector:
                     # Calculate daily energy for sensors in this area
                     area_sensors = self.area_sensors.get("energy", {}).get(area, [])
                     area_daily = 0.0
-                    
+
                     for eid in area_sensors:
                         current_val = self._energy_sensor_cache.get(eid)
                         midnight_val = self._energy_midnight_points.get(eid)
-                        
+
                         if current_val is not None and midnight_val is not None:
                             if current_val < midnight_val:
                                 area_daily += current_val  # Handle reset
                             else:
                                 area_daily += (current_val - midnight_val)
-                    
+
                     self.area_data[area]["energy"] = round(area_daily, 3)
                     # _LOGGER.debug("Area '%s' daily energy: %.3f kWh", area, self.area_data[area]["energy"])
 
                 self.get_daily_kwh()
-                
+
             except (ValueError, TypeError):
                 _LOGGER.debug("Invalid energy value for %s: %s", entity_id, new_state.state)
                 pass
-        
+
         async_track_state_change_event(self.hass, energy_sensors, handle_energy_change)
         _LOGGER.info("Real-time energy monitoring active for %d sensors", len(energy_sensors))
 
@@ -261,7 +261,7 @@ class DataCollector:
                     self.current_daily_energy = current_val
                 else:
                     self.current_daily_energy = current_val - midnight_val
-                
+
                 # _LOGGER.debug("Daily energy from main sensor: %.3f kWh", self.current_daily_energy)
                 return
 
@@ -272,15 +272,15 @@ class DataCollector:
                 continue
 
             midnight_val = self._energy_midnight_points.get(entity_id, current_val)
-            
+
             if current_val < midnight_val:
                 total_kwh += current_val # Handle sensor reset (odometer rolled over or reset to 0)
             else:
                 total_kwh += (current_val - midnight_val)
-                
+
         self.current_daily_energy = total_kwh
         # _LOGGER.debug("Total daily kWh calculated: %.3f kWh", total_kwh)
-    
+
     async def _setup_environment_monitoring(self):
         """Setup instant monitoring for environmental sensors."""
         # Temperature
@@ -308,7 +308,7 @@ class DataCollector:
                         if area_values:
                             self.area_data[area]["temperature"] = round(sum(area_values) / len(area_values), 1)
                             # _LOGGER.debug("Area '%s' temperature: %.1f°C", area, self.area_data[area]["temperature"])
-                    
+
                     # Calculate Average of all valid cache entries
                     if self._temperature_sensor_cache:
                         avg = sum(self._temperature_sensor_cache.values()) / len(self._temperature_sensor_cache)
@@ -316,10 +316,10 @@ class DataCollector:
 
                 except (ValueError, TypeError):
                     _LOGGER.debug("Invalid temperature value for %s: %s", entity_id, new_state.state)
-            
+
             async_track_state_change_event(self.hass, temp_sensors, handle_temp_change)
             _LOGGER.info("Real-time temperature monitoring active for %d sensors", len(temp_sensors))
-        
+
         # Humidity
         hum_sensors = self.sensors.get("humidity", [])
         if hum_sensors:
@@ -327,10 +327,10 @@ class DataCollector:
             def handle_hum_change(event: Event):
                 entity_id = event.data.get("entity_id")
                 new_state = event.data.get("new_state")
-                
+
                 if new_state is None or new_state.state in ["unavailable", "unknown"]:
                     return
-                
+
                 try:
                     val = float(new_state.state)
                     self._humidity_sensor_cache[entity_id] = val
@@ -345,17 +345,17 @@ class DataCollector:
                         if area_values:
                             self.area_data[area]["humidity"] = round(sum(area_values) / len(area_values), 1)
                             # _LOGGER.debug("Area '%s' humidity: %.1f%%", area, self.area_data[area]["humidity"])
-                    
+
                     if self._humidity_sensor_cache:
                         avg = sum(self._humidity_sensor_cache.values()) / len(self._humidity_sensor_cache)
                         self.current_humidity = round(avg, 1)
 
                 except (ValueError, TypeError):
                     pass
-            
+
             async_track_state_change_event(self.hass, hum_sensors, handle_hum_change)
             _LOGGER.info("Real-time humidity monitoring active for %d sensors", len(hum_sensors))
-        
+
         # Illuminance
         lux_sensors = self.sensors.get("illuminance", [])
         if lux_sensors:
@@ -363,16 +363,16 @@ class DataCollector:
             def handle_lux_change(event: Event):
                 entity_id = event.data.get("entity_id")
                 new_state = event.data.get("new_state")
-                
+
                 if new_state is None or new_state.state in ["unavailable", "unknown"]:
                     return
-                    
+
                 try:
                     val = float(new_state.state)
                     self._illuminance_sensor_cache[entity_id] = val
 
                     # _LOGGER.debug("Illum value: %.2f", val)
-                    
+
                     # Update area-specific data
                     area = get_entity_area(self.hass, entity_id) or "No Area"
                     if area in self.area_data:
@@ -381,17 +381,17 @@ class DataCollector:
                         if area_values:
                             self.area_data[area]["illuminance"] = round(sum(area_values) / len(area_values), 1)
                             # _LOGGER.debug("Area '%s' illuminance: %.1f lx", area, self.area_data[area]["illuminance"])
-                    
+
                     if self._illuminance_sensor_cache:
                         avg = sum(self._illuminance_sensor_cache.values()) / len(self._illuminance_sensor_cache)
                         self.current_illuminance = round(avg, 1)
 
                 except (ValueError, TypeError):
                     pass
-            
+
             async_track_state_change_event(self.hass, lux_sensors, handle_lux_change)
             _LOGGER.info("Real-time illuminance monitoring active for %d sensors", len(lux_sensors))
-        
+
         # Occupancy
         occ_sensors = self.sensors.get("occupancy", [])
         if occ_sensors:
@@ -399,10 +399,10 @@ class DataCollector:
             def handle_occ_change(event: Event):
                 entity_id = event.data.get("entity_id")
                 new_state = event.data.get("new_state")
-                
+
                 if new_state is None or new_state.state in ["unavailable", "unknown"]:
                     return
-                
+
                 try:
                     # Determine boolean state
                     is_on = new_state.state.lower() in ["on", "true", "detected"]
@@ -418,7 +418,7 @@ class DataCollector:
                         area_occupied = any(self._occupancy_sensor_cache.get(eid, False) for eid in area_sensors)
                         self.area_data[area]["occupancy"] = area_occupied
                         # _LOGGER.debug("Area '%s' occupancy: %s", area, area_occupied)
-                    
+
                     # If ANY sensor in the cache is True, the building is occupied
                     self.current_occupancy = any(self._occupancy_sensor_cache.values())
 
@@ -426,10 +426,10 @@ class DataCollector:
 
                 except (ValueError, TypeError):
                     pass
-            
+
             async_track_state_change_event(self.hass, occ_sensors, handle_occ_change)
             _LOGGER.info("Real-time occupancy monitoring active for %d sensors", len(occ_sensors))
-        
+
         _LOGGER.info("Real-time environmental monitoring active")
 
     @callback
@@ -441,7 +441,7 @@ class DataCollector:
     def update_midnight_points(self):
         """Snapshots current energy readings to establish the daily baseline."""
         energy_sensors = self.sensors.get("energy", [])
-        
+
         for entity_id in energy_sensors:
             # Try cache first, then state machine
             val = self._energy_sensor_cache.get(entity_id)
@@ -456,28 +456,28 @@ class DataCollector:
                     except (ValueError, TypeError):
                         _LOGGER.debug("Invalid energy value for %s during midnight reset: %s", entity_id, state.state)
                         continue
-            
+
             if val is not None:
                 self._energy_midnight_points[entity_id] = val
-            
+
         # Save to persistent storage
         if self.storage:
             self.hass.async_create_task(
                 self.storage.update_state_field("energy_midnight_points", self._energy_midnight_points)
             )
-        
+
         _LOGGER.debug("Midnight snapshots updated: %s", self._energy_midnight_points)
-    
+
     @callback
     def _record_periodic_snapshot(self, now):
         """Records snapshots of all current readings to SQLite."""
         if not self.storage:
             _LOGGER.warning("Storage not available - snapshot not saved")
             return
-        
+
         # Check if within working hours (for office mode filtering)
         within_working_hours = is_within_working_hours(self.config_data, now)
-        
+
         # Store global aggregate snapshot
         self.hass.async_create_task(
             self.storage.store_sensor_snapshot(
@@ -491,7 +491,7 @@ class DataCollector:
                 within_working_hours=within_working_hours
             )
         )
-        
+
        # Store area-specific snapshots
         for area_name, data in self.area_data.items():
             self.hass.async_create_task(
@@ -507,7 +507,7 @@ class DataCollector:
                     within_working_hours=within_working_hours
                 )
             )
-        
+
         _LOGGER.debug(
             "Snapshot stored: Power=%.2f W | Energy=%.2f kWh | %d areas | Working hours: %s",
             self.current_total_power,
@@ -515,7 +515,7 @@ class DataCollector:
             len(self.area_data),
             within_working_hours
         )
-    
+
     def get_current_state(self) -> dict:
         """Get current sensor readings."""
         return {
@@ -526,7 +526,7 @@ class DataCollector:
             "illuminance": self.current_illuminance,
             "occupancy": self.current_occupancy,
         }
-    
+
     def get_area_state(self, area_name: str) -> dict:
         """Get current sensor readings for a specific area."""
         return self.area_data.get(area_name, {
@@ -535,145 +535,145 @@ class DataCollector:
             "illuminance": None,
             "occupancy": False
         })
-    
+
     def get_all_areas(self) -> list:
         """Get list of all tracked areas."""
         return list(self.area_data.keys())
-    
+
     async def get_area_history(self, area_name: str, metric: str, hours: int = None, days: int = None, working_hours_only: bool = None) -> list:
         """
         Get historical data for a specific area.
-        
+
         Args:
             area_name: Name of the area
             metric: Metric to retrieve ('temperature', 'humidity', 'illuminance', 'occupancy', 'power', 'energy')
             hours: Number of hours to retrieve
             days: Number of days to retrieve
             working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
-        
+
         Returns:
             List of (datetime, value) tuples
         """
         if not self.storage:
             return []
         return await self.storage.get_area_history(area_name, metric, hours=hours, days=days, working_hours_only=working_hours_only)
-    
+
     async def get_power_history(self, hours: int = None, days: int = None, working_hours_only: bool = None) -> list:
         """
         Get power history with timestamps from SQLite.
-        
+
         Args:
             hours: Number of hours to retrieve
             days: Number of days to retrieve
             working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
-        
+
         Returns:
             List of (datetime, value) tuples
         """
         if not self.storage:
             return []
-        
+
         # Returns [(2026-02-04 10:00:00, power), ...]
         return await self.storage.get_history("power", hours=hours, days=days, working_hours_only=working_hours_only)
-    
+
     async def get_energy_history(self, hours: int = None, days: int = None, working_hours_only: bool = None) -> list:
         """
         Get energy history with timestamps from SQLite.
-        
+
         Args:
             hours: Number of hours to retrieve
             days: Number of days to retrieve
             working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
-        
+
         Returns:
             List of (datetime, value) tuples
         """
         if not self.storage:
             return []
-        
+
         # Returns [(2026-02-04 10:00:00, energy), ...]
         return await self.storage.get_history("energy", hours=hours, days=days, working_hours_only=working_hours_only)
-    
+
     async def get_temperature_history(self, hours: int = None, days: int = None, working_hours_only: bool = None) -> list:
         """
         Get temperature history with timestamps from SQLite.
-        
+
         Args:
             hours: Number of hours to retrieve
             days: Number of days to retrieve
             working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
-        
+
         Returns:
             List of (datetime, value) tuples
         """
         if not self.storage:
             return []
-        
+
         # Returns [(2026-02-04 10:00:00, temperature), ...]
         return await self.storage.get_history("temperature", hours=hours, days=days, working_hours_only=working_hours_only)
-    
+
     async def get_humidity_history(self, hours: int = None, days: int = None, working_hours_only: bool = None) -> list:
         """
         Get humidity history with timestamps from SQLite.
-        
+
         Args:
             hours: Number of hours to retrieve
             days: Number of days to retrieve
             working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
-        
+
         Returns:
             List of (datetime, value) tuples
         """
         if not self.storage:
             return []
-        
+
         # Returns [(2026-02-04 10:00:00, humidity), ...]
         return await self.storage.get_history("humidity", hours=hours, days=days, working_hours_only=working_hours_only)
-    
+
     async def get_illuminance_history(self, hours: int = None, days: int = None, working_hours_only: bool = None) -> list:
         """
         Get illuminance history with timestamps from SQLite.
-        
+
         Args:
             hours: Number of hours to retrieve
             days: Number of days to retrieve
             working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
-        
+
         Returns:
             List of (datetime, value) tuples
         """
         if not self.storage:
             return []
-        
+
         # Returns [(2026-02-04 10:00:00, illuminance), ...]
         return await self.storage.get_history("illuminance", hours=hours, days=days, working_hours_only=working_hours_only)
-    
+
     async def get_occupancy_history(self, hours: int = None, days: int = None, working_hours_only: bool = None) -> list:
         """
         Get occupancy history with timestamps from SQLite.
-        
+
         Args:
             hours: Number of hours to retrieve
             days: Number of days to retrieve
             working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
-        
+
         Returns:
             List of (datetime, value) tuples
         """
         if not self.storage:
             return []
-        
+
         # Returns [(2026-02-04 10:00:00, occupancy), ...]
         return await self.storage.get_history("occupancy", hours=hours, days=days, working_hours_only=working_hours_only)
-    
+
     async def get_all_history(self, hours: int = None, days: int = None) -> dict:
         """
         Get all historical data from SQLite.
-        
+
         Args:
             hours: Number of hours to retrieve (optional)
             days: Number of days to retrieve (optional)
-        
+
         Returns:
             Dictionary with all sensor histories
         """
@@ -687,7 +687,7 @@ class DataCollector:
                 "illuminance": [],
                 "occupancy": [],
             }
-        
+
         return {
             "power": await self.storage.get_history("power", hours=hours, days=days),
             "energy": await self.storage.get_history("energy", hours=hours, days=days),
@@ -699,16 +699,16 @@ class DataCollector:
 
     async def calculate_baseline_summary(self) -> dict:
         """Calculates summary stats for the baseline phase.
-        
+
         For office mode, only uses working hours data to avoid weekend/off-hours bias.
         """
         if not self.storage:
             return {}
-        
+
         # Determine if we should filter to working hours only (office mode)
         is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
         working_hours_filter = True if is_office_mode else None
-        
+
         if is_office_mode:
             _LOGGER.info("Office mode detected - baseline calculations will use working hours data only")
 
@@ -727,7 +727,7 @@ class DataCollector:
             for ts, val in power_history:
                 hour = ts.hour
                 hourly_buckets.setdefault(hour, []).append(val)
-            
+
             if hourly_buckets:
                 peak_hour = max(hourly_buckets, key=lambda k: np.mean(hourly_buckets[k]))
                 peak_time = f"{peak_hour:02d}:00 - {peak_hour+1:02d}:00"

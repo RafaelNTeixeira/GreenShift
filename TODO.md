@@ -12,7 +12,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Improve Profile interface
 - [x] Improve Settings interface
 - [x] Improve Gamification interface
- - [x] Display only number of generated tasks 
+ - [x] Display only number of generated tasks
 - [x] Improve Monitored Devices tab
 - [x] Improve Dashboard tab
 - [x] Add emojis to places where they are missing to make screen more appealing
@@ -71,7 +71,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Build backup daily to prevent data loss
 - [x] Check query 13
 - [x] Improve research data queries
-- [x] Manage memory usage 
+- [x] Manage memory usage
 - [x] Analyze quantity of rl episodes being stored into the database (~60K entries per 21 days of runtime)
 - [x] Consider if AI state history and notifications should be kept in persistent memory (JSON)
 
@@ -79,6 +79,6 @@ Checklist to track remaining features, fixes and tests before completion.
 ### Validation
 - [x] Add Unit tests
 - [x] Check .gitignore
-- [ ] Add pre-commit hook to run tests before executing a commit
+- [x] Add pre-commit hook to run tests before executing a commit
 - [ ] Improve code documentation where needed
 ---

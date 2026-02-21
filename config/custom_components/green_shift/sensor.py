@@ -22,13 +22,13 @@ async def async_setup_entry(
     collector = hass.data[DOMAIN]["collector"]
     storage = hass.data[DOMAIN]["storage"]
     discovered_sensors = hass.data[DOMAIN]["discovered_sensors"]
-    
+
     sensors = [
         HardwareSensorsSensor(hass, discovered_sensors, config_entry),
         ResearchPhaseSensor(agent),
         EnergyBaselineSensor(agent),
         CurrentConsumptionSensor(collector),
-        CurrentCostConsumptionSensor(hass, collector), 
+        CurrentCostConsumptionSensor(hass, collector),
         DailyCostConsumptionSensor(hass, collector),
         DailyCO2EstimateSensor(hass, collector),
         SavingsAccumulatedSensor(agent, collector),
@@ -58,7 +58,7 @@ class GreenShiftBaseSensor(SensorEntity):
         await super().async_added_to_hass()
         self.async_on_remove(
             async_dispatcher_connect(
-                self.hass, 
+                self.hass,
                 GS_UPDATE_SIGNAL,
                 self._update_callback
             )
@@ -92,7 +92,7 @@ class GreenShiftAISensor(SensorEntity):
         await super().async_added_to_hass()
         self.async_on_remove(
             async_dispatcher_connect(
-                self.hass, 
+                self.hass,
                 GS_AI_UPDATE_SIGNAL,
                 self._update_callback
             )
@@ -143,7 +143,7 @@ class HardwareSensorsSensor(GreenShiftBaseSensor):
             for entity_id in entities:
                 if entity_id in to_exclude:
                     continue
-                
+
                 state = self.hass.states.get(entity_id)
                 if not state:
                     continue
@@ -170,21 +170,21 @@ class HardwareSensorsSensor(GreenShiftBaseSensor):
                 })
 
         return data
-    
+
 
 class ResearchPhaseSensor(GreenShiftAISensor):
     """Sensor that indicates the current research phase."""
-    
+
     def __init__(self, agent):
         self._agent = agent
         self._attr_translation_key = "research_phase"
         self._attr_unique_id = f"{DOMAIN}_research_phase"
         self._attr_icon = "mdi:flask"
-    
+
     @property
     def state(self):
         return self._agent.phase
-    
+
     @property
     def extra_state_attributes(self):
         days_running = (datetime.now() - self._agent.start_date).days
@@ -198,7 +198,7 @@ class ResearchPhaseSensor(GreenShiftAISensor):
 
 class EnergyBaselineSensor(GreenShiftAISensor):
     """Sensor with the learned energy baseline from baseline phase."""
-    
+
     def __init__(self, agent):
         self._agent = agent
         self._attr_translation_key = "energy_baseline"
@@ -208,9 +208,9 @@ class EnergyBaselineSensor(GreenShiftAISensor):
         self._attr_icon = "mdi:chart-line"
 
     @property
-    def unit_of_measurement(self):    
+    def unit_of_measurement(self):
         return "W"
-    
+
     @property
     def state(self):
         # Show baseline_consumption (immutable baseline from intervention phase)
@@ -219,7 +219,7 @@ class EnergyBaselineSensor(GreenShiftAISensor):
 
 class CurrentConsumptionSensor(GreenShiftBaseSensor):
     """Sensor with the current consumption from DataCollector."""
-    
+
     def __init__(self, collector):
         self._collector = collector
         self._attr_translation_key = "current_consumption"
@@ -228,13 +228,13 @@ class CurrentConsumptionSensor(GreenShiftBaseSensor):
         self._attr_device_class = "power"
 
     @property
-    def unit_of_measurement(self):    
+    def unit_of_measurement(self):
         return "W"
-    
+
     @property
     def state(self):
         return round(self._collector.current_total_power, 3)
-    
+
 
 class CurrentCostConsumptionSensor(GreenShiftBaseSensor):
     """Sensor that calculates the current cost per hour based on consumption from DataCollector."""
@@ -251,7 +251,7 @@ class CurrentCostConsumptionSensor(GreenShiftBaseSensor):
     def unit_of_measurement(self):
         """Dynamic unit based on input_select."""
         currency_state = self.hass.states.get("input_select.currency")
-        
+
         return f"{currency_state.state}/h" if currency_state else "EUR/h" # Default to EUR/h if the input_select is missing
 
     @property
@@ -265,7 +265,7 @@ class CurrentCostConsumptionSensor(GreenShiftBaseSensor):
 
         power_kw = self._collector.current_total_power / 1000.0
         cost_hourly = power_kw * price_per_kwh
-        
+
         return round(cost_hourly, 3)
 
     @property
@@ -294,7 +294,7 @@ class DailyCostConsumptionSensor(GreenShiftBaseSensor):
     def unit_of_measurement(self):
         """Dynamic unit based on input_select."""
         currency_state = self.hass.states.get("input_select.currency")
-        
+
         return f"{currency_state.state}" if currency_state else "EUR" # Default to EUR if the input_select is missing
 
     @property
@@ -308,10 +308,10 @@ class DailyCostConsumptionSensor(GreenShiftBaseSensor):
 
         # Get accurate daily kWh from the Odometer logic
         daily_kwh = self._collector.current_daily_energy
-        
+
         # Calculate Cost
         cost = daily_kwh * price_per_kwh
-        
+
         return round(cost, 2)
 
     @property
@@ -323,7 +323,7 @@ class DailyCostConsumptionSensor(GreenShiftBaseSensor):
             "applied_price": price_state.state if price_state else "0.25",
             "currency": currency_state.state if currency_state else "EUR"
         }
-    
+
 
 class DailyCO2EstimateSensor(GreenShiftBaseSensor):
     """Sensor that estimates daily CO2 emissions based on consumption from DataCollector."""
@@ -347,10 +347,10 @@ class DailyCO2EstimateSensor(GreenShiftBaseSensor):
 
         # Get accurate daily kWh from the Odometer logic
         daily_kwh = self._collector.current_daily_energy
-        
+
         # Calculate CO2 Emissions (daily_kwh * kg/kWh)
         co2_emissions = daily_kwh * co2_factor_portugal
-        
+
         return round(co2_emissions, 2)
 
     @property
@@ -363,7 +363,7 @@ class DailyCO2EstimateSensor(GreenShiftBaseSensor):
 
 class SavingsAccumulatedSensor(GreenShiftAISensor):
     """Sensor with the accumulated savings in EUR."""
-    
+
     def __init__(self, agent, collector):
         self._agent = agent
         self._collector = collector
@@ -378,18 +378,18 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
         """Dynamic unit based on input_select.currency."""
         currency_state = self.hass.states.get("input_select.currency")
         return currency_state.state if currency_state else "EUR"
-    
+
     @property
     def extra_state_attributes(self):
         """Return calculation details."""
         return self._attr_extra_state_attributes
-    
+
     async def _async_update_state(self):
         """Fetch data asynchronously and calculate state."""
         # Await the async database call
         power_history_data = await self._collector.get_power_history()
         power_history = [power for timestamp, power in power_history_data]
-        
+
         if len(power_history) < 10:
             self._attr_native_value = 0
             self._attr_extra_state_attributes = {
@@ -399,16 +399,16 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
                 "currency": self.unit_of_measurement,
             }
             return
-        
+
         price_state = self.hass.states.get("input_number.electricity_price")
         try:
             price_per_kwh = float(price_state.state) if price_state else 0.25
         except (ValueError, TypeError):
             price_per_kwh = 0.25
-        
+
         avg_consumption = sum(power_history) / len(power_history)
         saving_watts = self._agent.baseline_consumption - avg_consumption
-        
+
         # Calculate hours covered by history based on update interval
         readings_per_hour = 3600 / UPDATE_INTERVAL_SECONDS
         hours = len(power_history) / readings_per_hour
@@ -416,9 +416,9 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
         # Convert W to kW then to kWh
         saving_kwh = (saving_watts / 1000.0) * hours
         savings_total = saving_kwh * price_per_kwh
-        
+
         self._attr_native_value = round(max(0, savings_total), 2)
-        
+
         # Update attributes with calculation details
         self._attr_extra_state_attributes = {
             "avg_power_w": round(avg_consumption, 2),
@@ -427,12 +427,12 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
             "currency": self.unit_of_measurement,
             "price_per_kwh": price_per_kwh,
         }
-        
+
 
 
 class CO2SavedSensor(GreenShiftAISensor):
     """Sensor with the saved CO2 (kg)."""
-    
+
     def __init__(self, agent, collector):
         self._agent = agent
         self._collector = collector
@@ -442,19 +442,19 @@ class CO2SavedSensor(GreenShiftAISensor):
         self._attr_icon = "mdi:leaf"
         self._attr_native_value = 0
         self._attr_extra_state_attributes = {}
-    
+
     async def _async_update_state(self):
         power_history_data = await self._collector.get_power_history()
 
         power_history = [power for timestamp, power in power_history_data]
-        
+
         if len(power_history) < 10:
             self._attr_native_value = 0
             return
-        
+
         avg_consumption = sum(power_history) / len(power_history)
         saving_watts = self._agent.baseline_consumption - avg_consumption
-        
+
         readings_per_hour = 3600 / UPDATE_INTERVAL_SECONDS
         hours = len(power_history) / readings_per_hour
 
@@ -463,7 +463,7 @@ class CO2SavedSensor(GreenShiftAISensor):
         impact = get_environmental_impact(max(0, saving_kwh))
 
         self._attr_native_value = impact["co2_kg"]
-        
+
         self._attr_extra_state_attributes = {
             "trees": impact["trees"],
             "flights": impact["flights"],
@@ -473,14 +473,14 @@ class CO2SavedSensor(GreenShiftAISensor):
 
 class TasksCompletedSensor(GreenShiftAISensor):
     """Sensor with the number of completed tasks (30-day rolling window)."""
-    
+
     def __init__(self, storage):
         self._storage = storage
         self._attr_translation_key = "tasks_completed"
         self._attr_unique_id = f"{DOMAIN}_tasks"
         self._attr_icon = "mdi:check-circle"
         self._completed_count = 0
-    
+
     @property
     def state(self):
         return self._completed_count
@@ -491,7 +491,7 @@ class TasksCompletedSensor(GreenShiftAISensor):
 
 class WeeklyChallengeSensor(GreenShiftAISensor):
     """Sensor for the weekly energy reduction challenge."""
-    
+
     def __init__(self, agent):
         self._agent = agent
         self._attr_translation_key = "weekly_challenge"
@@ -508,19 +508,19 @@ class WeeklyChallengeSensor(GreenShiftAISensor):
             return float(target_state.state) if target_state else 15.0
         except (ValueError, TypeError):
             return 15.0
-    
+
     async def _async_update_state(self):
         if self._agent.phase == PHASE_BASELINE:
             return
-        
+
         current_target = self._get_target_percentage()
 
         challenge = await self._agent.get_weekly_challenge_status(target_percentage=current_target)
-        
+
         self._attr_native_value = challenge.get("progress", 0)
 
         _LOGGER.debug(f"Weekly Challenge Update: Progress={self._attr_native_value}%, Details={challenge}")
-        
+
         self._attr_extra_state_attributes = {
             "status": challenge.get("status", "pending"),
             "progress": self._attr_native_value,
@@ -535,13 +535,13 @@ class WeeklyChallengeSensor(GreenShiftAISensor):
 
 class BehaviourIndexSensor(GreenShiftAISensor):
     """Sensor with the agent's behaviour index."""
-    
+
     def __init__(self, agent):
         self._agent = agent
         self._attr_translation_key = "behaviour_index"
         self._attr_unique_id = f"{DOMAIN}_behaviour"
         self._attr_icon = "mdi:account-check"
-    
+
     @property
     def state(self):
         return round(self._agent.behaviour_index, 2)
@@ -549,13 +549,13 @@ class BehaviourIndexSensor(GreenShiftAISensor):
 
 class FatigueIndexSensor(GreenShiftAISensor):
     """Sensor with the agent's fatigue index."""
-    
+
     def __init__(self, agent):
         self._agent = agent
         self._attr_translation_key = "fatigue_index"
         self._attr_unique_id = f"{DOMAIN}_fatigue"
         self._attr_icon = "mdi:alert-circle"
-    
+
     @property
     def state(self):
         return round(self._agent.fatigue_index, 2)
@@ -563,16 +563,16 @@ class FatigueIndexSensor(GreenShiftAISensor):
 
 class DailyTasksSensor(GreenShiftAISensor):
     """Sensor showing daily tasks with verification status and difficulty feedback."""
-    
+
     _attr_should_poll = False
-    
+
     def __init__(self, storage):
         self._storage = storage
         self._attr_translation_key = "daily_tasks"
         self._attr_unique_id = f"{DOMAIN}_daily_tasks"
         self._attr_icon = "mdi:clipboard-check-outline"
         self._tasks = []
-    
+
     async def async_added_to_hass(self):
         """Register the listener when the entity is added to HA."""
         await super().async_added_to_hass()
@@ -581,26 +581,26 @@ class DailyTasksSensor(GreenShiftAISensor):
         )
         # Initial load
         await self._async_update_state()
-    
+
     @callback
     def _update_callback(self):
         """Force update when signal is received."""
         self.hass.async_create_task(self._async_update_and_write())
-    
+
     async def _async_update_and_write(self):
         """Helper to await the update and then write state."""
         await self._async_update_state()
         self.async_write_ha_state()
-    
+
     async def _async_update_state(self):
         """Fetch today's tasks from storage."""
         self._tasks = await self._storage.get_today_tasks()
-    
+
     @property
     def state(self):
         """Return number of tasks."""
         return len(self._tasks)
-    
+
     @property
     def extra_state_attributes(self):
         """Return task details with verification and feedback status."""
@@ -611,10 +611,10 @@ class DailyTasksSensor(GreenShiftAISensor):
                 "verified_count": 0,
                 "total_count": 0
             }
-        
+
         completed_count = sum(1 for t in self._tasks if t['completed'])
         verified_count = sum(1 for t in self._tasks if t['verified'])
-        
+
         # Format tasks for display
         tasks_display = []
         for task in self._tasks:
@@ -635,7 +635,7 @@ class DailyTasksSensor(GreenShiftAISensor):
                 'task_id': task['task_id'],
                 'title': task['title'],
                 'description': task['description'],
-                'target_value': formatted_target, 
+                'target_value': formatted_target,
                 'target_unit': unit,
                 'baseline_value': formatted_baseline,
                 'difficulty_level': task['difficulty_level'],
@@ -644,11 +644,11 @@ class DailyTasksSensor(GreenShiftAISensor):
                 'user_feedback': task['user_feedback'],
                 'area_name': task['area_name'],
             }
-            
+
             # Add completion value if available
             if task['completion_value']:
                 task_info['completion_value'] = task['completion_value']
-            
+
             # Add status indicator
             if task['verified']:
                 task_info['status'] = 'verified'
@@ -659,44 +659,44 @@ class DailyTasksSensor(GreenShiftAISensor):
             else:
                 task_info['status'] = 'pending'
                 task_info['status_emoji'] = '🎯'
-            
+
             # Add difficulty indicator
             difficulty_emojis = {1: '⭐', 2: '⭐⭐', 3: '⭐⭐⭐', 4: '⭐⭐⭐⭐', 5: '⭐⭐⭐⭐⭐'}
             task_info['difficulty_display'] = difficulty_emojis.get(task['difficulty_level'], '⭐⭐⭐')
-            
+
             tasks_display.append(task_info)
-        
+
         return {
             "tasks": tasks_display,
             "completed_count": completed_count,
             "verified_count": verified_count,
             "total_count": len(self._tasks),
         }
-    
+
 class ActiveNotificationsSensor(GreenShiftAISensor):
     """Sensor showing active notifications that need user feedback."""
-    
+
     _attr_should_poll = False
-    
+
     def __init__(self, agent):
         self._agent = agent
         self._attr_translation_key = "active_notifications"
         self._attr_unique_id = f"{DOMAIN}_active_notifications"
         self._attr_icon = "mdi:bell-ring"
-    
+
     @property
     def state(self):
         """Return count of unresponded notifications."""
         unresponded = [n for n in self._agent.notification_history if not n.get("responded", False)]
         return len(unresponded)
-    
+
     @property
     def extra_state_attributes(self):
         """Return notification details."""
-        
+
         # Get all notifications from history
         all_notifications = []
-        
+
         for notif in self._agent.notification_history:
             # Parse timestamp
             try:
@@ -704,7 +704,7 @@ class ActiveNotificationsSensor(GreenShiftAISensor):
                 time_ago = self._get_time_ago(timestamp)
             except:
                 time_ago = "Unknown"
-            
+
             notification_data = {
                 "notification_id": notif["notification_id"],
                 "action_type": notif["action_type"],
@@ -715,7 +715,7 @@ class ActiveNotificationsSensor(GreenShiftAISensor):
                 "responded": notif.get("responded", False),
                 "accepted": notif.get("accepted", None),
             }
-            
+
             # Add status emoji
             if notif.get("responded"):
                 if notif.get("accepted"):
@@ -727,19 +727,19 @@ class ActiveNotificationsSensor(GreenShiftAISensor):
             else:
                 notification_data["status"] = "Pending"
                 notification_data["status_emoji"] = "⏳"
-            
+
             all_notifications.append(notification_data)
-        
+
         # Sort by timestamp (newest first)
         all_notifications.sort(key=lambda x: x["timestamp"], reverse=True)
-        
+
         # Count statistics
         total = len(all_notifications)
         responded = sum(1 for n in all_notifications if n["responded"])
         accepted = sum(1 for n in all_notifications if n.get("accepted") == True)
         rejected = sum(1 for n in all_notifications if n.get("accepted") == False)
         pending = total - responded
-        
+
         return {
             "notifications": all_notifications,
             "total_count": total,
@@ -748,21 +748,21 @@ class ActiveNotificationsSensor(GreenShiftAISensor):
             "rejected_count": rejected,
             "acceptance_rate": round((accepted / responded * 100) if responded > 0 else 0, 1),
         }
-    
+
     def _get_time_ago(self, timestamp):
         """Convert timestamp to human-readable time ago."""
         now = datetime.now()
-        
+
         # Handle timezone-aware vs naive datetimes
         if timestamp.tzinfo is not None and now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
         elif timestamp.tzinfo is None and now.tzinfo is not None:
             timestamp = timestamp.replace(tzinfo=now.tzinfo)
-        
+
         diff = now - timestamp
-        
+
         seconds = diff.total_seconds()
-        
+
         if seconds < 60:
             return "Just now"
         elif seconds < 3600:
@@ -782,7 +782,7 @@ class ActiveNotificationsSensor(GreenShiftAISensor):
 
 class OpportunityScoreSensor(GreenShiftAISensor):
     """Debug sensor showing current opportunity score for notifications."""
-    
+
     def __init__(self, agent):
         super().__init__()
         self._agent = agent
@@ -790,12 +790,12 @@ class OpportunityScoreSensor(GreenShiftAISensor):
         self._attr_unique_id = f"{DOMAIN}_opportunity_score"
         self._attr_icon = "mdi:bullseye-arrow"
         self._attr_native_unit_of_measurement = None
-    
+
     async def _async_update_state(self):
         try:
             score = await self._agent._calculate_opportunity_score()
             self._attr_native_value = round(score, 3)
-            
+
             # Add breakdown as attributes
             self._attr_extra_state_attributes = {
                 "score": round(score, 3),
@@ -810,7 +810,7 @@ class OpportunityScoreSensor(GreenShiftAISensor):
 
 class AnomalyIndexSensor(GreenShiftAISensor):
     """Debug sensor showing current anomaly index."""
-    
+
     def __init__(self, agent):
         super().__init__()
         self._agent = agent
@@ -818,15 +818,15 @@ class AnomalyIndexSensor(GreenShiftAISensor):
         self._attr_unique_id = f"{DOMAIN}_anomaly_index"
         self._attr_icon = "mdi:alert-circle-outline"
         self._attr_native_unit_of_measurement = None
-    
+
     async def _async_update_state(self):
         self._attr_native_value = round(self._agent.anomaly_index, 3)
-        
+
         # Add area anomalies as attributes
         area_anomalies = {}
         for area, metrics in self._agent.area_anomalies.items():
             area_anomalies[area] = {k: round(v, 3) for k, v in metrics.items()}
-        
+
         self._attr_extra_state_attributes = {
             "global_anomaly": round(self._agent.anomaly_index, 3),
             "area_anomalies": area_anomalies,
@@ -836,7 +836,7 @@ class AnomalyIndexSensor(GreenShiftAISensor):
 
 class ActionMaskSensor(GreenShiftAISensor):
     """Debug sensor showing current action mask."""
-    
+
     def __init__(self, agent):
         super().__init__()
         self._agent = agent
@@ -844,20 +844,20 @@ class ActionMaskSensor(GreenShiftAISensor):
         self._attr_unique_id = f"{DOMAIN}_action_mask"
         self._attr_icon = "mdi:filter-variant"
         self._attr_native_unit_of_measurement = None
-    
+
     async def _async_update_state(self):
         if self._agent.action_mask is None:
             self._attr_native_value = "Not initialized"
             return
-        
+
         # Count available actions
         available = sum(1 for v in self._agent.action_mask.values() if v)
         total = len(self._agent.action_mask)
         self._attr_native_value = f"{available}/{total} available"
-        
+
         # Map action IDs to names
         action_names = {v: k for k, v in self._agent.hass.data[DOMAIN].get("agent").hass.data.get(DOMAIN, {}).items() if isinstance(v, int)}
-        
+
         # Add detailed mask as attributes
         mask_details = {}
         for action_id, available in self._agent.action_mask.items():
@@ -866,7 +866,7 @@ class ActionMaskSensor(GreenShiftAISensor):
             action_name = [k for k, v in ACTIONS.items() if v == action_id]
             if action_name:
                 mask_details[action_name[0]] = available
-        
+
         self._attr_extra_state_attributes = {
             "action_mask": mask_details,
             "available_actions": available,

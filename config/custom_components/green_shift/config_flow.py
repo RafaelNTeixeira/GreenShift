@@ -9,15 +9,15 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
     EntitySelector,
     EntitySelectorConfig,
-    AreaSelector,       
+    AreaSelector,
     AreaSelectorConfig
 )
 
 from . import async_discover_sensors
 from .helpers import get_normalized_value, get_entity_area_id
 from .const import (
-    DOMAIN, 
-    ENVIRONMENT_HOME, 
+    DOMAIN,
+    ENVIRONMENT_HOME,
     ENVIRONMENT_OFFICE,
     DEFAULT_WORKING_DAYS,
     DEFAULT_WORKING_START,
@@ -52,11 +52,11 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             self.data.update(user_input)
-            
+
             # If office mode selected, proceed to working hours configuration
             if user_input.get("environment_mode") == ENVIRONMENT_OFFICE:
                 return await self.async_step_working_hours()
-            
+
             # If home mode, skip working hours and proceed
             return await self.async_step_sensor_confirmation()
 
@@ -84,7 +84,7 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
             last_step=False,
         )
-    
+
     async def async_step_working_hours(self, user_input=None):
         """Step 2.5: Working hours configuration (only for office mode)."""
         errors = {}
@@ -120,7 +120,7 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
             last_step=False,
         )
-    
+
     @callback
     def _get_sorted_entities(self, category: str):
         """Helper to sort entities by their current numeric state value."""
@@ -131,20 +131,20 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entity_values = []
         for entity_id in entities:
             state = self.hass.states.get(entity_id)
-            
+
             # Use the helper to get a clean, normalized float (or None)
             val, _ = get_normalized_value(state, category)
-            
+
             # Handle None if the helper returns it (e.g., unavailable sensor)
             if val is None:
                 val = -1.0
-                
+
             entity_values.append((entity_id, val))
 
         # Sort by value descending (highest first)
         entity_values.sort(key=lambda x: x[1], reverse=True)
         return [x[0] for x in entity_values]
-    
+
     async def async_step_sensor_confirmation(self, user_input=None):
         """Step 3: Multi-sensor confirmation slide. All fields are optional."""
         if user_input is not None:
@@ -166,7 +166,7 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if main_power and main_power not in confirmed_power:
                 confirmed_power.append(main_power)
                 _LOGGER.debug("Injected main power sensor %s into power list", main_power)
-            
+
             # Map the confirmed sensors back to our internal data structure
             confirmed_sensors = {
                 "energy": confirmed_energy,                            # All energy measuring sensors
@@ -176,7 +176,7 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "illuminance": user_input.get("confirmed_lux", []),    # All illuminance measuring sensors
                 "occupancy": user_input.get("confirmed_occ", []),      # All occupancy detection sensors
             }
-            
+
             self.data["discovered_sensors"] = confirmed_sensors
             return await self.async_step_area_assignment()
 
@@ -192,13 +192,13 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema = vol.Schema({
             # Main energy sensor (Suggested highest current reading)
             vol.Optional(
-                "main_total_energy_sensor", 
+                "main_total_energy_sensor",
                 description={"suggested_value": sorted_energy[0] if sorted_energy else None}
             ): EntitySelector(EntitySelectorConfig(domain="sensor", device_class="energy")),
 
             # Main power sensor (Suggested: Highest current reading)
             vol.Optional(
-                "main_total_power_sensor", 
+                "main_total_power_sensor",
                 description={"suggested_value": sorted_power[0] if sorted_power else None}
             ): EntitySelector(EntitySelectorConfig(domain="sensor", device_class="power")),
 
@@ -237,15 +237,15 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
             last_step=False
         )
-    
+
     async def async_step_area_assignment(self, user_input=None):
         """Step 4: Assign areas to selected sensors."""
-        
+
         # Flatten the list of all selected sensors
         all_sensors = []
         for category, entities in self.data["discovered_sensors"].items():
             all_sensors.extend(entities)
-        
+
         # Remove duplicates
         all_sensors = list(set(all_sensors))
 
@@ -260,7 +260,7 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             ent_reg = er.async_get(self.hass)
-            
+
             for entity_id, area_id in user_input.items():
                 if area_id: # Only update if user selected something
                     try:
@@ -272,13 +272,13 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_intervention_info()
 
         schema = {}
-        
+
         for entity_id in all_sensors:
             try:
                 current_area_id = get_entity_area_id(self.hass, entity_id)
-                
+
                 selector = AreaSelector(AreaSelectorConfig(multiple=False))
-                
+
                 if current_area_id:
                     schema[vol.Optional(entity_id, default=current_area_id)] = selector
                 else:

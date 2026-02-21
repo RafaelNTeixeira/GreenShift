@@ -5,7 +5,7 @@ input_number.energy_saving_target:
 input_number.electricity_price:
   friendly_name: "Preço da Eletricidade (€/kWh)"
 
-# Input Selects  
+# Input Selects
 input_select.currency:
   friendly_name: "Moeda"
 

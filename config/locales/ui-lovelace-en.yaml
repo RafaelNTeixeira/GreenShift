@@ -101,7 +101,7 @@ views:
                   {%- for area in ns.areas | sort -%}
                     {# Check Filter #}
                     {%- if filter in ['All Areas', 'unknown', 'unavailable', 'None'] or filter == area -%}
-                      
+
                       <h3>📍 {{ area }}</h3>
                       <table width="100%">
                       {%- for c in cats -%}
@@ -128,7 +128,7 @@ views:
                       {%- endfor -%}
                       </table>
                       <hr style="border: 0; border-bottom: 1px solid var(--divider-color); margin: 15px 0;">
-                      
+
                     {%- endif -%}
                   {%- endfor -%}
                 {%- endif -%}
@@ -144,9 +144,9 @@ views:
 
             {% if p and p | length > 0 %}
             **⚡ Power (Watts):** *The "Speedometer"*
-            > Shows how much electricity you are using **right now**. 
+            > Shows how much electricity you are using **right now**.
             > *Tip:* If this is high, a "heavy" appliance like the Oven or AC is running.
-            
+
             ---
             {% endif %}
 
@@ -154,7 +154,7 @@ views:
             **🔋 Energy (kWh):** *The "Odometer"*
             > The total amount used over time. This is what shows up on your **Electric Bill**.
             > *Scale:* **1 unit (kWh)** is roughly one full load of laundry.
-            
+
             ---
             {% endif %}
 
@@ -162,7 +162,7 @@ views:
             **💡 Light (Lux):** *Brightness*
             > Measures how bright the room is.
             > *Scale:* **0** (Pitch Black) → **150** (Typical Living Room) → **500+** (Bright Office).
-            
+
             ---
             {% endif %}
 
@@ -171,7 +171,7 @@ views:
             > **40-60%** is the "Comfort Zone."
             > *Warning:* Above **70%** feels "muggy" and risks mold; below **30%** feels very dry.
             {% endif %}
-          
+
 # ========== DASHBOARD TAB ==========
 - title: Dashboard
   path: dashboard
@@ -182,7 +182,7 @@ views:
       cards:
         - type: markdown
           content: |
-            # 📊 Dashboard 
+            # 📊 Dashboard
             Analyze your energy consumption patterns and identify opportunities for savings.
 
         # --- CHART SECTION ---
@@ -195,7 +195,7 @@ views:
                   ℹ️ <b>What is "Baseline Consumption"?</b><br>
                   This line represents your average energy consumption. It will be adjusted overtime.
                 </div>
-            
+
             - type: history-graph
               hours_to_show: 168
               entities:
@@ -203,12 +203,12 @@ views:
                   name: Current Usage
                 - entity: sensor.energy_baseline
                   name: Baseline Consumption
-        
+
         # --- AREA CONSUMPTION TABLE ---
         - type: markdown
           content: |
             ### ⚡ Power Usage by Area
-            
+
             {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
             {%- set ns = namespace(area_sums={}, total=0) -%}
 
@@ -228,9 +228,9 @@ views:
             </br>
             📭 No area data collected.
             {%- else -%}
-            
+
             </br>
-            
+
             <table width="100%">
               <thead>
                 <tr>
@@ -352,15 +352,15 @@ views:
                             {% set tasks = state_attr('sensor.daily_tasks', 'tasks') %}
                             {% if tasks and tasks | length > 0 %}
                             {% set t = tasks[0] %}
-                            
+
                             ### {{ t.status_emoji }} Task 1: {{ t.title }}
-                            
+
                             {{ t.description }}
-                            
-                            **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
-                            **📊 Difficulty:** {{ t.difficulty_display }}  
+
+                            **Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})
+                            **📊 Difficulty:** {{ t.difficulty_display }}
                             {% if t.area_name %}**📍 Area:** {{ t.area_name }}{% endif %}
-                            
+
                             {% if t.verified %}
                             ✅ **VERIFIED!** You achieved the target!
                             {% else %}
@@ -369,7 +369,7 @@ views:
                             {% endif %}
 
                     - type: horizontal-stack
-                      cards:  
+                      cards:
                         - type: button
                           name: Too Easy
                           icon: mdi:emoticon-happy-outline
@@ -382,7 +382,7 @@ views:
                               feedback: too_easy
                           entity: sensor.daily_tasks
                           show_state: false
-                        
+
                         - type: button
                           name: Just Right
                           icon: mdi:emoticon-neutral-outline
@@ -395,7 +395,7 @@ views:
                               feedback: just_right
                           entity: sensor.daily_tasks
                           show_state: false
-                        
+
                         - type: button
                           name: Too Hard
                           icon: mdi:emoticon-sad-outline
@@ -430,13 +430,13 @@ views:
                             ---
 
                             ### {{ t.status_emoji }} Task 2: {{ t.title }}
-                            
+
                             {{ t.description }}
-                            
-                            **🎯 Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
-                            **📊 Difficulty:** {{ t.difficulty_display }}  
+
+                            **🎯 Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})
+                            **📊 Difficulty:** {{ t.difficulty_display }}
                             {% if t.area_name %}**📍 Area:** {{ t.area_name }}{% endif %}
-                            
+
                             {% if t.verified %}
                             ✅ **VERIFIED!** You achieved the target!
                             {% else %}
@@ -458,7 +458,7 @@ views:
                               feedback: too_easy
                           entity: sensor.daily_tasks
                           show_state: false
-                        
+
                         - type: button
                           name: Just Right
                           icon: mdi:emoticon-neutral-outline
@@ -471,7 +471,7 @@ views:
                               feedback: just_right
                           entity: sensor.daily_tasks
                           show_state: false
-                        
+
                         - type: button
                           name: Too Hard
                           icon: mdi:emoticon-sad-outline
@@ -506,13 +506,13 @@ views:
                             ---
 
                             ### {{ t.status_emoji }} Task 3: {{ t.title }}
-                            
+
                             {{ t.description }}
-                            
-                            **🎯 Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})  
-                            **📊 Difficulty:** {{ t.difficulty_display }}  
+
+                            **🎯 Target:** {{ t.target_value }}{{ t.target_unit }} (from {{ t.baseline_value }}{{ t.target_unit }})
+                            **📊 Difficulty:** {{ t.difficulty_display }}
                             {% if t.area_name %}**📍 Area:** {{ t.area_name }}{% endif %}
-                            
+
                             {% if t.verified %}
                             ✅ **VERIFIED!** You achieved the target!
                             {% else %}
@@ -534,7 +534,7 @@ views:
                               feedback: too_easy
                           entity: sensor.daily_tasks
                           show_state: false
-                        
+
                         - type: button
                           name: Just Right
                           icon: mdi:emoticon-neutral-outline
@@ -547,7 +547,7 @@ views:
                               feedback: just_right
                           entity: sensor.daily_tasks
                           show_state: false
-                        
+
                         - type: button
                           name: Too Hard
                           icon: mdi:emoticon-sad-outline
@@ -590,12 +590,12 @@ views:
                   content: |
                     ---
                     ### 💡 How Feedback Works
-                    
+
                     Rate each task's difficulty to help the system adjust future challenges:
                     - **😊 Too Easy** → Next time will be harder
                     - **😐 Just Right** → Difficulty stays the same
                     - **😰 Too Hard** → Next time will be easier
-                    
+
                     ⏱️ Tasks are verified every 15 minutes, but you can also manually trigger verification by clicking on the "Verify All Tasks" button to see if you've completed any tasks and get real-time feedback on your progress!
 
 # ========== TAB 4: COLLABORATIVE GOAL ==========
@@ -615,11 +615,11 @@ views:
             type: markdown
             content: |
               ## 🔒 Goal Locked
-              
+
               🔧 The system is currently learning your building's baseline habits.
-              
+
               **⏳ Time Remaining:** {{ state_attr('sensor.research_phase', 'days_remaining') }} days
-              
+
               *Once calibration is complete, your weekly energy challenges will appear here.* 🎯
 
         # --- ACTIVE PHASE (UNLOCKED) ---
@@ -634,11 +634,11 @@ views:
               - type: markdown
                 content: |
                   # 🎯 Week {{ state_attr('sensor.weekly_challenge', 'week_start') }} Challenge
-                  
+
                   {% set current = state_attr('sensor.weekly_challenge', 'current_avg_w') | float(0) %}
                   {% set target = state_attr('sensor.weekly_challenge', 'target_avg_w') | float(0) %}
                   {% set pct = state_attr('sensor.weekly_challenge', 'progress') | float(0) %}
-                  
+
                   {% if pct <= 100 %}
                   ### Status: ✅ On Track ({{ pct }}%)
                   Keep it up! The team is under the energy budget. 🎉
@@ -661,25 +661,25 @@ views:
                       green: 0
                       yellow: 90
                       red: 105
-                  
+
                   # Calculated Monetary Incentive
                   - type: markdown
                     content: |
                       ### 🏆 The Reward
-                      
+
                       {% set baseline = state_attr('sensor.weekly_challenge', 'baseline_w') | float(0) %}
                       {% set target = state_attr('sensor.weekly_challenge', 'target_avg_w') | float(0) %}
                       {% set price = states('input_number.electricity_price') | float(0.25) %}
                       {% set currency = states('input_select.currency') %}
-                      
+
                       {# Calculate Potential Weekly Savings: (Saved Watts * 24h * 7d / 1000) * Price #}
                       {% set potential_watts = baseline - target %}
                       {% set potential_eur = (potential_watts * 24 * 7 / 1000 * price) | round(2) %}
-                      
+
                       If you hit this target, you could save this week approximately:
-                      
+
                       # 💰 {{ potential_eur }} {{ currency }}
-                      
+
                       *compared to your standard baseline week.*
 
               # STATS BAR
@@ -704,7 +704,7 @@ views:
                 content: |
                   ### 🕵️‍♂️ Live Focus Areas
                   *Where can the team help right now?* 🤔
-                  
+
                   {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
                   {%- set ns = namespace(area_sums={}) -%}
 
@@ -740,7 +740,7 @@ views:
                   {%- endfor -%}
                   </tbody>
                   </table>
-                  
+
                   <small><i>💡 Check the "High" usage areas to see if lights or devices can be turned off!</i></small>
 
 # ========== TAB 5: NOTIFICATIONS ==========
@@ -751,7 +751,7 @@ views:
   cards:
     - type: vertical-stack
       cards:
-        
+
         # --- LOCKED STATE (BASELINE) ---
         - type: conditional
           conditions:
@@ -761,7 +761,7 @@ views:
             type: markdown
             content: |
               ## 🔒 Notifications Locked
-              
+
               We are currently learning your baseline habits.
               Smart alerts and nudges will be enabled in **{{ state_attr('sensor.research_phase', 'days_remaining') }} days**. ⏳
 
@@ -795,19 +795,19 @@ views:
                   {%- set notifs = state_attr('sensor.active_notifications', 'notifications') -%}
                   {%- set safe_notifs = notifs if notifs else [] -%}
                   {%- set pending = safe_notifs | selectattr('responded', 'equalto', false) | list -%}
-                  
+
                   {%- if pending | length == 0 -%}
                   ### ✅ All Caught Up!
                   No pending alerts at the moment. 😎
                   {%- else -%}
-                  
+
                   {%- for n in pending -%}
                   ---
                   ### 📢 {{ n.title }}
                   **ID:** `{{ n.notification_id }}` • **⏰ Time:** *{{ n.time_ago }}*
-                  
+
                   {{ n.message }}
-                  
+
                   {%- endfor -%}
                   {%- endif -%}
 
@@ -835,7 +835,7 @@ views:
                           service: green_shift.respond_to_selection
                           data:
                             decision: accept
-                      
+
                       - type: tile
                         entity: select.notification_selector
                         name: Reject
@@ -893,7 +893,7 @@ views:
             type: markdown
             content: |
               ## 🚧 Profile Building...
-              🔧 We are currently calibrating your baseline. 
+              🔧 We are currently calibrating your baseline.
               Your personal eco-stats and levels will unlock in **{{ state_attr('sensor.research_phase', 'days_remaining') }} days**. ⏳
 
         - type: conditional
@@ -920,7 +920,7 @@ views:
                   # 👑 Level 4: Planet Master
                   *You are an energy saving legend.* 🏆
                   {% endif %}
-                  
+
                   ---
                   **📊 Total Tasks Completed:** {{ tasks }}
 
@@ -936,7 +936,7 @@ views:
                       red: 0
                       yellow: 0.4
                       green: 0.8
-                  
+
                   - type: gauge
                     entity: sensor.fatigue_index
                     name: 😴 Fatigue Risk
@@ -966,7 +966,7 @@ views:
                   {% set trees = state_attr('sensor.co2_saved', 'trees') %}
                   {% set flights = state_attr('sensor.co2_saved', 'flights') %}
                   {% set km = state_attr('sensor.co2_saved', 'car_km') %}
-                  
+
                   Your savings so far are equivalent to:
                   * 🌲 Planting **{{ trees }} mature trees**
                   * ✈️ Offsetting **{{ flights }} short-haul flights**
@@ -995,7 +995,7 @@ views:
               name: Current Phase
               icon: mdi:flask-outline
               secondary_info: last-updated
-            
+
             - entity: sensor.energy_baseline
               name: Learned Baseline
               icon: mdi:chart-bell-curve-cumulative
@@ -1008,7 +1008,7 @@ views:
             # --- SECTION: GOALS ---
             - type: section
               label: "Energy Goals"
-            
+
             - type: conditional
               conditions:
                 - entity: sensor.research_phase
@@ -1033,11 +1033,11 @@ views:
             # --- SECTION: ECONOMICS ---
             - type: section
               label: "Costs & Currency"
-            
+
             - entity: input_select.currency
               name: 💵 Currency
               icon: mdi:cash-100
-            
+
             - entity: input_number.electricity_price
               name: Electricity Price (per kWh)
               icon: mdi:lightning-bolt-circle

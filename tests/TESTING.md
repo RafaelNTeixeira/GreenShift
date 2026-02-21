@@ -23,7 +23,7 @@ Green Shift includes a comprehensive test suite covering core functionality and 
 ### Prerequisites
 
 ```bash
-pip install -r requirements-test.txt
+pip install -r requirements.txt
 ```
 
 ### Run All Tests
@@ -33,18 +33,26 @@ cd tests/
 pytest
 ```
 
+Coverage is automatically generated in `htmlcov/` directory.
+
 ### Run Specific Module
 
 ```bash
+cd tests/
 pytest test_decision_agent.py
 pytest test_backup_manager.py -v  # verbose output
 ```
 
-### Run with Coverage Report
+### Run without Coverage (faster)
 
 ```bash
-pytest --cov=config/custom_components/green_shift --cov-report=html
+cd tests/
+pytest --no-cov
 ```
+
+### View Coverage Report
+
+After running tests, open `tests/htmlcov/index.html` in your browser to see detailed coverage information.
 
 ## Test Structure
 

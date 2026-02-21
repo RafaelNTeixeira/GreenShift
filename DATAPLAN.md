@@ -127,7 +127,7 @@ Task generation, completion, and verification.
 | `completion_value` | REAL | Actual measured value |
 | `user_feedback` | TEXT | "too_easy", "just_right", "too_hard" |
 
-**Why "verified" matters**: 
+**Why "verified" matters**:
 - `completed = 1` means user clicked "done"
 - `verified = 1` means sensor data confirms they actually did it
 - This prevents false positives in research data (research integrity)
@@ -171,7 +171,7 @@ Area-level daily statistics (e.g., per room/zone).
 
 ```sql
 -- Normalized energy consumption per person
-SELECT 
+SELECT
     date,
     phase,
     total_energy_kwh / NULLIF(avg_occupancy_count, 0) as energy_per_person,
@@ -181,7 +181,7 @@ WHERE phase = 'baseline'
 ORDER BY date;
 
 -- Compare baseline vs intervention
-SELECT 
+SELECT
     phase,
     AVG(total_energy_kwh / NULLIF(avg_occupancy_count, 0)) as avg_energy_per_person,
     AVG(avg_power_w) as avg_power
@@ -193,7 +193,7 @@ GROUP BY phase;
 
 ```sql
 -- Task completion rate over time
-SELECT 
+SELECT
     date,
     tasks_completed * 1.0 / NULLIF(tasks_generated, 0) as completion_rate,
     tasks_verified * 1.0 / NULLIF(tasks_completed, 0) as verification_rate
@@ -202,12 +202,12 @@ WHERE phase = 'active'
 ORDER BY date;
 
 -- Engagement decay analysis
-SELECT 
+SELECT
     date,
     completion_rate,
     ROW_NUMBER() OVER (ORDER BY date) as day_number
 FROM (
-    SELECT 
+    SELECT
         date,
         tasks_completed * 1.0 / NULLIF(tasks_generated, 0) as completion_rate
     FROM research_daily_aggregates
@@ -220,14 +220,14 @@ FROM (
 
 ```sql
 -- Overall acceptance rate
-SELECT 
-    SUM(CASE WHEN accepted = 1 THEN 1 ELSE 0 END) * 1.0 / 
+SELECT
+    SUM(CASE WHEN accepted = 1 THEN 1 ELSE 0 END) * 1.0 /
     NULLIF(SUM(CASE WHEN responded = 1 THEN 1 ELSE 0 END), 0) as acceptance_rate
 FROM research_nudge_log
 WHERE phase = 'active';
 
 -- Acceptance by nudge type
-SELECT 
+SELECT
     action_type,
     COUNT(*) as total_sent,
     SUM(responded) as total_responded,
@@ -238,7 +238,7 @@ WHERE phase = 'active'
 GROUP BY action_type;
 
 -- Time-of-day effectiveness (NEW)
-SELECT 
+SELECT
     time_of_day_hour as hour,
     COUNT(*) as nudges_sent,
     AVG(reward) as avg_reward,
@@ -253,7 +253,7 @@ ORDER BY avg_reward DESC;
 
 ```sql
 -- Reward trajectory over episodes
-SELECT 
+SELECT
     episode_number,
     AVG(reward) as avg_reward,
     MIN(reward) as min_reward,
@@ -264,7 +264,7 @@ GROUP BY episode_number
 ORDER BY episode_number;
 
 -- Exploration vs Exploitation over time
-SELECT 
+SELECT
     DATE(timestamp, 'unixepoch') as date,
     SUM(CASE WHEN action_source = 'explore' THEN 1 ELSE 0 END) as explorations,
     SUM(CASE WHEN action_source = 'exploit' THEN 1 ELSE 0 END) as exploitations
@@ -273,7 +273,7 @@ GROUP BY date
 ORDER BY date;
 
 -- Action distribution
-SELECT 
+SELECT
     action_name,
     COUNT(*) as times_selected,
     AVG(reward) as avg_reward
@@ -283,7 +283,7 @@ GROUP BY action_name
 ORDER BY times_selected DESC;
 
 -- Action constraint analysis
-SELECT 
+SELECT
     DATE(timestamp, 'unixepoch') as date,
     COUNT(*) as total_decisions,
     SUM(CASE WHEN action_mask LIKE '%"specific": false%' THEN 1 ELSE 0 END) as specific_blocked,
@@ -297,7 +297,7 @@ GROUP BY date;
 
 ```sql
 -- Weekly challenge success rate
-SELECT 
+SELECT
     COUNT(*) as total_weeks,
     SUM(success) as successful_weeks,
     ROUND(SUM(success) * 100.0 / COUNT(*), 2) as success_rate_pct,
@@ -306,7 +306,7 @@ SELECT
 FROM research_weekly_challenges;
 
 -- Weekly challenge trend
-SELECT 
+SELECT
     week_start_date,
     target_percentage,
     ROUND((baseline_avg_w - actual_avg_w) / baseline_avg_w * 100, 1) as actual_reduction_pct,
@@ -319,7 +319,7 @@ ORDER BY week_start_date;
 
 ```sql
 -- How much above baseline when nudges are sent?
-SELECT 
+SELECT
     action_name,
     COUNT(*) as times_used,
     ROUND(AVG(current_power), 2) as avg_power_at_nudge,
@@ -348,4 +348,4 @@ This creates 7 CSV files:
 4. `task_interactions.csv`
 5. `phase_metadata.csv`
 6. `area_daily_stats.csv`
-7. `weekly_challenges.csv` 
+7. `weekly_challenges.csv`
