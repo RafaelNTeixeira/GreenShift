@@ -5,7 +5,6 @@ It guides users through a multi-step setup process, including a welcome slide, c
 The flow is designed to be user-friendly and flexible, allowing users to skip optional steps while still providing sensible defaults and suggestions based on the user's Home Assistant setup.
 """
 
-
 import logging
 import voluptuous as vol
 from homeassistant import config_entries
@@ -35,9 +34,15 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Config flow for Green Shift integration."""
+    """
+    Config flow for Green Shift integration.
+    
+    Args:
+        config_entries: Home Assistant's config entries framework
+        domain: The domain of the integration (Green Shift)
+    """
 
-    VERSION = 1
+    VERSION = 1 # Increment this when making breaking changes to the config flow
 
     def __init__(self):
         """Initialize flow storage."""
@@ -45,7 +50,12 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.discovered_cache = {}
 
     async def async_step_user(self, user_input=None):
-        """Step 1: Welcome Slide."""
+        """
+        Step 1: Welcome Slide.
+        
+        Args:
+            user_input: User input from the form (None on first load)
+        """
         if user_input is not None:
             # Trigger discovery when the user moves past the first slide
             self.discovered_cache = await async_discover_sensors(self.hass)
@@ -55,7 +65,12 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="user", last_step=False)
 
     async def async_step_settings(self, user_input=None):
-        """Step 2: Currency, energy cost and environment configuration."""
+        """
+        Step 2: Currency, energy cost and environment configuration.
+        
+        Args:
+            user_input: User input from the form (None on first load)
+        """
         errors = {}
 
         if user_input is not None:
@@ -69,6 +84,7 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_sensor_confirmation()
 
         data_schema = vol.Schema({
+            # Currency selection with default and dropdown options
             vol.Required("currency", default="EUR"): SelectSelector(
                 SelectSelectorConfig(
                     options=["EUR", "USD", "GBP"],
@@ -76,7 +92,9 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     translation_key="currency"
                 )
             ),
+            # Electricity price input with default and validation
             vol.Required("electricity_price", default=0.25): vol.Coerce(float),
+            # Environment mode selection with default and dropdown options
             vol.Required("environment_mode", default=ENVIRONMENT_HOME): SelectSelector(
                 SelectSelectorConfig(
                     options=[ENVIRONMENT_HOME, ENVIRONMENT_OFFICE],
@@ -94,7 +112,12 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_working_hours(self, user_input=None):
-        """Step 2.5: Working hours configuration (only for office mode)."""
+        """
+        Step 2.5: Working hours configuration (only for office mode).
+        
+        Args:
+            user_input: User input from the form (None on first load)
+        """
         errors = {}
 
         if user_input is not None:
@@ -111,6 +134,7 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         default_sun = 6 in DEFAULT_WORKING_DAYS
 
         data_schema = vol.Schema({
+            # Working hours configuration with time inputs and day checkboxes
             vol.Required("working_start", default=DEFAULT_WORKING_START): vol.Coerce(str),
             vol.Required("working_end", default=DEFAULT_WORKING_END): vol.Coerce(str),
             vol.Required("working_monday", default=default_mon): vol.Coerce(bool),
@@ -131,7 +155,12 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @callback
     def _get_sorted_entities(self, category: str):
-        """Helper to sort entities by their current numeric state value."""
+        """
+        Helper to sort entities by their current numeric state value.
+        
+        Args:
+            category: The sensor category (e.g., "energy", "power") to sort entities
+        """
         entities = self.discovered_cache.get(category, [])
         if not entities:
             return []
@@ -154,7 +183,12 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return [x[0] for x in entity_values]
 
     async def async_step_sensor_confirmation(self, user_input=None):
-        """Step 3: Multi-sensor confirmation slide. All fields are optional."""
+        """
+        Step 3: Multi-sensor confirmation slide. All fields are optional.
+        
+        Args:
+            user_input: User input from the form (None on first load)
+        """
         if user_input is not None:
             main_energy = user_input.get("main_total_energy_sensor") # Identify main energy sensor
             main_power = user_input.get("main_total_power_sensor") # Identify main power sensor
@@ -247,7 +281,12 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_area_assignment(self, user_input=None):
-        """Step 4: Assign areas to selected sensors."""
+        """
+        Step 4: Assign areas to selected sensors.
+        
+        Args:
+            user_input: User input from the form (None on first load)
+        """
 
         # Flatten the list of all selected sensors
         all_sensors = []
@@ -303,7 +342,12 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_intervention_info(self, user_input=None):
-        """Step 5: Final informational slide."""
+        """
+        Step 5: Final informational slide.
+        
+        Args:
+            user_input: User input from the form (None on first load)
+        """
         if user_input is not None:
             return self.async_create_entry(title="Green Shift", data=self.data)
 

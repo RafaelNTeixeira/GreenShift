@@ -23,7 +23,6 @@ It includes:
 These sensors provide valuable insights into the user's energy consumption patterns, the effectiveness of the AI agent's interventions and the overall progress towards energy-saving goals. They are designed to be updated in real-time as new data is collected and as the agent learns from user interactions.
 """
 
-
 import logging
 from datetime import datetime, timezone
 from homeassistant.components.sensor import SensorEntity
@@ -43,7 +42,14 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Setup of virtual sensors."""
+    """
+    Setup of virtual sensors.
+    
+    Args:
+        hass (HomeAssistant): The Home Assistant instance
+        config_entry (ConfigEntry): The configuration entry for this integration
+        async_add_entities (AddEntitiesCallback): Callback to add entities to Home Assistant
+    """
     agent = hass.data[DOMAIN]["agent"]
     collector = hass.data[DOMAIN]["collector"]
     storage = hass.data[DOMAIN]["storage"]
@@ -156,10 +162,12 @@ class HardwareSensorsSensor(GreenShiftBaseSensor):
 
     @property
     def state(self):
+        """The state can be a simple summary or count of sensors. For simplicity, we return 'ok' if any sensors are discovered."""
         return "ok"
 
     @property
     def extra_state_attributes(self):
+        """Return a dictionary of all discovered sensors with their current values and area info."""
         data = {}
         to_exclude = {self.main_energy_sensor, self.main_power_sensor}
 
@@ -209,10 +217,12 @@ class ResearchPhaseSensor(GreenShiftAISensor):
 
     @property
     def state(self):
+        """Return the current research phase."""
         return self._agent.phase
 
     @property
     def extra_state_attributes(self):
+        """Return the number of days in the current phase and days remaining until baseline completion."""
         days_running = (datetime.now() - self._agent.start_date).days
         days_remaining = max(0, BASELINE_DAYS - days_running)
         return {
@@ -235,11 +245,12 @@ class EnergyBaselineSensor(GreenShiftAISensor):
 
     @property
     def unit_of_measurement(self):
+        """Dynamic unit based on input_select."""
         return "W"
 
     @property
     def state(self):
-        # Show baseline_consumption (immutable baseline from intervention phase)
+        """Return the learned baseline consumption."""
         return round(self._agent.baseline_consumption, 2)
 
 
@@ -255,10 +266,12 @@ class CurrentConsumptionSensor(GreenShiftBaseSensor):
 
     @property
     def unit_of_measurement(self):
+        """Dynamic unit based on input_select."""
         return "W"
 
     @property
     def state(self):
+        """Return the current total power consumption."""
         return round(self._collector.current_total_power, 3)
 
 
@@ -282,6 +295,7 @@ class CurrentCostConsumptionSensor(GreenShiftBaseSensor):
 
     @property
     def state(self):
+        """Calculate the current cost per hour based on the current power consumption and electricity price."""
         # Get electricity price from input_number (default to 0.25 if unavailable)
         price_state = self.hass.states.get("input_number.electricity_price")
         try:
@@ -296,6 +310,7 @@ class CurrentCostConsumptionSensor(GreenShiftBaseSensor):
 
     @property
     def extra_state_attributes(self):
+        """Return the current load, applied price per kWh and currency."""
         price_state = self.hass.states.get("input_number.electricity_price")
         currency_state = self.hass.states.get("input_select.currency")
         return {
@@ -325,6 +340,7 @@ class DailyCostConsumptionSensor(GreenShiftBaseSensor):
 
     @property
     def state(self):
+        """Calculate the total cost accumulated for the current day based on the daily energy consumption and electricity price."""
         # Price Logic
         price_state = self.hass.states.get("input_number.electricity_price")
         try:
@@ -342,6 +358,7 @@ class DailyCostConsumptionSensor(GreenShiftBaseSensor):
 
     @property
     def extra_state_attributes(self):
+        """Return the daily kWh accumulated, applied price per kWh and currency."""
         price_state = self.hass.states.get("input_number.electricity_price")
         currency_state = self.hass.states.get("input_select.currency")
         return {
@@ -369,6 +386,7 @@ class DailyCO2EstimateSensor(GreenShiftBaseSensor):
 
     @property
     def state(self):
+        """Calculate the daily CO2 emissions based on the daily energy consumption and a fixed carbon intensity factor."""
         co2_factor_portugal = 0.097 # kg/kWh as of early 2026
 
         # Get accurate daily kWh from the Odometer logic
@@ -381,6 +399,7 @@ class DailyCO2EstimateSensor(GreenShiftBaseSensor):
 
     @property
     def extra_state_attributes(self):
+        """Return the daily kWh accumulated and the applied CO2 factor."""
         return {
             "daily_kwh_accumulated": round(self._collector.current_daily_energy, 3),
             "co2_factor": 0.097,
@@ -470,6 +489,7 @@ class CO2SavedSensor(GreenShiftAISensor):
         self._attr_extra_state_attributes = {}
 
     async def _async_update_state(self):
+        """Fetch data asynchronously and calculate CO2 saved based on energy savings compared to the baseline."""
         power_history_data = await self._collector.get_power_history()
 
         power_history = [power for timestamp, power in power_history_data]
@@ -509,6 +529,7 @@ class TasksCompletedSensor(GreenShiftAISensor):
 
     @property
     def state(self):
+        """Return the number of completed tasks in the last 30 days."""
         return self._completed_count
 
     async def _async_update_state(self):
@@ -536,6 +557,7 @@ class WeeklyChallengeSensor(GreenShiftAISensor):
             return 15.0
 
     async def _async_update_state(self):
+        """Fetch weekly challenge status from the agent and update state and attributes."""
         if self._agent.phase == PHASE_BASELINE:
             return
 
@@ -570,6 +592,7 @@ class BehaviourIndexSensor(GreenShiftAISensor):
 
     @property
     def state(self):
+        """Return the current behaviour index, rounded to 2 decimals for better readability."""
         return round(self._agent.behaviour_index, 2)
 
 
@@ -584,6 +607,7 @@ class FatigueIndexSensor(GreenShiftAISensor):
 
     @property
     def state(self):
+        """Return the current fatigue index, rounded to 2 decimals for better readability."""
         return round(self._agent.fatigue_index, 2)
 
 
@@ -776,7 +800,15 @@ class ActiveNotificationsSensor(GreenShiftAISensor):
         }
 
     def _get_time_ago(self, timestamp):
-        """Convert timestamp to human-readable time ago."""
+        """
+        Convert timestamp to human-readable time ago.
+        
+        Args:
+            timestamp (datetime): The timestamp to convert.
+
+        Returns:
+            str: A human-readable string representing how long ago the timestamp was.
+        """
         now = datetime.now()
 
         # Handle timezone-aware vs naive datetimes
@@ -818,6 +850,7 @@ class OpportunityScoreSensor(GreenShiftAISensor):
         self._attr_native_unit_of_measurement = None
 
     async def _async_update_state(self):
+        """Calculate the opportunity score using the agent's method and update state and attributes."""
         try:
             score = await self._agent._calculate_opportunity_score()
             self._attr_native_value = round(score, 3)
@@ -846,6 +879,7 @@ class AnomalyIndexSensor(GreenShiftAISensor):
         self._attr_native_unit_of_measurement = None
 
     async def _async_update_state(self):
+        """Update the anomaly index state and attributes based on the agent's current anomaly index and area anomalies."""
         self._attr_native_value = round(self._agent.anomaly_index, 3)
 
         # Add area anomalies as attributes
@@ -872,6 +906,7 @@ class ActionMaskSensor(GreenShiftAISensor):
         self._attr_native_unit_of_measurement = None
 
     async def _async_update_state(self):
+        """Update the action mask state and attributes based on the agent's current action mask."""
         if self._agent.action_mask is None:
             self._attr_native_value = "Not initialized"
             return

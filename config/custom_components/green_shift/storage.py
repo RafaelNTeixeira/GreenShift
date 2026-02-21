@@ -5,6 +5,7 @@ The StorageManager handles the initialization of the databases with appropriate 
 The storage system is designed to be robust, with WAL mode enabled for crash protection and asynchronous operations to avoid blocking the main thread.
 The module also includes a separate research database that is never purged, allowing for long-term storage of data for research and analysis purposes.
 """
+
 import logging
 import sqlite3
 import json
@@ -53,6 +54,7 @@ class StorageManager:
     async def _init_database(self):
         """Initialize SQLite database with schema."""
         def _create_tables():
+            """Create necessary tables for sensor data and tasks."""
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
 
@@ -157,6 +159,7 @@ class StorageManager:
     async def _init_research_database(self):
         """Initialize permanent research database (never purged)."""
         def _create_research_tables():
+            """Create tables for research data storage. This database is never purged to allow for long-term analysis."""
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
 
@@ -515,7 +518,19 @@ class StorageManager:
         occupancy: bool = None,
         within_working_hours: bool = True
     ):
-        """Store a single sensor snapshot."""
+        """
+        Store a single sensor snapshot.
+
+        Args:
+            timestamp (datetime): The timestamp of the snapshot
+            power (float): Power consumption in Watts
+            energy (float): Energy consumption in kWh
+            temperature (float): Temperature in °C
+            humidity (float): Humidity in %
+            illuminance (float): Illuminance in lux
+            occupancy (bool): Occupancy status (True/False)
+            within_working_hours (bool): Whether the snapshot was taken during working hours (for office environments)
+        """
         def _insert():
             conn = None
             try:
@@ -561,7 +576,20 @@ class StorageManager:
         occupancy: bool = None,
         within_working_hours: bool = True
     ):
-        """Store a sensor snapshot for a specific area."""
+        """
+        Store a sensor snapshot for a specific area.
+        
+        Args:
+            timestamp (datetime): The timestamp of the snapshot
+            area_name (str): The name of the area (e.g., "Living Room")
+            power (float): Power consumption in Watts
+            energy (float): Energy consumption in kWh
+            temperature (float): Temperature in °C
+            humidity (float): Humidity in %
+            illuminance (float): Illuminance in lux
+            occupancy (bool): Occupancy status (True/False)
+            within_working_hours (bool): Whether the snapshot was taken during working hours (for office environments)
+        """
         def _insert():
             conn = None
             try:
@@ -613,7 +641,7 @@ class StorageManager:
             working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
 
         Returns:
-            List of (timestamp, value) tuples
+            list: List of (timestamp, value) tuples
         """
         def _query():
             conn = sqlite3.connect(str(self.db_path))
@@ -664,7 +692,7 @@ class StorageManager:
             working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
 
         Returns:
-            List of (timestamp, value) tuples
+            list: List of (timestamp, value) tuples
         """
         def _query():
             conn = sqlite3.connect(str(self.db_path))
@@ -705,7 +733,12 @@ class StorageManager:
         return await self.hass.async_add_executor_job(_query)
 
     async def get_all_areas(self) -> List[str]:
-        """Get list of all areas that have data."""
+        """
+        Get list of all areas that have data.
+        
+        Returns:
+            list: List of area names that have entries in the area_sensor_history table.
+        """
         def _query():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -742,7 +775,7 @@ class StorageManager:
             working_hours_only: Filter to only working hours (True), non-working hours (False), or all (None)
 
         Returns:
-            Dictionary with 'mean', 'min', 'max', 'std' keys
+            dict: Dictionary containing mean, min, max, and std deviation of the metric for the specified area and time range.
         """
         history = await self.get_area_history(area_name, metric, hours, days, working_hours_only)
 
@@ -763,7 +796,16 @@ class StorageManager:
         metric: str,
         count: int = 100
     ) -> List[float]:
-        """Get the N most recent values for a metric (values only, no timestamps)."""
+        """
+        Get the N most recent values for a metric (values only, no timestamps).
+        
+        Args:
+            metric: Metric to retrieve
+            count: Number of recent values to retrieve
+
+        Returns:
+            list: List of the most recent values for the specified metric, ordered from oldest to newest.
+        """
         def _query():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -786,7 +828,15 @@ class StorageManager:
     # ==================== DAILY TASKS (SQLite) ====================
 
     async def save_daily_tasks(self, tasks: List[Dict]) -> bool:
-        """Save daily tasks to database."""
+        """
+        Save daily tasks to database.
+        
+        Args:
+            tasks: List of task dictionaries, each containing keys like 'task_id', 'date', 'task_type', 'title', 'description', 'target_value', 'target_unit', 'baseline_value', 'area_name', and 'difficulty_level'.
+
+        Returns:
+            bool: True if tasks were saved successfully, False otherwise.
+        """
         def _insert():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -822,7 +872,12 @@ class StorageManager:
         return await self.hass.async_add_executor_job(_insert)
 
     async def get_today_tasks(self) -> List[Dict]:
-        """Get today's tasks."""
+        """
+        Get today's tasks.
+        
+        Returns:
+            list: List of task dictionaries for today's date, ordered by insertion time.
+        """
         today = datetime.now().strftime("%Y-%m-%d")
 
         def _query():
@@ -867,7 +922,12 @@ class StorageManager:
         return await self.hass.async_add_executor_job(_query)
 
     async def get_total_completed_tasks_count(self) -> int:
-        """Get the total count of completed tasks in the last 30 days (rolling window)."""
+        """
+        Get the total count of completed tasks in the last 30 days (rolling window).
+        
+        Returns:
+            int: Total count of tasks marked as completed or verified in the last 30 days from the sensor database.
+        """
         def _query():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -886,7 +946,12 @@ class StorageManager:
         return await self.hass.async_add_executor_job(_query)
 
     async def get_total_completed_tasks_count_alltime(self) -> int:
-        """Get the total count of all completed tasks across all time from research database."""
+        """
+        Get the total count of all completed tasks across all time from research database.
+        
+        Returns:
+            int: Total count of tasks marked as completed in the research database, which is never purged and allows for long-term analysis of task completion trends.
+        """
         def _query():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
@@ -905,7 +970,16 @@ class StorageManager:
         return await self.hass.async_add_executor_job(_query)
 
     async def mark_task_completed(self, task_id: str, completion_value: float = None) -> bool:
-        """Mark a task as completed."""
+        """
+        Mark a task as completed.
+        
+        Args:
+            task_id: The unique identifier of the task to mark as completed.
+            completion_value: The value achieved upon completion (e.g., actual energy saved), which can
+
+        Returns:
+            bool: True if the task was successfully marked as completed, False otherwise.
+        """
         def _update():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -928,7 +1002,16 @@ class StorageManager:
         return await self.hass.async_add_executor_job(_update)
 
     async def mark_task_verified(self, task_id: str, verified: bool = True) -> bool:
-        """Mark a task as verified by the system."""
+        """
+        Mark a task as verified by the system.
+        
+        Args:
+            task_id: The unique identifier of the task to mark as verified.
+            verified: Whether the task was verified (True) or unverified (False).
+
+        Returns:
+            bool: True if the task was successfully updated, False otherwise.
+        """
         def _update():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -947,7 +1030,16 @@ class StorageManager:
         return await self.hass.async_add_executor_job(_update)
 
     async def save_task_feedback(self, task_id: str, feedback: str) -> bool:
-        """Save user feedback for a task (too_easy, just_right, too_hard)."""
+        """
+        Save user feedback for a task (too_easy, just_right, too_hard).
+        
+        Args:
+            task_id: The unique identifier of the task to save feedback for.
+            feedback: User feedback on task difficulty, expected values are 'too_easy', 'just_right', or 'too_hard'.
+
+        Returns:
+            bool: True if the feedback was successfully saved, False otherwise.
+        """
         def _update():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -989,7 +1081,12 @@ class StorageManager:
         return await self.hass.async_add_executor_job(_update)
 
     async def delete_today_tasks(self) -> bool:
-        """Delete today's tasks from both sensor and research databases."""
+        """
+        Delete today's tasks from both sensor and research databases.
+        
+        Returns:
+            bool: True if the tasks were successfully deleted, False otherwise.
+        """
         today = datetime.now().strftime("%Y-%m-%d")
 
         def _delete():
@@ -1025,7 +1122,15 @@ class StorageManager:
         return await self.hass.async_add_executor_job(_delete)
 
     async def get_task_difficulty_stats(self, task_type: str) -> Dict:
-        """Get difficulty statistics for a task type to adjust future difficulty."""
+        """
+        Get difficulty statistics for a task type to adjust future difficulty.
+        
+        Args:
+            task_type: The type of task to analyze (e.g., "reduce_power", "increase_occupancy").
+
+        Returns:
+            dict: A dictionary containing counts of feedback categories, average difficulty and suggested adjustment for future tasks of this type based on recent user feedback.
+        """
         def _query():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -1136,7 +1241,8 @@ class StorageManager:
         """
         Load persistent state from JSON.
 
-        Returns empty dict if file doesn't exist or on error.
+        Returns:
+            Dict[str, Any]: The loaded state data. If the file does not exist or fails to load, returns an empty dictionary.
         """
         def _read():
             if not self.state_file.exists():
@@ -1157,7 +1263,13 @@ class StorageManager:
             return await self.hass.async_add_executor_job(_read)
 
     async def update_state_field(self, key: str, value: Any):
-        """Update a single field in the state file."""
+        """
+        Update a single field in the state file.
+        
+        Args:
+            key: The key of the state field to update.
+            value: The new value to set for the specified key.
+        """
         state = await self.load_state()
         state[key] = value
         await self.save_state(state)
@@ -1200,7 +1312,12 @@ class StorageManager:
         await self.hass.async_add_executor_job(_insert)
 
     async def log_rl_decision(self, episode_data: dict):
-        """Log each RL agent decision for convergence analysis."""
+        """
+        Log each RL agent decision for convergence analysis.
+        
+        Args:
+            episode_data (dict): A dictionary containing episode information such as episode number, phase, state vector, action taken, reward received, Q-values and contextual information like current power and indices.
+        """
         def _insert():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
@@ -1241,7 +1358,12 @@ class StorageManager:
         await self.hass.async_add_executor_job(_insert)
 
     async def log_nudge_sent(self, nudge_data: dict):
-        """Log comprehensive nudge information for acceptance rate analysis."""
+        """
+        Log comprehensive nudge information for acceptance rate analysis.
+        
+        Args:
+            nudge_data (dict): A dictionary containing nudge information such as notification ID, phase, action type, template index, title, message, state vector at time of sending, current power, indices and any other relevant context.
+        """
         def _insert():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
@@ -1273,7 +1395,13 @@ class StorageManager:
         await self.hass.async_add_executor_job(_insert)
 
     async def log_nudge_response(self, notification_id: str, accepted: bool):
-        """Log user response to nudge."""
+        """
+        Log user response to nudge.
+        
+        Args:
+            notification_id (str): The unique identifier of the nudge notification.
+            accepted (bool): Whether the user accepted (True) or dismissed (False) the nudge.
+        """
         def _update():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
@@ -1306,7 +1434,12 @@ class StorageManager:
         await self.hass.async_add_executor_job(_update)
 
     async def log_blocked_notification(self, block_data: dict):
-        """Log when a notification attempt was blocked in active phase."""
+        """
+        Log when a notification attempt was blocked in active phase.
+        
+        Args:
+            block_data (dict): A dictionary containing block information such as phase, block reason, opportunity score, current power, indices and any other relevant context.
+        """
         def _insert():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
@@ -1344,7 +1477,12 @@ class StorageManager:
         await self.hass.async_add_executor_job(_insert)
 
     async def log_task_generation(self, task_data: dict):
-        """Log task generation with full context."""
+        """
+        Log task generation with full context.
+        
+        Args:
+            task_data (dict): A dictionary containing task information such as task ID, date, phase, task type, difficulty level, target value, baseline value, area name, power and occupancy at generation time.
+        """
         def _insert():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
@@ -1375,7 +1513,13 @@ class StorageManager:
         await self.hass.async_add_executor_job(_insert)
 
     async def log_task_completion(self, task_id: str, completion_value: float = None):
-        """Log task completion."""
+        """
+        Log task completion.
+        
+        Args:
+            task_id (str): The unique identifier of the task that was completed.
+            completion_value (float, optional): The value achieved upon completion (e.g., actual energy saved).
+        """
         def _update():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
@@ -1406,7 +1550,13 @@ class StorageManager:
         await self.hass.async_add_executor_job(_update)
 
     async def log_task_feedback(self, task_id: str, feedback: str):
-        """Log task difficulty feedback."""
+        """
+        Log task difficulty feedback.
+        
+        Args:
+            task_id (str): The unique identifier of the task to save feedback for.
+            feedback (str): User feedback on task difficulty, expected values are 'too_easy', 'just_right', or 'too_hard'.
+        """
         def _update():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
@@ -1468,6 +1618,10 @@ class StorageManager:
         """
         Compute and store daily aggregates for research analysis.
         Continuously updates today's aggregate (INSERT OR REPLACE).
+
+        Args:
+            date (str, optional): The date for which to compute aggregates in YYYY-MM-DD format. Defaults to today's date if not provided.
+            phase (str, optional): The system phase to associate with the aggregates. If not provided, it will be determined based on the current phase in the research_phase_metadata table.
         """
         if date is None:
             date = datetime.now().strftime("%Y-%m-%d")
@@ -1586,6 +1740,10 @@ class StorageManager:
         """
         Compute and store area-specific daily aggregates for research analysis.
         Continuously updates today's aggregate for each area (INSERT OR REPLACE).
+
+        Args:
+            date (str, optional): The date for which to compute aggregates in YYYY-MM-DD format
+            phase (str, optional): The system phase to associate with the aggregates. If not provided, it will be determined based on the current phase in the research_phase_metadata table.
         """
         if date is None:
             date = datetime.now().strftime("%Y-%m-%d")

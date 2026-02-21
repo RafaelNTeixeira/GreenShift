@@ -4,6 +4,7 @@ Description: This module defines the TaskManager class, which is responsible for
 The TaskManager generates 3 verifiable tasks each day based on available sensors and historical data, with difficulty levels adjusted according to user feedback.
 Tasks are designed to be automatically verifiable using sensor data, and the TaskManager includes methods for verifying task completion and adjusting future task difficulty based on user feedback.
 """
+
 import logging
 import numpy as np
 from datetime import datetime, timedelta
@@ -41,6 +42,9 @@ class TaskManager:
         """
         Generates 3 verifiable daily tasks based on available sensors and historical data.
         Tasks are measurable and can be automatically verified.
+
+        Returns:
+            List[Dict]: A list of generated tasks with details such as task_id, type, title, description, target values, difficulty level and area (if applicable).
         """
         # Check if AI should be active (working hours for office mode)
         if not should_ai_be_active(self.config_data):
@@ -130,7 +134,12 @@ class TaskManager:
         return tasks
 
     async def _generate_temperature_task(self) -> Optional[Dict]:
-        """Generate a temperature reduction task."""
+        """
+        Generate a temperature reduction task.
+        
+        Returns:
+            dict: A task dictionary with details for a temperature reduction task, or None if it cannot be generated.
+        """
         # Get difficulty stats for this task type
         stats = await self.storage.get_task_difficulty_stats('temperature_reduction')
         difficulty = await self._calculate_task_difficulty(stats)
@@ -173,7 +182,12 @@ class TaskManager:
         }
 
     async def _generate_power_reduction_task(self) -> Optional[Dict]:
-        """Generate a power consumption reduction task."""
+        """
+        Generate a power consumption reduction task.
+        
+        Returns:
+            dict: A task dictionary with details for a power reduction task, or None if it cannot be generated.
+        """
         stats = await self.storage.get_task_difficulty_stats('power_reduction')
         difficulty = await self._calculate_task_difficulty(stats)
 
@@ -212,7 +226,12 @@ class TaskManager:
         }
 
     async def _generate_standby_power_task(self) -> Optional[Dict]:
-        """Generate a task to reduce standby power during night hours."""
+        """
+        Generate a task to reduce standby power during night hours.
+        
+        Returns:
+            dict: A task dictionary with details for a standby power reduction task, or None if it cannot be generated.
+        """
         stats = await self.storage.get_task_difficulty_stats('standby_reduction')
         difficulty = await self._calculate_task_difficulty(stats)
 
@@ -254,7 +273,12 @@ class TaskManager:
         }
 
     async def _generate_daylight_task(self) -> Optional[Dict]:
-        """Generate a task to maximize natural daylight usage."""
+        """
+        Generate a task to maximize natural daylight usage.
+        
+        Returns:
+            dict: A task dictionary with details for a daylight usage task, or None if it cannot be generated.
+        """
         stats = await self.storage.get_task_difficulty_stats('daylight_usage')
         difficulty = await self._calculate_task_difficulty(stats)
 
@@ -293,7 +317,12 @@ class TaskManager:
         }
 
     async def _generate_unoccupied_power_task(self) -> Optional[Dict]:
-        """Generate a task to minimize power in unoccupied rooms."""
+        """
+        Generate a task to minimize power in unoccupied rooms.
+        
+        Returns:
+            dict: A task dictionary with details for an unoccupied power task, or None if it cannot be generated.
+        """
         stats = await self.storage.get_task_difficulty_stats('unoccupied_power')
         difficulty = await self._calculate_task_difficulty(stats)
 
@@ -343,7 +372,12 @@ class TaskManager:
         }
 
     async def _generate_peak_avoidance_task(self) -> Optional[Dict]:
-        """Generate a task to avoid peak consumption hours."""
+        """
+        Generate a task to avoid peak consumption hours.
+        
+        Returns:
+            dict: A task dictionary with details for a peak avoidance task, or None if it cannot be generated.
+        """
         stats = await self.storage.get_task_difficulty_stats('peak_avoidance')
         difficulty = await self._calculate_task_difficulty(stats)
 
@@ -394,6 +428,9 @@ class TaskManager:
         """
         Calculate appropriate difficulty level (1-5) based on user feedback history.
 
+        Args:
+            stats (Dict): A dictionary containing counts of 'too_easy', 'just_right', and 'too_hard' feedback, as well as any suggested adjustments.
+
         Returns:
             int: Difficulty level from 1 (easiest) to 5 (hardest)
         """
@@ -412,7 +449,9 @@ class TaskManager:
     async def verify_tasks(self) -> Dict[str, bool]:
         """
         Verify today's tasks against actual sensor data.
-        Returns dict mapping task_id to verification status.
+        
+        Returns:
+            Dict[str, bool]: A dictionary mapping task_id to verification result (True if verified, False if not verified).
         """
         tasks = await self.storage.get_today_tasks()
         if not tasks:
@@ -443,7 +482,15 @@ class TaskManager:
         return results
 
     async def _verify_single_task(self, task: Dict) -> bool:
-        """Verify a single task based on its type and target."""
+        """
+        Verify a single task based on its type and target.
+        
+        Args:
+            task (Dict): The task dictionary containing details for verification.
+
+        Returns:
+            bool: True if the task is verified as completed, False otherwise.
+        """
         task_type = task['task_type']
         target_value = task['target_value']
         area_name = task.get('area_name')

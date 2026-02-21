@@ -17,6 +17,13 @@ def get_normalized_value(state, sensor_type: str) -> Tuple[Optional[float], Opti
         Helper to convert sensor values to standard units.
         Power -> W
         Energy -> kWh
+
+        Args:
+            state: The state object of the sensor
+            sensor_type (str): "power" or "energy" to determine conversion logic
+
+        Returns:
+            tuple: (normalized_value, unit) where normalized_value is the value converted to standard units and unit is the corresponding unit of measurement. Returns (None, None) if conversion fails or if state is invalid.
         """
         # Check if state exists
         if state is None:
@@ -49,6 +56,12 @@ def get_environmental_impact(kwh_saved: float) -> dict:
     - ~22 kg CO2 absorbed by one mature tree per year
     - ~150 kg CO2 per passenger for a short-haul flight
     - ~0.17 kg CO2 per km traveled by car
+
+    Args:
+        kwh_saved (float): The amount of energy saved in kilowatt-hours
+
+    Returns:
+        dict: A dictionary containing the estimated CO2 saved in kg, equivalent number of trees saved, equivalent number of short-haul flights avoided and equivalent kilometers driven by car avoided.
     """
     # Grid Intensity (kg CO2 per kWh)
     # 0.1 is the Portugal Average.
@@ -81,8 +94,12 @@ def get_entity_area(hass: HomeAssistant, entity_id: str) -> Optional[str]:
     """
     Get the area name for a given entity.
 
+    Args:
+        hass (Home Assistant): Home Assistant instance
+        entity_id (str): The entity ID to look up
+
     Returns:
-        Area name or None if not assigned to an area
+        Optional[str]: The name of the area the entity belongs to or None if not found
     """
     entity_reg = er.async_get(hass)
     area_reg = ar.async_get(hass)
@@ -108,6 +125,16 @@ def get_entity_area(hass: HomeAssistant, entity_id: str) -> Optional[str]:
     return None
 
 def get_entity_area_id(hass: HomeAssistant, entity_id: str) -> Optional[str]:
+    """
+    Get the area ID for a given entity.
+
+    Args:
+        hass (Home Assistant): Home Assistant instance
+        entity_id (str): The entity ID to look up
+
+    Returns:
+        Optional[str]: The area ID the entity belongs to or None if not found
+    """
     entity_reg = er.async_get(hass)
     area_reg = ar.async_get(hass)
 
@@ -157,8 +184,12 @@ def get_friendly_name(hass: HomeAssistant, entity_id: str) -> str:
     """
     Get the friendly name of an entity.
 
+    Args:
+        hass (Home Assistant): Home Assistant instance
+        entity_id (str): The entity ID to look up
+
     Returns:
-        Friendly name or the entity_id if not found
+        str: The friendly name of the entity or the entity_id if not found
     """
     state = hass.states.get(entity_id)
     if state and state.attributes.get("friendly_name"):
@@ -179,12 +210,11 @@ def is_within_working_hours(config_data: Dict, check_time: datetime = None) -> b
     Only applies to office environments.
 
     Args:
-        config_data: Configuration data from config entry
-        check_time: Time to check (defaults to current time)
+        config_data (dict): Configuration data from config entry
+        check_time (datetime): Time to check (defaults to current time)
 
     Returns:
-        True if within working hours OR if in home mode (always active)
-        False if outside working hours in office mode
+        bool: True if within working hours OR if in home mode (always active). False if outside working hours in office mode.
     """
     # Home mode is always active
     environment_mode = config_data.get("environment_mode", ENVIRONMENT_HOME)
@@ -222,10 +252,10 @@ def get_working_days_from_config(config_data: Dict) -> List[int]:
     Extract working days from config data.
 
     Args:
-        config_data: Configuration data from config entry
+        config_data (dict): Configuration data from config entry
 
     Returns:
-        List of working days (0=Monday, 6=Sunday)
+        List[int]: List of working days (0=Monday, 6=Sunday)
     """
     working_days = []
 
@@ -255,11 +285,10 @@ def should_ai_be_active(config_data: Dict, check_time: datetime = None) -> bool:
     with clearer naming for AI-specific checks.
 
     Args:
-        config_data: Configuration data from config entry
-        check_time: Time to check (defaults to current time)
+        config_data (dict): Configuration data from config entry
+        check_time (datetime): Time to check (defaults to current time)
 
     Returns:
-        True if AI should be active (generate tasks/notifications)
-        False if AI should be paused
+        bool: True if AI should be active (generate tasks/notifications). False if AI should be paused
     """
     return is_within_working_hours(config_data, check_time)

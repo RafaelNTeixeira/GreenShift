@@ -135,7 +135,12 @@ class DataCollector:
 
         @callback
         def handle_power_change(event: Event):
-            """Handle power sensor state changes instantly."""
+            """
+            Handle power sensor state changes instantly.
+            
+            Args:
+                event: The state change event containing entity_id and new_state
+            """
             entity_id = event.data.get("entity_id")
             new_state = event.data.get("new_state")
 
@@ -205,7 +210,12 @@ class DataCollector:
 
         @callback
         def handle_energy_change(event: Event):
-            """Handle energy sensor state changes instantly."""
+            """
+            Handle energy sensor state changes instantly.
+            
+            Args:
+                event: The state change event containing entity_id and new_state
+            """
             entity_id = event.data.get("entity_id")
             new_state = event.data.get("new_state")
 
@@ -295,6 +305,12 @@ class DataCollector:
         if temp_sensors:
             @callback
             def handle_temp_change(event: Event):
+                """
+                Handle temperature sensor state changes instantly.
+                
+                Args:
+                    event: The state change event containing entity_id and new_state
+                """
                 entity_id = event.data.get("entity_id")
                 new_state = event.data.get("new_state")
 
@@ -332,6 +348,12 @@ class DataCollector:
         if hum_sensors:
             @callback
             def handle_hum_change(event: Event):
+                """
+                Handle humidity sensor state changes instantly.
+                
+                Args:
+                    event: The state change event containing entity_id and new_state
+                """
                 entity_id = event.data.get("entity_id")
                 new_state = event.data.get("new_state")
 
@@ -368,6 +390,12 @@ class DataCollector:
         if lux_sensors:
             @callback
             def handle_lux_change(event: Event):
+                """
+                Handle illuminance sensor state changes instantly.
+                
+                Args:
+                    event: The state change event containing entity_id and new_state
+                """
                 entity_id = event.data.get("entity_id")
                 new_state = event.data.get("new_state")
 
@@ -404,6 +432,12 @@ class DataCollector:
         if occ_sensors:
             @callback
             def handle_occ_change(event: Event):
+                """
+                Handle occupancy sensor state changes instantly.
+                
+                Args:
+                    event: The state change event containing entity_id and new_state
+                """
                 entity_id = event.data.get("entity_id")
                 new_state = event.data.get("new_state")
 
@@ -477,7 +511,12 @@ class DataCollector:
 
     @callback
     def _record_periodic_snapshot(self, now):
-        """Records snapshots of all current readings to SQLite."""
+        """
+        Records snapshots of all current readings to SQLite.
+        
+        Args:
+            now: The current datetime when the snapshot is taken
+        """
         if not self.storage:
             _LOGGER.warning("Storage not available - snapshot not saved")
             return
@@ -524,7 +563,18 @@ class DataCollector:
         )
 
     def get_current_state(self) -> dict:
-        """Get current sensor readings."""
+        """
+        Get current sensor readings.
+        
+        Returns:
+            dict:
+                - power: Current total power consumption (kW)
+                - energy: Current daily energy consumption (kWh)
+                - temperature: Current average temperature (°C)
+                - humidity: Current average humidity (%)
+                - illuminance: Current average illuminance (lx)
+                - occupancy: Current occupancy status (True/False)
+        """
         return {
             "power": self.current_total_power,
             "energy": self.current_daily_energy,
@@ -535,7 +585,19 @@ class DataCollector:
         }
 
     def get_area_state(self, area_name: str) -> dict:
-        """Get current sensor readings for a specific area."""
+        """
+        Get current sensor readings for a specific area.
+        
+        Args:
+            area_name: Name of the area to retrieve data for
+
+        Returns:
+            dict:
+                - temperature: Current average temperature in the area (°C)
+                - humidity: Current average humidity in the area (%)
+                - illuminance: Current average illuminance in the area (lx)
+                - occupancy: Current occupancy status in the area (True/False)
+        """
         return self.area_data.get(area_name, {
             "temperature": None,
             "humidity": None,
@@ -544,7 +606,12 @@ class DataCollector:
         })
 
     def get_all_areas(self) -> list:
-        """Get list of all tracked areas."""
+        """
+        Get list of all tracked areas.
+        
+        Returns:
+            list: List of area names
+        """
         return list(self.area_data.keys())
 
     async def get_area_history(self, area_name: str, metric: str, hours: int = None, days: int = None, working_hours_only: bool = None) -> list:
@@ -708,6 +775,14 @@ class DataCollector:
         """Calculates summary stats for the baseline phase.
 
         For office mode, only uses working hours data to avoid weekend/off-hours bias.
+
+        Returns:
+            dict:
+                - avg_daily_kwh: Average daily energy consumption in kWh
+                - peak_time: Time interval with highest average power consumption (e.g. "18:00 - 19:00")
+                - top_area: Area with highest average power consumption
+                - target: Percentage reduction target (e.g. 15 for 15%)
+                - impact: Estimated environmental impact of hitting the target (e.g. "X kg CO2 saved annually")
         """
         if not self.storage:
             return {}

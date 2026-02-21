@@ -6,7 +6,6 @@ The module defines a set of notification templates for different categories (spe
 This allows the component to dynamically generate notifications and tasks in the user's preferred language, enhancing the user experience and making the energy-saving suggestions more relatable and actionable.
 """
 
-
 import logging
 
 _LOGGER = logging.getLogger(__name__)
@@ -294,6 +293,9 @@ async def get_language(hass) -> str:
     """
     Get user's preferred language from Home Assistant.
     Falls back to English if not found.
+
+    Returns:
+        str: The 2-letter ISO code of the user's preferred language (e.g., 'en', 'pt')
     """
     try:
         # Try to get language from HA configuration
@@ -319,26 +321,68 @@ async def get_language(hass) -> str:
 
 
 def get_notification_templates(language: str) -> dict:
-    """Get notification templates for specified language."""
+    """
+    Get notification templates for specified language.
+    
+    Args:
+        language (str): The 2-letter ISO code of the language to retrieve templates for
+
+    Returns:
+        dict: A dictionary containing notification templates for the specified language, or English templates if the language is not available.
+    """
     return NOTIFICATION_TEMPLATES.get(language, NOTIFICATION_TEMPLATES["en"])
 
 
 def get_phase_transition_template(language: str) -> dict:
-    """Get phase transition template for specified language."""
+    """
+    Get phase transition template for specified language.
+    
+    Args:
+        language (str): The 2-letter ISO code of the language to retrieve the template for
+
+    Returns:
+        dict: A dictionary containing the phase transition template for the specified language, or the English template if the language is not available.
+    """
     templates = NOTIFICATION_TEMPLATES.get(language, NOTIFICATION_TEMPLATES["en"])
     return templates.get("phase_transition", NOTIFICATION_TEMPLATES["en"]["phase_transition"])
 
 
 def get_task_templates(language: str) -> dict:
-    """Get task templates for specified language."""
+    """
+    Get task templates for specified language.
+    
+    Args:
+        language (str): The 2-letter ISO code of the language to retrieve templates for
+
+    Returns:
+        dict: A dictionary containing task templates for the specified language, or English templates if the language is not available.
+    """
     return TASK_TEMPLATES.get(language, TASK_TEMPLATES["en"])
 
 
 def get_difficulty_display(difficulty: int, language: str) -> str:
-    """Get difficulty display name in specified language."""
+    """
+    Get difficulty display name in specified language.
+    
+    Args:
+        difficulty (int): The difficulty level (1-5)
+        language (str): The 2-letter ISO code of the language to retrieve the display name for
+
+    Returns:
+        str: The difficulty display name in the specified language, or "Normal" if not available.
+    """
     return DIFFICULTY_DISPLAY.get(language, DIFFICULTY_DISPLAY["en"]).get(difficulty, "Normal")
 
 
 def get_time_of_day_name(time_key: str, language: str) -> str:
-    """Get time of day name in specified language."""
+    """
+    Get time of day name in specified language.
+    
+    Args:
+        time_key (str): The key for the time of day (e.g., "morning", "day", etc.)
+        language (str): The 2-letter ISO code of the language to retrieve the name for
+
+    Returns:
+        str: The time of day name in the specified language, or the original key if not available.
+    """
     return TIME_OF_DAY.get(language, TIME_OF_DAY["en"]).get(time_key, time_key)

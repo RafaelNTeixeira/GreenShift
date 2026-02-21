@@ -7,7 +7,6 @@ The agent uses a Q-learning algorithm to learn the best actions to take in diffe
 The agent also includes a shadow learning mode during the baseline phase, where it simulates decisions without executing actions to pre-train the Q-table on energy patterns and temporal context.
 """
 
-
 import logging
 import numpy as np
 import ast
@@ -953,8 +952,8 @@ class DecisionAgent:
         Updates behaviour index and engagement history.
 
         Args:
-            notification_id: The unique ID of the notification being responded to.
-            accepted: True if the user accepted the nudge, False if rejected.
+            notification_id (str): The unique ID of the notification being responded to.
+            accepted (bool): True if the user accepted the nudge, False if rejected.
         """
         # Find notification in history
         for notif in self.notification_history:
@@ -993,12 +992,12 @@ class DecisionAgent:
         Log when a notification attempt was blocked in active phase.
 
         Args:
-            reason: Reason for blocking (fatigue_threshold, no_available_actions)
-            opportunity_score: Calculated opportunity score at time of block
-            time_since_last: Minutes since last notification (for cooldown blocks)
-            required_cooldown: Required cooldown that wasn't met (for cooldown blocks)
-            adaptive_cooldown: Base adaptive cooldown calculated (for cooldown blocks)
-            available_actions: List of available actions (empty if none)
+            reason (str): Reason for blocking (fatigue_threshold, no_available_actions)
+            opportunity_score (float): Calculated opportunity score at time of block
+            time_since_last (float, optional): Minutes since last notification (for cooldown blocks)
+            required_cooldown (float, optional): Required cooldown that wasn't met (for cooldown blocks)
+            adaptive_cooldown (float, optional): Base adaptive cooldown calculated (for cooldown blocks)
+            available_actions (list, optional): List of available actions (empty if none)
         """
         if not self.storage or self.phase != PHASE_ACTIVE:
             # Only log in active phase
@@ -1426,6 +1425,9 @@ class DecisionAgent:
         """
         Checks if notification can be sent based on adaptive cooldown.
         Allows bypassing cooldown for high-opportunity situations.
+
+        Args:
+            opportunity_score (float): The calculated opportunity score for sending a notification.
 
         Returns:
             bool: True if notification can be sent, False if still in cooldown.

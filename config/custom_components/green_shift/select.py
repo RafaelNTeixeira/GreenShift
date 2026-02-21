@@ -7,7 +7,6 @@ It includes:
 These select entities enhance the user experience by providing interactive controls to customize the dashboard view and manage notifications effectively.
 """
 
-
 import logging
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
@@ -24,7 +23,14 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Setup of the select entities."""
+    """
+    Setup of the select entities.
+    
+    Args:
+        hass (HomeAssistant): The Home Assistant instance
+        config_entry (ConfigEntry): The configuration entry for this integration
+        async_add_entities (AddEntitiesCallback): Callback to add entities to Home Assistant
+    """
     collector = hass.data[DOMAIN]["collector"]
     agent = hass.data[DOMAIN]["agent"]
 
@@ -36,7 +42,7 @@ async def async_setup_entry(
 
 class GreenShiftAreaViewSelect(SelectEntity):
     """Select entity to filter the dashboard area view."""
-
+    
     _attr_should_poll = False
     _attr_has_entity_name = True
     _attr_translation_key = "area_filter"
@@ -83,10 +89,21 @@ class GreenShiftAreaViewSelect(SelectEntity):
 
     @property
     def current_option(self) -> str:
+        """
+        Return the currently selected option.
+
+        Returns:
+            str: The currently selected area filter option
+        """
         return self._attr_current_option
 
     async def async_select_option(self, option: str) -> None:
-        """Change the selected option."""
+        """
+        Change the selected option.
+
+        Args:
+            option (str): The option selected by the user
+        """
         self._attr_current_option = option
         self.async_write_ha_state()
 
@@ -105,6 +122,7 @@ class GreenShiftNotificationSelect(SelectEntity):
         self._attr_options = ["No pending notifications"]
 
     async def async_added_to_hass(self):
+        """Update options when added."""
         await super().async_added_to_hass()
         self._update_options()
         # Update whenever AI state changes (new notification or feedback given)
@@ -114,6 +132,7 @@ class GreenShiftNotificationSelect(SelectEntity):
 
     @callback
     def _update_callback(self):
+        """Update options when AI state changes."""
         self._update_options()
         self.async_write_ha_state()
 
@@ -136,6 +155,12 @@ class GreenShiftNotificationSelect(SelectEntity):
 
     @property
     def current_option(self) -> str:
+        """
+        Return the currently selected option.
+        
+        Returns:
+            str: The currently selected notification ID or "No pending notifications"
+        """
         return self._attr_current_option
 
     async def async_select_option(self, option: str) -> None:

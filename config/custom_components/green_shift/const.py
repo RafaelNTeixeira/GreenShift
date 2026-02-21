@@ -5,7 +5,6 @@ It includes domain definitions, signal names, environment modes, working hours d
 These constants help maintain consistency across the component and make it easier to manage configuration and behavior in a centralized manner.
 """
 
-
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 
