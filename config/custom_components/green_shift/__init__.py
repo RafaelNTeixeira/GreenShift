@@ -520,12 +520,12 @@ async def async_setup_services(hass: HomeAssistant):
                 humidity=humidity,
                 illuminance=illuminance,
                 occupancy=occupancy,
-                working_hours=working_hours
+                within_working_hours=working_hours
             )
 
         _LOGGER.info(f"Successfully injected {data_points} data points ({hours} hours)")
 
-    async def set_test_indices(call: ServiceCall):
+    async def set_test_indices(call: ServiceCall): 
         """
         Set AI indices for testing.
         

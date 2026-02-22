@@ -1135,8 +1135,6 @@ class DecisionAgent:
 
         readings_per_hour = int((3600 / UPDATE_INTERVAL_SECONDS) * 0.8)  # Require at least 80% of expected readings for reliability
 
-        _LOGGER.debug(f"Anomaly detection: {len(power_values)} readings available, {readings_per_hour} needed for 1 hour")
-
         if len(power_values) < readings_per_hour:
             self.anomaly_index = 0.0
             _LOGGER.debug(f"Not enough data for anomaly detection ({len(power_values)}/{readings_per_hour}), setting to 0")

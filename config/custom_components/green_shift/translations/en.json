@@ -263,11 +263,11 @@
     },
     "inject_test_data": {
       "name": "Inject Test Data",
-      "description": "Generate synthetic historical data for testing. Note: 1 hour = 720 data points.",
+      "description": "Generate synthetic historical data for testing. Note: 1 hour = 240 data points.",
       "fields": {
         "hours": {
           "name": "Hours of Data",
-          "description": "How many hours of data to generate (1 hour = 720 readings)"
+          "description": "How many hours of data to generate (1 hour = 240 readings)"
         }
       }
     },

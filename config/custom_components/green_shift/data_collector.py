@@ -282,7 +282,7 @@ class DataCollector:
                 # _LOGGER.debug("Daily energy from main sensor: %.3f kWh", self.current_daily_energy)
                 return
 
-        # Case 2: Fallback to summing all individual sensors (Original logic)
+        # Case 2: Fallback to summing all individual sensors
         total_kwh = 0.0
         for entity_id, current_val in self._energy_sensor_cache.items():
             if self.main_energy_sensor and entity_id == self.main_energy_sensor:

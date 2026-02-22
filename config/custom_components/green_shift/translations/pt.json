@@ -263,11 +263,11 @@
     },
     "inject_test_data": {
       "name": "Injetar Dados de Teste",
-      "description": "Gerar dados históricos sintéticos para testes. Nota: 1 hora = 720 pontos de dados.",
+      "description": "Gerar dados históricos sintéticos para testes. Nota: 1 hora = 240 pontos de dados.",
       "fields": {
         "hours": {
           "name": "Horas de Dados",
-          "description": "Quantas horas de dados gerar (1 hora = 720 leituras)"
+          "description": "Quantas horas de dados gerar (1 hora = 240 leituras)"
         }
       }
     },

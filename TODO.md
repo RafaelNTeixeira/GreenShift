@@ -28,7 +28,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Check notification report when transitioning from baseline to active intervention
 - [x] Test interface on mobile
 - [ ] Mention that user level is based in completed tasks from the last 30 days
-
+- [ ] If no energy sensors available. Measure approximation of energy consumption based on power?
 
 ### 🎮 Gamification
 - [x] Improve gamification daily tasks
@@ -42,7 +42,6 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Store data needed for analysis/results extraction
 - [x] Test adaptive difficulty
 - [x] Test gamification logic and UI
-
 
 ### 🤖 AI
 - [x] Correct state vector gathered data
@@ -65,7 +64,6 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Test AI-driven features (notifications, recommendations)
 - [x] Analyze solution for office weekends
 
-
 ### 📊 Data
 - [x] Build tables required for analysis extraction
 - [x] Store data required for analysis extraction
@@ -75,11 +73,12 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Manage memory usage
 - [x] Analyze quantity of rl episodes being stored into the database (~60K entries per 21 days of runtime)
 - [x] Consider if AI state history and notifications should be kept in persistent memory (JSON)
-
+- [ ] Store HA's weather info to analyze consumption based on heating degree days
 
 ### Validation
 - [x] Add Unit tests
 - [x] Check .gitignore
 - [x] Add pre-commit hook to run tests before executing a commit
 - [x] Improve code documentation where needed
+
 ---
