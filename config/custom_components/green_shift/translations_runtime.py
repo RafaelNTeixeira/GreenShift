@@ -44,10 +44,6 @@ NOTIFICATION_TEMPLATES = {
             {
                 "title": "Area Anomaly Notice",
                 "message": "🏠 {area_name} is showing unusual patterns - {metric} readings are significantly different from normal. Everything okay there?"
-            },
-            {
-                "title": "Pattern Change Detected",
-                "message": "📈 Your consumption pattern has changed significantly. Current usage is {percent_above}% above normal. New devices recently added?"
             }
         ],
 
@@ -67,14 +63,6 @@ NOTIFICATION_TEMPLATES = {
             {
                 "title": "Lighting Optimization",
                 "message": "💡 Natural light is available during the day. Consider opening blinds instead of using artificial lighting when possible."
-            },
-            {
-                "title": "Weekend Energy Habits",
-                "message": "🏡 Weekends are great for reviewing your energy habits. Check which devices are always on and consider smarter usage patterns."
-            },
-            {
-                "title": "Seasonal Energy Tip",
-                "message": "🍂 As seasons change, so should energy habits. Review your heating/cooling settings to match the current weather patterns."
             }
         ],
 
@@ -135,10 +123,6 @@ NOTIFICATION_TEMPLATES = {
             {
                 "title": "Aviso de Anomalia na Área",
                 "message": "🏠 {area_name} está a mostrar padrões incomuns - as leituras de {metric} são significativamente diferentes do normal. Está tudo bem aí?"
-            },
-            {
-                "title": "Mudança de Padrão Detetada",
-                "message": "📈 O seu padrão de consumo mudou significativamente. O uso atual está {percent_above}% acima do normal. Adicionou novos dispositivos recentemente?"
             }
         ],
 
@@ -158,14 +142,6 @@ NOTIFICATION_TEMPLATES = {
             {
                 "title": "Otimização de Iluminação",
                 "message": "💡 A luz natural está disponível durante o dia. Considere abrir as persianas em vez de usar iluminação artificial quando possível."
-            },
-            {
-                "title": "Hábitos de Energia no Fim de Semana",
-                "message": "🏡 Os fins de semana são ótimos para rever os seus hábitos de energia. Verifique quais dispositivos estão sempre ligados e considere padrões de uso mais inteligentes."
-            },
-            {
-                "title": "Dica de Energia Sazonal",
-                "message": "🍂 À medida que as estações mudam, os hábitos de energia também devem mudar. Reveja as suas configurações de aquecimento/arrefecimento para corresponder aos padrões climáticos atuais."
             }
         ],
 
