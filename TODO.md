@@ -30,6 +30,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [ ] Mention that user level is based in completed tasks from the last 30 days
 - [ ] Update hardcoded watt values from Live Focus Area table: use instead classifications based on mean consumption for each area
 - [ ] If no energy sensors available. Measure approximation of energy consumption based on power?
+- [ ] If no power sensors available. Measure approximation of power consumption based on energy?
 
 ### 🎮 Gamification
 - [x] Improve gamification daily tasks
@@ -56,7 +57,6 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Check if indices are updating during the intervention
 - [x] Check adaptive difficulty updates
 - [x] Fix Q-table in JSON with duplicate key entries
-- [x] Check notification templates that make more sense
 - [x] Test anomaly index with anomaly simulated anomaly scenario
 - [x] Test nudge selection based on current environment and priority
 - [x] Consider if 50 bins of power consumption is enough for intervention (decrease, keep or increase) - increased to 100
@@ -64,6 +64,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Store data needed for analysis/results extraction
 - [x] Test AI-driven features (notifications, recommendations)
 - [x] Analyze solution for office weekends
+- [ ] Check notification templates that make more sense
 
 ### 📊 Data
 - [x] Build tables required for analysis extraction

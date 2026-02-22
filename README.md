@@ -67,16 +67,69 @@ cd /config/custom_components/
 # If green_shift folder doesn't exist, create it
 mkdir -p green_shift
 
-# Copy all files from the Green Shift repository:
+# Copy all files from config/custom_components/green_shift/:
 # - __init__.py
+# - backup_manager.py
 # - config_flow.py
 # - const.py
+# - data_collector.py
 # - decision_agent.py
+# - helpers.py
 # - manifest.json
+# - select.py
 # - sensor.py
+# - services.yaml
+# - storage.py
+# - task_manager.py
+# - translations_runtime.py
+# - translations/ (folder with en.json and pt.json)
 ```
 
-### Step 2: Restart Home Assistant
+### Step 2: Copy Configuration Files
+
+```bash
+# Navigate to config directory
+cd /config/
+
+# Copy the locales folder (for UI and dashboards)
+# This includes:
+# - locales/customize_en.yaml
+# - locales/customize_pt.yaml
+# - locales/ui-lovelace-en.yaml
+# - locales/ui-lovelace-pt.yaml
+
+# Copy helper configuration files to /config/
+# - input_numbers.yaml
+# - input_selects.yaml
+# - input_booleans.yaml (can be empty)
+```
+
+### Step 3: Update configuration.yaml
+
+Add these lines to your `/config/configuration.yaml`:
+
+```yaml
+homeassistant:
+  # Choose your language (en or pt)
+  customize: !include locales/customize_en.yaml
+
+# Lovelace dashboard configuration
+lovelace:
+  mode: yaml
+  dashboards:
+    lovelace-green-shift:
+      mode: yaml
+      filename: locales/ui-lovelace-en.yaml # Choose your language (en or pt)
+      title: Green Shift
+      icon: mdi:leaf
+
+# Include helper files
+input_number: !include input_numbers.yaml
+input_select: !include input_selects.yaml
+input_boolean: !include input_booleans.yaml
+```
+
+### Step 4: Restart Home Assistant
 
 ```bash
 # Via Home Assistant UI
@@ -86,17 +139,14 @@ Settings → System → Restart Home Assistant
 ha core restart
 ```
 
-### Step 3: Add the Integration
+### Step 5: Add the Integration
 
 1. Go to **Settings** → **Devices & Services**
 2. Click **+ ADD INTEGRATION**
 3. Search for **"Green Shift"**
-4. Configure basic settings:
-   - Currency: EUR (or USD, GBP)
-   - Electricity Price: 0.25 €/kWh
-   - CO2 Factor: 0.5 kg/kWh
+4. Follow the configuration wizard
 
-✅ **That's it!** Helpers and sensors are created automatically.
+✅ **That's it!** The integration will now start collecting baseline data.
 
 ---
 
