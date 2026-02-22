@@ -28,6 +28,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Check notification report when transitioning from baseline to active intervention
 - [x] Test interface on mobile
 - [ ] Mention that user level is based in completed tasks from the last 30 days
+- [ ] Update hardcoded watt values from Live Focus Area table: use instead classifications based on mean consumption for each area
 - [ ] If no energy sensors available. Measure approximation of energy consumption based on power?
 
 ### 🎮 Gamification
