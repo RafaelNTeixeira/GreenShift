@@ -63,6 +63,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Test AI-driven features (notifications, recommendations)
 - [x] Analyze solution for office weekends
 - [x] Add illuminance and presence logic. Control when using artificial lights when not needed.
+- [ ] Improve q-table. Current approach is storing rewards immediately after sending a notification. This way, the AI won't learn what are the best nudges to send to the user: need to make q-table update asynchronous, updating the q-table only when feedback button as been clicked.
 
 ### 📊 Data
 - [x] Build tables required for analysis extraction
