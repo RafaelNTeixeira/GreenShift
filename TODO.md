@@ -42,7 +42,6 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Store data needed for analysis/results extraction
 - [x] Test adaptive difficulty
 - [x] Test gamification logic and UI
-- [ ] Check gamification tasks based on hours: can generate bias on avg hours to complete in analysis queries
 
 ### 🤖 AI
 - [x] Correct state vector gathered data
@@ -63,8 +62,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Store data needed for analysis/results extraction
 - [x] Test AI-driven features (notifications, recommendations)
 - [x] Analyze solution for office weekends
-- [ ] Add illuminance and presence logic. Control when using artificial lights when not needed.
-- [ ] Check notification templates that make more sense.
+- [x] Add illuminance and presence logic. Control when using artificial lights when not needed.
 
 ### 📊 Data
 - [x] Build tables required for analysis extraction
@@ -75,7 +73,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Manage memory usage
 - [x] Analyze quantity of rl episodes being stored into the database (~60K entries per 21 days of runtime)
 - [x] Consider if AI state history and notifications should be kept in persistent memory (JSON)
-- [ ] Store HA's weather info to analyze consumption based on heating degree days. Update storage accordingly to store temperature.
+- [x] Store HA's weather info to analyze consumption based on heating degree days. Update storage accordingly to store temperature.
 
 ### Validation
 - [x] Add Unit tests

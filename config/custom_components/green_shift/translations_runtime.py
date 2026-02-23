@@ -63,6 +63,26 @@ NOTIFICATION_TEMPLATES = {
             {
                 "title": "Lighting Optimization",
                 "message": "💡 Natural light is available during the day. Consider opening blinds instead of using artificial lighting when possible."
+            },
+            {
+                "title": "Daylight Power Alert",
+                "message": "☀️ It's a bright {time_of_day} with good natural light and you're consuming {current_power}W. Could some lights be turned off to save energy?",
+                "context_filter": "daylight_waste"
+            },
+            {
+                "title": "Bright Day Savings",
+                "message": "🌞 Great lighting conditions detected during {time_of_day}! Your current power consumption is {current_power}W - turning off unnecessary lights could reduce this significantly.",
+                "context_filter": "daylight_waste"
+            },
+            {
+                "title": "Nobody Home Alert",
+                "message": "🏠 No presence detected, but you're still consuming {current_power}W (baseline: {baseline_power}W). Are there devices that could be turned off?",
+                "context_filter": "away_mode"
+            },
+            {
+                "title": "Unoccupied Energy Use",
+                "message": "🚶‍♂️ It looks like nobody's around, but power consumption is at {current_power}W. Consider turning off unused devices to save energy while away.",
+                "context_filter": "away_mode"
             }
         ],
 
@@ -142,6 +162,26 @@ NOTIFICATION_TEMPLATES = {
             {
                 "title": "Otimização de Iluminação",
                 "message": "💡 A luz natural está disponível durante o dia. Considere abrir as persianas em vez de usar iluminação artificial quando possível."
+            },
+            {
+                "title": "Alerta de Consumo Diurno",
+                "message": "☀️ É um {time_of_day} com boa luz natural e está a consumir {current_power}W. Será que algumas luzes podem ser desligadas para poupar energia?",
+                "context_filter": "daylight_waste"
+            },
+            {
+                "title": "Poupança em Dia Claro",
+                "message": "🌞 Boas condições de iluminação natural detetadas durante {time_of_day}! O seu consumo atual é {current_power}W - desligar luzes desnecessárias poderia reduzir isto significativamente.",
+                "context_filter": "daylight_waste"
+            },
+            {
+                "title": "Alerta de Ausência",
+                "message": "🏠 Nenhuma presença detetada, mas ainda está a consumir {current_power}W (baseline: {baseline_power}W). Há dispositivos que possam ser desligados?",
+                "context_filter": "away_mode"
+            },
+            {
+                "title": "Uso de Energia Desocupado",
+                "message": "🚶‍♂️ Parece que não há ninguém, mas o consumo está em {current_power}W. Considere desligar dispositivos não utilizados para poupar energia durante a ausência.",
+                "context_filter": "away_mode"
             }
         ],
 

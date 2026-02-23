@@ -783,16 +783,47 @@ class DecisionAgent:
 
         # Get templates for user's language
         notification_templates = get_notification_templates(language)
-        templates = notification_templates.get(action_type, [])
-        if not templates:
+        all_templates = notification_templates.get(action_type, [])
+        if not all_templates:
             return None
 
-        # Select template based on context
+        # Gather context first (needed for filtering)
+        context = await self._gather_notification_context(action_type)
+
+        # Filter templates based on context (for behavioral notifications)
+        if action_type == "behavioural":
+            # Separate templates by context filter
+            filtered_templates = []
+            
+            for template in all_templates:
+                context_filter = template.get("context_filter")
+                
+                # If template has no filter, it's always available
+                if not context_filter:
+                    filtered_templates.append(template)
+                # If filter matches current context, include it
+                elif context_filter == "daylight_waste" and context.get("is_daylight_waste"):
+                    filtered_templates.append(template)
+                elif context_filter == "away_mode" and context.get("is_away_mode"):
+                    filtered_templates.append(template)
+            
+            # Use filtered templates if any match, otherwise fall back to generic ones
+            if filtered_templates:
+                templates = filtered_templates
+                _LOGGER.debug("Filtered %d behavioral templates based on context", len(templates))
+            else:
+                # Use only generic templates (no context_filter)
+                templates = [t for t in all_templates if not t.get("context_filter")]
+        else:
+            templates = all_templates
+
+        if not templates:
+            _LOGGER.warning("No suitable templates found for action type: %s", action_type)
+            return None
+
+        # Select template randomly from filtered list
         template_index = random.randint(0, len(templates) - 1)
         template = templates[template_index]
-
-        # Gather context for template
-        context = await self._gather_notification_context(action_type)
 
         # Format message
         try:
@@ -864,6 +895,33 @@ class DecisionAgent:
             time_key = "night"
 
         context["time_of_day"] = get_time_of_day_name(time_key, language)
+
+        # Context filters for intelligent template selection
+        # Detect "daylight waste" scenario: bright daylight + occupied + high power
+        illuminance = current_state.get("illuminance", 0)
+        occupancy = current_state.get("occupancy", False)
+        is_daylight_hours = 8 <= now.hour < 17
+        power_above_baseline = current_state.get("power", 0) > self.baseline_consumption * 1.1 if self.baseline_consumption > 0 else False
+        
+        context["is_daylight_waste"] = (
+            illuminance > 300 and  # Good indoor lighting (natural or artificial)
+            occupancy and  # Someone is present
+            is_daylight_hours and  # During potential daylight hours
+            power_above_baseline  # Consuming above baseline
+        )
+
+        # Detect "away mode" scenario: no occupancy + power above standby threshold
+        standby_threshold = self.baseline_consumption * 0.3 if self.baseline_consumption > 0 else 50  # 30% of baseline or 50W minimum
+        context["is_away_mode"] = (
+            not occupancy and  # Nobody present
+            current_state.get("power", 0) > standby_threshold  # Power above expected standby
+        )
+
+        _LOGGER.debug(
+            "Context filters - Daylight waste: %s (lux=%.0f, occ=%s, hours=%s, power>baseline=%s), Away mode: %s (occ=%s, power=%.0f>%.0f)",
+            context["is_daylight_waste"], illuminance, occupancy, is_daylight_hours, power_above_baseline,
+            context["is_away_mode"], occupancy, current_state.get("power", 0), standby_threshold
+        )
 
         return context
 
