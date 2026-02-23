@@ -63,7 +63,8 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Test AI-driven features (notifications, recommendations)
 - [x] Analyze solution for office weekends
 - [x] Add illuminance and presence logic. Control when using artificial lights when not needed.
-- [ ] Improve q-table. Current approach is storing rewards immediately after sending a notification. This way, the AI won't learn what are the best nudges to send to the user: need to make q-table update asynchronous, updating the q-table only when feedback button as been clicked.
+- [x] Improve q-table. Current approach is storing rewards immediately after sending a notification. This way, the AI won't learn what are the best nudges to send to the user: need to make q-table update asynchronous, updating the q-table only when feedback button as been clicked.
+- [x] When rejecting nudges, AI is getting positive rewards
 
 ### 📊 Data
 - [x] Build tables required for analysis extraction
@@ -75,6 +76,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Analyze quantity of rl episodes being stored into the database (~60K entries per 21 days of runtime)
 - [x] Consider if AI state history and notifications should be kept in persistent memory (JSON)
 - [x] Store HA's weather info to analyze consumption based on heating degree days. Update storage accordingly to store temperature.
+- [x] Store weather condition
 
 ### Validation
 - [x] Add Unit tests

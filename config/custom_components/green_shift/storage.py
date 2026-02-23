@@ -222,9 +222,10 @@ class StorageManager:
                     avg_behaviour_index REAL,
                     avg_fatigue_index REAL,
 
-                    -- For weather normalization (to be filled later)
+                    -- Weather data (for normalization and context)
                     outdoor_temp_celsius REAL,
                     hdd_base18 REAL,
+                    weather_condition TEXT,  -- sunny, rainy, cloudy, snowy, etc.
 
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
@@ -262,6 +263,10 @@ class StorageManager:
                     opportunity_score REAL,
                     time_of_day_hour INTEGER,
                     baseline_power_reference REAL,
+                    
+                    -- User feedback
+                    accepted INTEGER,  -- NULL for shadow/no-op, 0 for reject, 1 for accept
+                    gamma_used REAL,   -- Gamma value used in Q-update (NULL for shadow, 0.0 for reject, 0.95 for accept)
 
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
@@ -1328,8 +1333,9 @@ class StorageManager:
                 (timestamp, episode_number, phase, state_vector, state_key,
                  action, action_name, action_source, reward, q_values,
                  max_q_value, epsilon, action_mask, current_power, anomaly_index,
-                 behaviour_index, fatigue_index, opportunity_score, time_of_day_hour, baseline_power_reference)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 behaviour_index, fatigue_index, opportunity_score, time_of_day_hour, baseline_power_reference,
+                 accepted, gamma_used)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 datetime.now().timestamp(),
                 episode_data.get('episode'),
@@ -1350,7 +1356,9 @@ class StorageManager:
                 episode_data.get('fatigue_index'),
                 episode_data.get('opportunity_score'),
                 episode_data.get('time_of_day_hour'),
-                episode_data.get('baseline_power_reference')
+                episode_data.get('baseline_power_reference'),
+                1 if episode_data.get('accepted') is True else (0 if episode_data.get('accepted') is False else None),
+                episode_data.get('gamma_used')
             ))
 
             conn.commit()
@@ -1633,6 +1641,7 @@ class StorageManager:
 
         outdoor_temp = None
         hdd = None
+        weather_condition = None
         
         # Build weather entity list: user-configured first, then fallback list
         weather_entities = []
@@ -1642,24 +1651,41 @@ class StorageManager:
         weather_entities.extend(WEATHER_ENTITIES)
         
         for entity_id in weather_entities:
+            # Break early if we have successfully found both values
+            if outdoor_temp is not None and weather_condition is not None:
+                break
+                
             try:
+                # Fetch state object once per entity (O(1) lookup)
                 state_obj = self.hass.states.get(entity_id)
-                if state_obj and state_obj.state not in ["unavailable", "unknown", None]:
-                    if entity_id.startswith("weather."):
+                if not state_obj or state_obj.state in ["unavailable", "unknown", None]:
+                    continue
+
+                is_weather_entity = entity_id.startswith("weather.")
+                
+                # 1. Extract Weather Condition (only from weather entities)
+                if weather_condition is None and is_weather_entity:
+                    weather_condition = state_obj.state
+                    _LOGGER.debug("Weather condition from %s: %s", entity_id, weather_condition)
+
+                # 2. Extract Outdoor Temperature
+                if outdoor_temp is None:
+                    if is_weather_entity:
                         # Weather entities have temperature as an attribute
                         temp_attr = state_obj.attributes.get("temperature")
                         if temp_attr is not None:
                             outdoor_temp = round(float(temp_attr), 1)
-                            _LOGGER.info("Found outdoor temperature from %s: %.1f°C", entity_id, outdoor_temp)
-                            break
                     else:
-                        # Sensor entities have temperature as state
+                        # Sensor entities have temperature as their main state
                         try:
                             outdoor_temp = round(float(state_obj.state), 1)
-                            _LOGGER.info("Found outdoor temperature from %s: %.1f°C", entity_id, outdoor_temp)
-                            break
                         except (ValueError, TypeError):
-                            continue
+                            pass # Not a valid float, move on to the next entity
+                            
+                    # Log if we just found the temperature
+                    if outdoor_temp is not None:
+                        _LOGGER.info("Found outdoor temperature from %s: %.1f°C", entity_id, outdoor_temp)
+
             except Exception as e:
                 _LOGGER.debug("Error reading %s: %s", entity_id, e)
                 continue
@@ -1764,12 +1790,12 @@ class StorageManager:
                  tasks_generated, tasks_completed, tasks_verified,
                  nudges_sent, nudges_accepted, nudges_dismissed, nudges_ignored, nudges_blocked,
                  avg_anomaly_index, avg_behaviour_index, avg_fatigue_index,
-                 outdoor_temp_celsius, hdd_base18)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 outdoor_temp_celsius, hdd_base18, weather_condition)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (date, phase, energy_stats[0], energy_stats[1], energy_stats[2], energy_stats[3],
                    energy_stats[4], energy_stats[5], energy_stats[6], avg_occupancy, energy_stats[7],
                    *task_stats, *nudge_stats, blocked_count, *indices_stats,
-                   outdoor_temp, hdd))
+                   outdoor_temp, hdd, weather_condition))
 
             research_conn.commit()
             sensor_conn.close()

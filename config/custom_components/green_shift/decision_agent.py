@@ -95,6 +95,9 @@ class DecisionAgent:
         # Area-specific anomaly tracking
         self.area_anomalies = {}  # {area: {metric: anomaly_score}}
 
+        # Pending episode for delayed Q-learning (experience replay)
+        self.pending_episode = None  # {state_key, action, notification_id, initial_power, timestamp, action_source, opportunity_score}
+
         # Challenges
         self.target_percentage = 15 # Default 15% reduction goal
         self.current_week_start_date = None  # Track when the current weekly challenge started
@@ -480,16 +483,22 @@ class DecisionAgent:
             action = best_action
             _LOGGER.debug("Exploitation: selected best action %d (Q=%.2f)", action, self.q_table[state_key].get(action, 0.0))
 
-        # Execute action
-        await self._execute_action(action)
-
-        # Update Q-table
-        reward = await self._calculate_reward()
-        await self._update_q_table(state_key, action, reward)
-
-        # Log RL episode for research analysis
-        self.episode_number += 1
-        await self._log_rl_episode(state_key, action, reward, action_source, opportunity_score)
+        # Execute action and store pending episode for delayed Q-learning
+        notification_id = await self._execute_action(action)
+        
+        if notification_id:
+            # Store episode for Q-update after user responds
+            current_state = self.data_collector.get_current_state()
+            self.pending_episode = {
+                "state_key": state_key,
+                "action": action,
+                "notification_id": notification_id,
+                "initial_power": current_state.get("power", 0),
+                "timestamp": datetime.now(),
+                "action_source": action_source,
+                "opportunity_score": opportunity_score
+            }
+            _LOGGER.debug("Pending episode stored for notification %s - Q-table will update after user response", notification_id)
 
     async def _shadow_decide_action(self):
         """
@@ -686,45 +695,62 @@ class DecisionAgent:
         new_q = current_q + SHADOW_LEARNING_RATE * (reward + GAMMA * max_next_q - current_q)
         self.q_table[state_key][action] = new_q
 
-        _LOGGER.debug("Shadow Q-table updated: state=%s, action=%d, reward=%.2f, Q: %.2f → %.2f",
-                      state_key[:3], action, reward, current_q, new_q)
+        _LOGGER.debug("Shadow Q-table updated: state=%s, action=%d, reward=%.2f, Q: %.2f → %.2f", state_key[:3], action, reward, current_q, new_q)
 
-    async def _update_q_table(self, state_key: tuple, action: int, reward: float):
+    async def _update_q_table_with_feedback(self, state_key: tuple, action: int, reward: float, accepted: bool):
         """
-        Updates Q-table using Q-learning update rule:
-
+        Updates Q-table with user feedback, using dynamic gamma based on acceptance.
+        
+        This prevents rejected notifications from having Q-values increased by future value estimation.
+        
         Formula:
-            Q(s,a) ← Q(s,a) + α[R + γ max Q(s',a') - Q(s,a)]
-
+            Q(s,a) ← Q(s,a) + α[R + γ_dynamic × max Q(s',a') - Q(s,a)]
+            
+            where γ_dynamic = 0.0 (rejected) or 0.95 (accepted)
+        
+        Rejection (γ=0): Ignores future value, learns only from immediate negative feedback
+        Acceptance (γ=0.95): Normal Q-learning with future value estimation
+        
         Args:
-            state_key (tuple): The discretized state key for the current state.
-            action (int): The action taken.
-            reward (float): The calculated reward for the action.
+            state_key (tuple): The discretized state key
+            action (int): The action taken
+            reward (float): The calculated reward with actual feedback
+            accepted (bool): True if user accepted, False if rejected
         """
         if state_key not in self.q_table:
             self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
 
         current_q = self.q_table[state_key].get(action, 0.0)
-
-        # Get next state (after action execution)
+        
+        # Dynamic gamma: 0 for rejection (terminal state), GAMMA for acceptance
+        gamma = GAMMA if accepted else 0.0
+        
+        # Get next state for future value estimation
         next_state_key = self._discretize_state()
         if next_state_key not in self.q_table:
             self.q_table[next_state_key] = {a: 0.0 for a in ACTIONS.values()}
 
         max_next_q = max(self.q_table[next_state_key].values())
+        
+        # Q-learning update with dynamic gamma
+        new_q = current_q + self.learning_rate * (reward + gamma * max_next_q - current_q)
+        
+        _LOGGER.debug(
+            "Q-table updated (%s): state=%s, action=%d, reward=%.2f, γ=%.2f, next_max_Q=%.2f, Q: %.2f → %.2f",
+            "ACCEPT" if accepted else "REJECT", state_key[:3], action, reward, gamma, max_next_q, current_q, new_q
+        )
 
-        # Q-learning update
-        new_q = current_q + self.learning_rate * (reward + GAMMA * max_next_q - current_q)
         self.q_table[state_key][action] = new_q
 
-        _LOGGER.debug("Q-table updated: state=%s, action=%d, reward=%.2f, Q: %.2f → %.2f", state_key[:3], action, reward, current_q, new_q)
-
-    async def _execute_action(self, action: int):
+    async def _execute_action(self, action: int) -> str:
         """
         Executes selected action by sending a notification.
         
         Args:
             action (int): The action to execute, corresponding to a notification type.
+            
+        Returns:
+            str: The notification_id of the sent notification, or None if notification failed.
         """
         action_name = [k for k, v in ACTIONS.items() if v == action][0]
 
@@ -767,6 +793,10 @@ class DecisionAgent:
             _LOGGER.info("Nudge notification added to dashboard (%d/%d today): %s - %s", self.notification_count_today, MAX_NOTIFICATIONS_PER_DAY, action_name, notification["title"])
 
             async_dispatcher_send(self.hass, GS_AI_UPDATE_SIGNAL)
+            
+            return notification_id
+        
+        return None
 
     async def _generate_notification(self, action_type: str) -> dict:
         """
@@ -1007,7 +1037,7 @@ class DecisionAgent:
     async def _handle_notification_feedback(self, notification_id: str, accepted: bool):
         """
         Handle user feedback on notifications.
-        Updates behaviour index and engagement history.
+        Updates behaviour index, engagement history and Q-table with actual feedback.
 
         Args:
             notification_id (str): The unique ID of the notification being responded to.
@@ -1027,13 +1057,52 @@ class DecisionAgent:
         # Update behaviour index
         self._update_behaviour_index()
 
+        # Update Q-table with actual feedback (delayed Q-learning)
+        if self.pending_episode and self.pending_episode["notification_id"] == notification_id:
+            episode = self.pending_episode
+            
+            # Calculate reward with actual user feedback
+            reward = await self._calculate_reward_with_feedback(
+                accepted=accepted,
+                initial_power=episode["initial_power"]
+            )
+            
+            # Update Q-table with dynamic gamma based on feedback
+            # Rejection: gamma=0 (terminal state, ignore future value)
+            # Acceptance: gamma=0.95 (normal Q-learning with future value)
+            await self._update_q_table_with_feedback(
+                state_key=episode["state_key"],
+                action=episode["action"],
+                reward=reward,
+                accepted=accepted
+            )
+            
+            # Log RL episode for research analysis
+            self.episode_number += 1
+            await self._log_rl_episode(
+                state_key=episode["state_key"],
+                action=episode["action"],
+                reward=reward,
+                action_source=episode["action_source"],
+                opportunity_score=episode["opportunity_score"],
+                accepted=accepted  # Include acceptance status for research analysis
+            )
+            
+            _LOGGER.info("Q-table updated with actual feedback: %s (reward=%.2f)", 
+                        "accepted" if accepted else "rejected", reward)
+            
+            # Clear pending episode
+            self.pending_episode = None
+        else:
+            _LOGGER.warning("No pending episode found for notification %s", notification_id)
+
         # Log response to research database
         if self.storage:
             await self.storage.log_nudge_response(notification_id, accepted)
 
         _LOGGER.info("Notification feedback received: %s - %s", notification_id, "accepted" if accepted else "rejected")
 
-        # Save state
+        # Save state immediately after feedback (includes updated Q-table)
         if self.storage:
             await self._save_persistent_state()
 
@@ -1088,9 +1157,62 @@ class DecisionAgent:
         await self.storage.log_blocked_notification(block_data)
         _LOGGER.debug("Blocked notification logged: reason=%s, opportunity=%.2f", reason, opportunity_score)
 
+    async def _calculate_reward_with_feedback(self, accepted: bool, initial_power: float) -> float:
+        """
+        Calculates reward based on ACTUAL user feedback (delayed Q-learning).
+        This is called after user responds, not when notification is sent.
+
+        Formula: 
+            R_t = α·ΔE + β·feedback_signal - δ·I_fatigue
+
+        Key components:
+        1. Energy savings (ΔE): Change in power consumption after notification
+        2. Feedback signal: Direct user response (+1.0 accept, -0.5 reject)
+        3. Fatigue penalty: Current fatigue level
+
+        Args:
+            accepted (bool): Whether user accepted the notification
+            initial_power (float): Power consumption when notification was sent
+
+        Returns:
+            float: The calculated reward for this episode.
+        """
+        # Energy savings component: compare current power to power at notification time
+        current_state = self.data_collector.get_current_state()
+        current_power = current_state.get("power", 0)
+        
+        baseline = self.baseline_consumption if self.baseline_consumption > 0 else initial_power
+        if baseline > 0:
+            energy_saving = max(0, (baseline - current_power) / baseline)
+        else:
+            energy_saving = 0.0
+
+        # Direct feedback signal (actual user response, not aggregated behavior_index)
+        feedback_reward = 1.0 if accepted else -0.5
+
+        # Fatigue penalty at time of response
+        fatigue_penalty = self.fatigue_index
+
+        # Combined reward
+        reward = (
+            REWARD_WEIGHTS["alpha"] * energy_saving +
+            REWARD_WEIGHTS["beta"] * feedback_reward -
+            REWARD_WEIGHTS["delta"] * fatigue_penalty
+        )
+        
+        _LOGGER.debug(
+            "Reward with feedback: Energy=%.4f, Feedback=%.4f (%s), Fatigue=%.4f, Total=%.4f",
+            energy_saving, feedback_reward, "accept" if accepted else "reject", 
+            fatigue_penalty, reward
+        )
+
+        return reward
+
     async def _calculate_reward(self) -> float:
         """
         Calculates reward R_t based on energy savings, engagement and fatigue.
+        NOTE: This is used for SHADOW LEARNING only (baseline phase).
+        Active phase uses _calculate_reward_with_feedback() for delayed Q-learning.
 
         Formula: 
             R_t = α·ΔE + β·I_engagement - δ·I_fatigue
@@ -1131,7 +1253,7 @@ class DecisionAgent:
 
         return reward
 
-    async def _log_rl_episode(self, state_key: tuple, action: int, reward: float, action_source: str, opportunity_score: float = None):
+    async def _log_rl_episode(self, state_key: tuple, action: int, reward: float, action_source: str, opportunity_score: float = None, accepted: bool = None):
         """
         Log RL decision episode to research database for convergence analysis.
         
@@ -1141,6 +1263,7 @@ class DecisionAgent:
             reward (float): The calculated reward for the action.
             action_source (str): Whether the action was selected through exploration, exploitation, or shadow learning (values: "explore", "exploit", "shadow_explore", "shadow_exploit").
             opportunity_score (float): The calculated opportunity score at the time of action selection (for active episodes). None for shadow episodes since it's not calculated there.
+            accepted (bool): User acceptance status (True/False for active episodes, None for shadow episodes or no-op actions).
         """
         if not self.storage:
             return
@@ -1162,6 +1285,11 @@ class DecisionAgent:
         now = datetime.now()
         time_of_day_hour = now.hour
 
+        # Calculate gamma used for this episode (for research analysis)
+        gamma_used = None
+        if accepted is not None:
+            gamma_used = GAMMA if accepted else 0.0
+
         episode_data = {
             "episode": self.episode_number,
             "phase": self.phase,
@@ -1181,7 +1309,9 @@ class DecisionAgent:
             "fatigue_index": self.fatigue_index,
             "opportunity_score": opportunity_score,  # None for shadow episodes, calculated for active
             "time_of_day_hour": time_of_day_hour,
-            "baseline_power_reference": self.baseline_consumption
+            "baseline_power_reference": self.baseline_consumption,
+            "accepted": accepted,  # User acceptance (None for shadow/no-op, True/False for real notifications)
+            "gamma_used": gamma_used  # Gamma value used in Q-table update (None for shadow, 0.0 for reject, 0.95 for accept)
         }
 
         await self.storage.log_rl_decision(episode_data)
@@ -1354,7 +1484,7 @@ class DecisionAgent:
         """
         Converts continuous state vector to discrete tuple for Q-table.
 
-        State Space: ~19,584 possible states (101x4x3x2x4x2)
+        State Space: ~19.392 possible states (101x4x3x2x4x2)
 
         State components:
         - power_bin: Power consumption in 100W bins (adaptive, 0-100)
@@ -1375,22 +1505,15 @@ class DecisionAgent:
         power_bin = min(power, 100) # Cap at 10000W for table size
 
         # Anomaly level
-        if self.anomaly_index < 0.25:
-            anomaly_level = 0  # None
-        elif self.anomaly_index < 0.5:
-            anomaly_level = 1  # Low
-        elif self.anomaly_index < 0.75:
-            anomaly_level = 2  # Medium
-        else:
-            anomaly_level = 3  # High
+        if self.anomaly_index < 0.25: anomaly_level = 0  # None
+        elif self.anomaly_index < 0.5: anomaly_level = 1  # Low
+        elif self.anomaly_index < 0.75: anomaly_level = 2  # Medium
+        else: anomaly_level = 3  # High
 
         # Fatigue level
-        if self.fatigue_index < 0.33:
-            fatigue_level = 0  # Low
-        elif self.fatigue_index < 0.66:
-            fatigue_level = 1  # Medium
-        else:
-            fatigue_level = 2  # High
+        if self.fatigue_index < 0.33: fatigue_level = 0  # Low
+        elif self.fatigue_index < 0.66: fatigue_level = 1  # Medium
+        else: fatigue_level = 2  # High
 
         # Area anomaly
         area_anomaly_count = int(self.state_vector[15])

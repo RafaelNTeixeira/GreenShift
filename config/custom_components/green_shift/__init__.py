@@ -621,16 +621,16 @@ async def async_setup_services(hass: HomeAssistant):
         _LOGGER.info("="*60)
 
     async def test_q_learning(call: ServiceCall):
-        """Test Q-learning update logic with a simulated episode."""
+        """Test Q-learning update logic - tests both acceptance and rejection."""
         agent = hass.data[DOMAIN]["agent"]
 
         _LOGGER.info("="*60)
-        _LOGGER.info("Q-LEARNING TEST")
+        _LOGGER.info("Q-LEARNING TEST - Testing both acceptance and rejection")
         _LOGGER.info("="*60)
 
         # Get current state
         state_before = agent._discretize_state()
-        _LOGGER.info(f"State before: {state_before}")
+        _LOGGER.info(f"Current state: {state_before}")
 
         # Check if state exists in Q-table
         if state_before not in agent.q_table:
@@ -638,18 +638,12 @@ async def async_setup_services(hass: HomeAssistant):
             _LOGGER.info(f"State initialized in Q-table")
 
         # Show Q-values before
-        _LOGGER.info(f"\nQ-values BEFORE update:")
+        _LOGGER.info(f"\nQ-values BEFORE updates:")
         for action, q_val in agent.q_table[state_before].items():
             _LOGGER.info(f"  Action {action}: Q={q_val:.4f}")
 
-        # Simulate a test action (action 1 with positive reward)
         test_action = 1
-        test_reward = 0.5
-
-        _LOGGER.info(f"\nSimulating: action={test_action}, reward={test_reward:.4f}")
-
-        # Manually perform Q-learning update
-        current_q = agent.q_table[state_before].get(test_action, 0.0)
+        initial_q = agent.q_table[state_before].get(test_action, 0.0)
 
         # Get next state (same as current for this test)
         next_state = state_before
@@ -658,29 +652,40 @@ async def async_setup_services(hass: HomeAssistant):
 
         max_next_q = max(agent.q_table[next_state].values())
 
-        # Q-learning formula: Q(s,a) ← Q(s,a) + α[R + γ max Q(s',a') - Q(s,a)]
-        new_q = current_q + agent.learning_rate * (test_reward + GAMMA * max_next_q - current_q)
+        # TEST 1: REJECTION
+        _LOGGER.info(f"\n{'─'*60}")
+        _LOGGER.info(f"TEST 1: REJECTION (accepted=False)")
+        _LOGGER.info(f"{'─'*60}")
+        
+        test_reward_reject = -0.25
+        gamma_reject = 0.0  # Terminal state
+        new_q_reject = initial_q + agent.learning_rate * (test_reward_reject + gamma_reject * max_next_q - initial_q)
 
-        _LOGGER.info(f"\nQ-learning calculation:")
-        _LOGGER.info(f"  current_q = {current_q:.4f}")
-        _LOGGER.info(f"  max_next_q = {max_next_q:.4f}")
-        _LOGGER.info(f"  learning_rate = {agent.learning_rate}")
-        _LOGGER.info(f"  gamma = {GAMMA}")
-        _LOGGER.info(f"  td_target = {test_reward + GAMMA * max_next_q:.4f}")
-        _LOGGER.info(f"  td_error = {test_reward + GAMMA * max_next_q - current_q:.4f}")
-        _LOGGER.info(f"  new_q = {current_q:.4f} + {agent.learning_rate} * {test_reward + GAMMA * max_next_q - current_q:.4f} = {new_q:.4f}")
+        _LOGGER.info(f"Simulating: action={test_action}, reward={test_reward_reject:.4f}, gamma={gamma_reject}")
+        _LOGGER.info(f"Calculation: {initial_q:.4f} + {agent.learning_rate} × ({test_reward_reject:.4f} + {gamma_reject}×{max_next_q:.4f} - {initial_q:.4f})")
+        _LOGGER.info(f"Result: {initial_q:.4f} → {new_q_reject:.4f} (Δ = {new_q_reject - initial_q:+.4f})")
 
-        # Apply update
-        agent.q_table[state_before][test_action] = new_q
+        # TEST 2: ACCEPTANCE
+        _LOGGER.info(f"\n{'─'*60}")
+        _LOGGER.info(f"TEST 2: ACCEPTANCE (accepted=True)")
+        _LOGGER.info(f"{'─'*60}")
 
-        # Show Q-values after
-        _LOGGER.info(f"\nQ-values AFTER update:")
-        for action, q_val in agent.q_table[state_before].items():
-            change = " ← UPDATED" if action == test_action else ""
-            _LOGGER.info(f"  Action {action}: Q={q_val:.4f}{change}")
+        test_reward_accept = 0.3
+        gamma_accept = GAMMA  # Normal discounting (0.95)
+        new_q_accept = initial_q + agent.learning_rate * (test_reward_accept + gamma_accept * max_next_q - initial_q)
 
-        _LOGGER.info(f"\n✓ Q-learning update completed successfully!")
-        _LOGGER.info(f"  Action {test_action} Q-value: {current_q:.4f} → {new_q:.4f} (Δ = {new_q - current_q:+.4f})")
+        _LOGGER.info(f"Simulating: action={test_action}, reward={test_reward_accept:.4f}, gamma={gamma_accept}")
+        _LOGGER.info(f"Calculation: {initial_q:.4f} + {agent.learning_rate} × ({test_reward_accept:.4f} + {gamma_accept}×{max_next_q:.4f} - {initial_q:.4f})")
+        _LOGGER.info(f"Result: {initial_q:.4f} → {new_q_accept:.4f} (Δ = {new_q_accept - initial_q:+.4f})")
+
+        # Apply rejection update (to show the fix works)
+        agent.q_table[state_before][test_action] = new_q_reject
+
+        _LOGGER.info(f"\n{'='*60}")
+        _LOGGER.info(f"SUMMARY:")
+        _LOGGER.info(f"  Rejection: Q goes {initial_q:.4f} → {new_q_reject:.4f} (gamma=0.0, terminal)")
+        _LOGGER.info(f"  Acceptance: Q goes {initial_q:.4f} → {new_q_accept:.4f} (gamma={GAMMA}, normal)")
+        _LOGGER.info(f"\n✓ Applied rejection update to Q-table (shows decrease)")
         _LOGGER.info("="*60)
 
     # Register debug services
