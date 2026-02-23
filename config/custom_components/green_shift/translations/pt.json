@@ -23,6 +23,7 @@
         "data": {
           "main_total_energy_sensor": "Medidor Principal de Energia (kWh Total)",
           "main_total_power_sensor": "Medidor Principal de Potência (Watts Total)",
+          "weather_entity": "Fornecedor Meteorológico (Opcional)",
           "confirmed_energy": "Aparelhos e Tomadas (Energia)",
           "confirmed_power": "Aparelhos e Tomadas (Potência)",
           "confirmed_temp": "Sensores de Temperatura",
@@ -33,6 +34,7 @@
         "data_description": {
           "main_total_energy_sensor": "Se disponível, selecione o sensor que mede a energia TOTAL acumulada de todo o edifício. Caso contrário, deixe este campo vazio.",
           "main_total_power_sensor": "Se disponível, selecione o sensor que mede a potência instantânea TOTAL (Watts). Caso contrário, deixe este campo vazio.",
+          "weather_entity": "Selecione uma entidade meteorológica para ativar a análise de Graus-Dia de Aquecimento (HDD). Isto ajuda a correlacionar o consumo de energia com a temperatura exterior para insights de aquecimento/arrefecimento.",
           "confirmed_energy": "Selecione todos os dispositivos que medem kWh (ex: máquina de lavar, tomadas inteligentes).",
           "confirmed_power": "Selecione todos os dispositivos que medem Watts instantâneos.",
           "confirmed_temp": "Selecione os sensores usados para monitorizar a temperatura ambiente interior.",

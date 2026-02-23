@@ -27,10 +27,8 @@ Checklist to track remaining features, fixes and tests before completion.
     - [x] Check during baseline
 - [x] Check notification report when transitioning from baseline to active intervention
 - [x] Test interface on mobile
-- [ ] Mention that user level is based in completed tasks from the last 30 days
-- [ ] Update hardcoded watt values from Live Focus Area table: use instead classifications based on mean consumption for each area
-- [ ] If no energy sensors available. Measure approximation of energy consumption based on power?
-- [ ] If no power sensors available. Measure approximation of power consumption based on energy?
+- [x] Mention that user level is based in completed tasks from the last 30 days
+- [x] Update hardcoded watt values from Live Focus Area table: use instead classifications based on mean consumption for each area
 
 ### 🎮 Gamification
 - [x] Improve gamification daily tasks
@@ -44,6 +42,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Store data needed for analysis/results extraction
 - [x] Test adaptive difficulty
 - [x] Test gamification logic and UI
+- [ ] Check gamification tasks based on hours: can generate bias on avg hours to complete in analysis queries
 
 ### 🤖 AI
 - [x] Correct state vector gathered data
@@ -64,7 +63,8 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Store data needed for analysis/results extraction
 - [x] Test AI-driven features (notifications, recommendations)
 - [x] Analyze solution for office weekends
-- [ ] Check notification templates that make more sense
+- [ ] Add illuminance and presence logic. Control when using artificial lights when not needed.
+- [ ] Check notification templates that make more sense.
 
 ### 📊 Data
 - [x] Build tables required for analysis extraction
@@ -75,7 +75,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Manage memory usage
 - [x] Analyze quantity of rl episodes being stored into the database (~60K entries per 21 days of runtime)
 - [x] Consider if AI state history and notifications should be kept in persistent memory (JSON)
-- [ ] Store HA's weather info to analyze consumption based on heating degree days
+- [ ] Store HA's weather info to analyze consumption based on heating degree days. Update storage accordingly to store temperature.
 
 ### Validation
 - [x] Add Unit tests

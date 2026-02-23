@@ -23,6 +23,7 @@
         "data": {
           "main_total_energy_sensor": "Main Energy Meter (Total kWh)",
           "main_total_power_sensor": "Main Power Meter (Total Watts)",
+          "weather_entity": "Weather Provider (Optional)",
           "confirmed_energy": "Appliances & Plugs (Energy)",
           "confirmed_power": "Appliances & Plugs (Power)",
           "confirmed_temp": "Temperature Sensors",
@@ -33,6 +34,7 @@
         "data_description": {
           "main_total_energy_sensor": "If available, select the sensor that measures the TOTAL accumulated energy for the whole building. If not, leave this field empty.",
           "main_total_power_sensor": "If available, select the sensor measuring the TOTAL instantaneous power draw (Watts). If not, leave this field empty.",
+          "weather_entity": "Select a weather entity to enable Heating Degree Days (HDD) analysis. This helps correlate energy consumption with outdoor temperature for heating/cooling insights.",
           "confirmed_energy": "Select all sub-devices measuring kWh (e.g., washing machine, smart plugs).",
           "confirmed_power": "Select all sub-devices measuring instantaneous Watts.",
           "confirmed_temp": "Select sensors used to monitor indoor ambient temperature.",

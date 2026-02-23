@@ -681,18 +681,27 @@ views:
                   *Onde a equipa pode ajudar agora?* 🤔
 
                   {%- set sensors = state_attr('sensor.hardware_sensors', 'power') -%}
-                  {%- set ns = namespace(area_sums={}) -%}
+                  {%- set ns = namespace(area_sums={}, total=0) -%}
 
-                  {# Agregar Potência por Área #}
+                  {# Agregar Potência por Área (Incluindo áreas 0W para cálculo preciso) #}
                   {%- if sensors -%}
                     {%- for s in sensors -%}
-                      {%- if s.value is not none and s.value > 0 -%}
+                      {%- if s.value is not none -%}
                         {%- set area = s.area if s.area else 'Outro' -%}
                         {%- set current = ns.area_sums.get(area, 0) -%}
                         {%- set ns.area_sums = dict(ns.area_sums, **{area: current + s.value}) -%}
+                        {%- set ns.total = ns.total + s.value -%}
                       {%- endif -%}
                     {%- endfor -%}
                   {%- endif -%}
+
+                  {# Calcular média entre TODAS as áreas monitorizadas #}
+                  {%- set area_count = ns.area_sums | length -%}
+                  {%- set mean = (ns.total / area_count) if area_count > 0 else 0 -%}
+                  
+                  {# Limiares dinâmicos com um mínimo absoluto (ex: 200W / 50W) #}
+                  {%- set high_threshold = [mean * 1.5, 200] | max -%}
+                  {%- set moderate_threshold = [mean * 0.7, 50] | max -%}
 
                   <table width="100%">
                   <thead>
@@ -704,12 +713,12 @@ views:
                   </thead>
                   <tbody>
                   {%- for area, watts in ns.area_sums.items() | sort(attribute='1', reverse=True) -%}
-                    {# Mostrar apenas áreas com uso significativo #}
-                    {%- if watts > 5 -%}
+                    {# Mostrar apenas áreas com uso acionável (ex: > 10W) #}
+                    {%- if watts > 10 -%}
                     <tr>
                       <td><b>{{ area }}</b></td>
                       <td align="right">{{ watts | int }} W</td>
-                      <td align="center">{% if watts > 500 %}🔴 Alto{% elif watts > 100 %}🟠 Moderado{% else %}🟢 Baixo{% endif %}</td>
+                      <td align="center">{% if watts > high_threshold %}🔴 Alto{% elif watts > moderate_threshold %}🟠 Moderado{% else %}🟢 Baixo{% endif %}</td>
                     </tr>
                     {%- endif -%}
                   {%- endfor -%}
@@ -897,7 +906,8 @@ views:
                   {% endif %}
 
                   ---
-                  **📊 Total de Tarefas Completadas:** {{ tasks }}
+                  **📊 Tarefas Completadas (Últimos 30 Dias):** {{ tasks }}
+                  <small>*O seu nível baseia-se nas tarefas completadas nos últimos 30 dias*</small>
 
               # --- INDICADORES DE ESTATÍSTICAS RPG ---
               - type: horizontal-stack

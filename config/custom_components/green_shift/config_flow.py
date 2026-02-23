@@ -160,6 +160,9 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         
         Args:
             category: The sensor category (e.g., "energy", "power") to sort entities
+
+        Returns:
+            list: List of entity IDs sorted by their current state value in descending order
         """
         entities = self.discovered_cache.get(category, [])
         if not entities:
@@ -182,6 +185,18 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entity_values.sort(key=lambda x: x[1], reverse=True)
         return [x[0] for x in entity_values]
 
+    def _get_weather_entities(self):
+        """
+        Get list of available weather entities.
+        
+        Returns.
+            list: List of weather entity IDs
+        """
+        weather_entities = []
+        for state in self.hass.states.async_all("weather"):
+            weather_entities.append(state.entity_id)
+        return weather_entities
+
     async def async_step_sensor_confirmation(self, user_input=None):
         """
         Step 3: Multi-sensor confirmation slide. All fields are optional.
@@ -192,9 +207,11 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             main_energy = user_input.get("main_total_energy_sensor") # Identify main energy sensor
             main_power = user_input.get("main_total_power_sensor") # Identify main power sensor
+            weather_entity = user_input.get("weather_entity") # Identify weather entity
 
             self.data["main_total_energy_sensor"] = main_energy
             self.data["main_total_power_sensor"] = main_power
+            self.data["weather_entity"] = weather_entity
 
             confirmed_energy = user_input.get("confirmed_energy", [])
             confirmed_power = user_input.get("confirmed_power", [])
@@ -229,6 +246,7 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         hum_list = self.discovered_cache.get("humidity", [])
         lux_list = self.discovered_cache.get("illuminance", [])
         occ_list = self.discovered_cache.get("occupancy", [])
+        weather_list = self._get_weather_entities()
 
         # Schema with everything as Optional to allow users to skip
         data_schema = vol.Schema({
@@ -243,6 +261,14 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "main_total_power_sensor",
                 description={"suggested_value": sorted_power[0] if sorted_power else None}
             ): EntitySelector(EntitySelectorConfig(domain="sensor", device_class="power")),
+
+            # Weather provider for outdoor temperature analysis
+            vol.Optional(
+                "weather_entity",
+                description={"suggested_value": weather_list[0] if weather_list else None}
+            ): EntitySelector(
+                EntitySelectorConfig(domain="weather", multiple=False)
+            ),
 
             # Other energy sensors (Optional/Multiple)
             vol.Optional("confirmed_energy", default=sorted_energy): EntitySelector(

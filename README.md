@@ -144,7 +144,11 @@ ha core restart
 1. Go to **Settings** → **Devices & Services**
 2. Click **+ ADD INTEGRATION**
 3. Search for **"Green Shift"**
-4. Follow the configuration wizard
+4. Follow the configuration wizard:
+   - Configure currency and environment settings
+   - Select your sensors (energy, power, temperature, etc.)
+   - **Optional**: Select a weather entity for Heating Degree Days analysis
+   - Assign areas to sensors
 
 ✅ **That's it!** The integration will now start collecting baseline data.
 

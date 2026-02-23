@@ -16,7 +16,7 @@ from typing import List, Tuple, Dict, Optional, Any
 import numpy as np
 import asyncio
 from homeassistant.core import HomeAssistant
-from .const import UPDATE_INTERVAL_SECONDS, RL_EPISODE_RETENTION_DAYS
+from .const import UPDATE_INTERVAL_SECONDS, RL_EPISODE_RETENTION_DAYS, BASE_TEMPERATURE, WEATHER_ENTITIES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,9 +24,10 @@ _LOGGER = logging.getLogger(__name__)
 class StorageManager:
     """Manages SQLite and JSON storage for Green Shift."""
 
-    def __init__(self, hass: HomeAssistant, config_dir: str = None):
+    def __init__(self, hass: HomeAssistant, config_data: dict = None, config_dir: str = None):
         """Initialize storage manager."""
         self.hass = hass
+        self.config_data = config_data
 
         # Use Home Assistant's configuration directory
         if config_dir is None:
@@ -1630,6 +1631,46 @@ class StorageManager:
         start_ts = datetime.strptime(date, "%Y-%m-%d").timestamp()
         end_ts = start_ts + 86400
 
+        outdoor_temp = None
+        hdd = None
+        
+        # Build weather entity list: user-configured first, then fallback list
+        weather_entities = []
+        configured_weather = self.config_data.get("weather_entity")
+        if configured_weather:
+            weather_entities.append(configured_weather)
+        weather_entities.extend(WEATHER_ENTITIES)
+        
+        for entity_id in weather_entities:
+            try:
+                state_obj = self.hass.states.get(entity_id)
+                if state_obj and state_obj.state not in ["unavailable", "unknown", None]:
+                    if entity_id.startswith("weather."):
+                        # Weather entities have temperature as an attribute
+                        temp_attr = state_obj.attributes.get("temperature")
+                        if temp_attr is not None:
+                            outdoor_temp = round(float(temp_attr), 1)
+                            _LOGGER.info("Found outdoor temperature from %s: %.1f°C", entity_id, outdoor_temp)
+                            break
+                    else:
+                        # Sensor entities have temperature as state
+                        try:
+                            outdoor_temp = round(float(state_obj.state), 1)
+                            _LOGGER.info("Found outdoor temperature from %s: %.1f°C", entity_id, outdoor_temp)
+                            break
+                        except (ValueError, TypeError):
+                            continue
+            except Exception as e:
+                _LOGGER.debug("Error reading %s: %s", entity_id, e)
+                continue
+        
+        # Calculate HDD if we found temperature
+        if outdoor_temp is not None:
+            hdd = round(max(0, BASE_TEMPERATURE - outdoor_temp), 1)
+            _LOGGER.info("Calculated HDD (base %.1f°C): %.1f", BASE_TEMPERATURE, hdd)
+        else:
+            _LOGGER.warning("No outdoor temperature found from any weather entity")
+
         def _compute():
             # Connect to both databases
             sensor_conn = sqlite3.connect(str(self.db_path))
@@ -1722,11 +1763,13 @@ class StorageManager:
                  avg_occupancy_count, total_occupied_hours,
                  tasks_generated, tasks_completed, tasks_verified,
                  nudges_sent, nudges_accepted, nudges_dismissed, nudges_ignored, nudges_blocked,
-                 avg_anomaly_index, avg_behaviour_index, avg_fatigue_index)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 avg_anomaly_index, avg_behaviour_index, avg_fatigue_index,
+                 outdoor_temp_celsius, hdd_base18)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (date, phase, energy_stats[0], energy_stats[1], energy_stats[2], energy_stats[3],
                    energy_stats[4], energy_stats[5], energy_stats[6], avg_occupancy, energy_stats[7],
-                   *task_stats, *nudge_stats, blocked_count, *indices_stats))
+                   *task_stats, *nudge_stats, blocked_count, *indices_stats,
+                   outdoor_temp, hdd))
 
             research_conn.commit()
             sensor_conn.close()

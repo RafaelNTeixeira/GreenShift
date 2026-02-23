@@ -113,3 +113,13 @@ SHADOW_INTERVAL_MULTIPLIER = 4 # Shadow episode every N AI cycles (e.g., if AI_F
 
 # Discount factor for RL
 GAMMA = 0.95
+
+# Weather-related constants
+BASE_TEMPERATURE = 18.0
+WEATHER_ENTITIES = [
+    "weather.home",
+    "weather.forecast_home",
+    "sensor.outdoor_temperature",
+    "sensor.outside_temperature",
+    "sensor.outdoor_temp"
+]

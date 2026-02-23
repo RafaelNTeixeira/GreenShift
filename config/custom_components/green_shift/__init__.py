@@ -75,7 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await sync_helper_entities(hass, entry)
 
     # Initialize storage manager (SQLite + JSON)
-    storage = StorageManager(hass)
+    storage = StorageManager(hass, config_data=entry.data)
     await storage.setup()
 
     # Initialize backup manager
