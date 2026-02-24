@@ -402,7 +402,7 @@ class DailyCO2EstimateSensor(GreenShiftBaseSensor):
         """Return the daily kWh accumulated and the applied CO2 factor."""
         return {
             "daily_kwh_accumulated": round(self._collector.current_daily_energy, 3),
-            "co2_factor": 0.097,
+            "co2_factor": CO2_FACTOR,
         }
 
 

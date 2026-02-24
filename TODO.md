@@ -29,7 +29,18 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Test interface on mobile
 - [x] Mention that user level is based in completed tasks from the last 30 days
 - [x] Update hardcoded watt values from Live Focus Area table: use instead classifications based on mean consumption for each area
-
+- [ ] Top 5 consumers section not appearing after setup
+- [ ] "Entity Not Found" errors:
+    - [ ] Current consumption cost not appearing
+    - [ ] Gauge Week challenge not appearing
+    - [ ] Section below gauge not appearing also
+    - [ ] Engagement index not appearing in profile page
+    - [ ] Accummulated savings not appearing in profile page
+    - [ ] Weekly challenge not appearing in profile page
+    - [ ] Energy goals slider not appearing in settings page
+    - [ ] Currency dropdown not appearing in settings page
+    - [ ] Eletricity dropdown not appearing in settings page
+ 
 ### 🎮 Gamification
 - [x] Improve gamification daily tasks
 - [x] Create a service to check if daily tasks have been completed
