@@ -50,7 +50,8 @@ NOTIFICATION_TEMPLATES = {
         "behavioural": [
             {
                 "title": "Bedtime Energy Tip",
-                "message": "🌙 It's {time_of_day} - remember to turn off devices in standby mode before bed. Small actions like this can save up to 10% on your energy bill."
+                "message": "🌙 It's {time_of_day} - remember to turn off devices in standby mode before bed. Small actions like this can save up to 10% on your energy bill.",
+                "context_filter": "nighttime"
             },
             {
                 "title": "Smart Habit Suggestion",
@@ -149,7 +150,8 @@ NOTIFICATION_TEMPLATES = {
         "behavioural": [
             {
                 "title": "Dica de Energia para a Noite",
-                "message": "🌙 É {time_of_day} - lembre-se de desligar dispositivos em modo standby antes de dormir. Pequenas ações como esta podem poupar até 10% na sua conta de energia."
+                "message": "🌙 É {time_of_day} - lembre-se de desligar dispositivos em modo standby antes de dormir. Pequenas ações como esta podem poupar até 10% na sua conta de energia.",
+                "context_filter": "nighttime"
             },
             {
                 "title": "Sugestão de Hábito Inteligente",

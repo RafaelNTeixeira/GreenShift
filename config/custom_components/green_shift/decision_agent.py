@@ -836,6 +836,8 @@ class DecisionAgent:
                     filtered_templates.append(template)
                 elif context_filter == "away_mode" and context.get("is_away_mode"):
                     filtered_templates.append(template)
+                elif context_filter == "nighttime" and context.get("is_nighttime"):
+                    filtered_templates.append(template)
             
             # Use filtered templates if any match, otherwise fall back to generic ones
             if filtered_templates:
@@ -946,6 +948,9 @@ class DecisionAgent:
             not occupancy and  # Nobody present
             current_state.get("power", 0) > standby_threshold  # Power above expected standby
         )
+
+        # Detect "nighttime" scenario: late evening hours (21:00-23:59)
+        context["is_nighttime"] = 21 <= now.hour <= 23
 
         _LOGGER.debug(
             "Context filters - Daylight waste: %s (lux=%.0f, occ=%s, hours=%s, power>baseline=%s), Away mode: %s (occ=%s, power=%.0f>%.0f)",
