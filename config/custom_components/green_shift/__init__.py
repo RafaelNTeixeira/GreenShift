@@ -138,7 +138,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             working_hours_filter = True if is_office_mode else None
 
             power_history_data = await collector.get_power_history(
-                days=days_running if days_running > 0 else None,
+                days=max(1, days_running),
                 working_hours_only=working_hours_filter
             )
             power_values = [power for timestamp, power in power_history_data]
@@ -489,8 +489,10 @@ async def async_setup_services(hass: HomeAssistant):
             noise = random.gauss(0, 150)
             power = max(50, base_power + noise)  # Never below 50W
 
-            # Cumulative energy for this interval (kWh)
-            energy = power * (UPDATE_INTERVAL_SECONDS / 3600)  # Convert to kWh for this interval
+            # Cumulative energy for this day up to this timestamp (kWh)
+            # Matches real collector: stores total kWh accumulated since midnight
+            hours_since_midnight = timestamp.hour + timestamp.minute / 60.0 + timestamp.second / 3600.0
+            energy = (power / 1000.0) * hours_since_midnight  # kWh since midnight
 
             # Temperature varies slightly
             base_temp = 21
@@ -692,6 +694,12 @@ async def async_setup_services(hass: HomeAssistant):
         _LOGGER.info(f"\n✓ Applied rejection update to Q-table (shows decrease)")
         _LOGGER.info("="*60)
 
+    async def save_state(call: ServiceCall):
+        """Immediately persist the AI agent state to JSON storage."""
+        agent = hass.data[DOMAIN]["agent"]
+        await agent._save_persistent_state()
+        _LOGGER.info("AI state manually saved to persistent storage")
+
     # Register debug services
     hass.services.async_register(DOMAIN, "force_ai_process", force_ai_process)
     hass.services.async_register(DOMAIN, "force_notification", force_notification)
@@ -699,6 +707,7 @@ async def async_setup_services(hass: HomeAssistant):
     hass.services.async_register(DOMAIN, "set_test_indices", set_test_indices)
     hass.services.async_register(DOMAIN, "inspect_q_table", inspect_q_table)
     hass.services.async_register(DOMAIN, "test_q_learning", test_q_learning)
+    hass.services.async_register(DOMAIN, "save_state", save_state)
 
     # ===========================================================================================
 
@@ -1057,6 +1066,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, "restore_backup")
     hass.services.async_remove(DOMAIN, "list_backups")
     hass.services.async_remove(DOMAIN, "test_data_retention")
+    hass.services.async_remove(DOMAIN, "save_state")
 
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN]["update_listener"]()

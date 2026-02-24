@@ -479,11 +479,19 @@ class StorageManager:
             )
             deleted_tasks = cursor.rowcount
 
+            # Clean old task difficulty history (keep 30 days to preserve recent calibration)
+            cursor.execute(
+                "DELETE FROM task_difficulty_history WHERE date < ?",
+                (cutoff_date,)
+            )
+            deleted_difficulty = cursor.rowcount
+
             conn.commit()
             conn.close()
 
-            if deleted_global > 0 or deleted_area > 0 or deleted_tasks > 0:
-                _LOGGER.info("Cleaned up %d global, %d area, and %d task records", deleted_global, deleted_area, deleted_tasks)
+            if deleted_global > 0 or deleted_area > 0 or deleted_tasks > 0 or deleted_difficulty > 0:
+                _LOGGER.info("Cleaned up %d global, %d area, %d task, and %d difficulty records",
+                             deleted_global, deleted_area, deleted_tasks, deleted_difficulty)
 
         await self.hass.async_add_executor_job(_cleanup)
 

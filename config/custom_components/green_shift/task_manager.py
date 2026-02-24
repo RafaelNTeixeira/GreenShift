@@ -68,7 +68,6 @@ class TaskManager:
         # Power-based tasks (verifiable via power sensors)
         if self.sensors.get("power"):
             available_task_generators.append(self._generate_power_reduction_task)
-            available_task_generators.append(self._generate_standby_power_task)
             available_task_generators.append(self._generate_peak_avoidance_task)
 
         # Illuminance-based tasks (verifiable via light sensors)
@@ -475,23 +474,24 @@ class TaskManager:
                 results[task['task_id']] = True
                 continue
 
-            verified = await self._verify_single_task(task)
-            results[task['task_id']] = verified
+            result = await self._verify_single_task(task)
+            task_verified, actual_value = result
+            results[task['task_id']] = task_verified
 
-            if verified:
+            if task_verified:
                 await self.storage.mark_task_verified(task['task_id'], True)
 
-                # Also log completion to research database
+                # Also log completion to research database with the actual measured value
                 await self.storage.log_task_completion(
                     task['task_id'],
-                    completion_value=task.get('target_value')
+                    completion_value=actual_value
                 )
 
-                _LOGGER.info("Task %s verified successfully", task['task_id'])
+                _LOGGER.info("Task %s verified successfully (measured: %s)", task['task_id'], actual_value)
 
         return results
 
-    async def _verify_single_task(self, task: Dict) -> bool:
+    async def _verify_single_task(self, task: Dict) -> tuple:
         """
         Verify a single task based on its type and target.
         
@@ -499,7 +499,8 @@ class TaskManager:
             task (Dict): The task dictionary containing details for verification.
 
         Returns:
-            bool: True if the task is verified as completed, False otherwise.
+            tuple: (verified: bool, actual_value: Optional[float]) where actual_value is the
+                   real measured value during the day (not the target), or None if unavailable.
         """
         task_type = task['task_type']
         target_value = task['target_value']
@@ -511,7 +512,7 @@ class TaskManager:
 
         if hours_passed < 1:
             # Too early to verify
-            return False
+            return False, None
 
         try:
             if task_type == 'temperature_reduction':
@@ -521,60 +522,60 @@ class TaskManager:
 
                 temp_history = await self.data_collector.get_temperature_history(hours=int(hours_passed), working_hours_only=working_hours_filter)
                 if not temp_history:
-                    return False
+                    return False, None
                 avg_temp = np.mean([temp for _, temp in temp_history])
                 _LOGGER.debug("Average temperature for verification: %.1f°C, target: %.1f°C", avg_temp, target_value)
-                return avg_temp <= target_value
+                return avg_temp <= target_value, round(avg_temp, 2)
 
             elif task_type in ['power_reduction', 'daylight_usage']:
                 # Check average power today
                 power_history = await self.data_collector.get_power_history(hours=int(hours_passed))
                 if not power_history:
-                    return False
+                    return False, None
 
                 if task_type == 'daylight_usage':
                     # Filter for daytime hours only
                     power_history = [(ts, p) for ts, p in power_history if 8 <= ts.hour < 17]
 
                 if not power_history:
-                    return False
+                    return False, None
 
                 avg_power = np.mean([power for _, power in power_history])
                 _LOGGER.debug("Average power for verification: %.2fW, target: %.2fW", avg_power, target_value)
-                return avg_power <= target_value
+                return avg_power <= target_value, round(avg_power, 2)
 
             elif task_type == 'standby_reduction':
-                # Check night power
+                # Keep backward compatibility for previously generated standby tasks
                 power_history = await self.data_collector.get_power_history(hours=int(hours_passed))
                 night_powers = [p for ts, p in power_history if 0 <= ts.hour < 6]
 
                 if not night_powers:
-                    return False  # Can only verify after 6am
+                    return False, None  # Can only verify after 6am
 
                 avg_night_power = np.mean(night_powers)
                 _LOGGER.debug("Average night power for verification: %.2fW, target: %.2fW", avg_night_power, target_value)
-                return avg_night_power <= target_value
+                return avg_night_power <= target_value, round(avg_night_power, 2)
 
             elif task_type == 'unoccupied_power':
                 # Check area-specific power
                 if not area_name:
-                    return False
+                    return False, None
 
                 area_history = await self.data_collector.get_area_history(
                     area_name, 'power', hours=int(hours_passed)
                 )
                 if not area_history:
-                    return False
+                    return False, None
 
                 avg_area_power = np.mean([power for _, power in area_history])
                 _LOGGER.debug("Average power in area %s for verification: %.2fW, target: %.2fW", area_name, avg_area_power, target_value)
-                return avg_area_power <= target_value
+                return avg_area_power <= target_value, round(avg_area_power, 2)
 
             elif task_type == 'peak_avoidance':
                 # Extract peak hour from description or use baseline
                 power_history = await self.data_collector.get_power_history(hours=int(hours_passed))
                 if not power_history:
-                    return False
+                    return False, None
 
                 # For now, check if any hour exceeded the target
                 # Group by hour
@@ -585,17 +586,20 @@ class TaskManager:
                         hourly_powers[hour] = []
                     hourly_powers[hour].append(power)
 
-                # Check all hours
+                # Check all hours and track max hourly average
+                max_hourly_avg = 0.0
                 for hour_powers in hourly_powers.values():
-                    if np.mean(hour_powers) > target_value:
-                        _LOGGER.debug("Peak avoidance task failed due to hour with average power %.2fW exceeding target %.2fW", np.mean(hour_powers), target_value)
-                        return False
+                    hourly_avg = np.mean(hour_powers)
+                    max_hourly_avg = max(max_hourly_avg, hourly_avg)
+                    if hourly_avg > target_value:
+                        _LOGGER.debug("Peak avoidance task failed due to hour with average power %.2fW exceeding target %.2fW", hourly_avg, target_value)
+                        return False, round(max_hourly_avg, 2)
 
                 _LOGGER.debug("Peak avoidance task verified successfully with all hours below target %.2fW", target_value)
-                return True
+                return True, round(max_hourly_avg, 2)
 
         except Exception as e:
             _LOGGER.error("Error verifying task %s: %s", task['task_id'], e)
-            return False
+            return False, None
 
-        return False
+        return False, None

@@ -445,8 +445,8 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
             return
 
         # Limit history to only the active phase period (capped at DB retention of 14 days)
-        days_active = max(1, (datetime.now() - active_since).days + 1)
-        power_history_data = await self._collector.get_power_history(days=days_active)
+        hours_active = max(1, int((datetime.now() - active_since).total_seconds() / 3600))
+        power_history_data = await self._collector.get_power_history(hours=hours_active)
         power_history = [power for timestamp, power in power_history_data]
 
         if len(power_history) < 10:
@@ -511,8 +511,8 @@ class CO2SavedSensor(GreenShiftAISensor):
             self._attr_extra_state_attributes = {}
             return
 
-        days_active = max(1, (datetime.now() - active_since).days + 1)
-        power_history_data = await self._collector.get_power_history(days=days_active)
+        hours_active = max(1, int((datetime.now() - active_since).total_seconds() / 3600))
+        power_history_data = await self._collector.get_power_history(hours=hours_active)
 
         power_history = [power for timestamp, power in power_history_data]
 

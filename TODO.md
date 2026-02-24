@@ -35,11 +35,11 @@ Checklist to track remaining features, fixes and tests before completion.
     - [ ] Gauge Week challenge not appearing
     - [ ] Section below gauge not appearing also
     - [ ] Engagement index not appearing in profile page
-    - [ ] Accummulated savings not appearing in profile page
+    - [ ] Accumulated savings not appearing in profile page
     - [ ] Weekly challenge not appearing in profile page
     - [ ] Energy goals slider not appearing in settings page
     - [ ] Currency dropdown not appearing in settings page
-    - [ ] Eletricity dropdown not appearing in settings page
+    - [ ] Electricity dropdown not appearing in settings page
  
 ### 🎮 Gamification
 - [x] Improve gamification daily tasks
@@ -94,6 +94,8 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Check .gitignore
 - [x] Add pre-commit hook to run tests before executing a commit
 - [x] Improve code documentation where needed
+- [x] Test pending notifications backup after restart
+- [ ] Try setup from scratch
 - [ ] Update README
 
 ---

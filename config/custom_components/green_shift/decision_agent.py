@@ -225,6 +225,28 @@ class DecisionAgent:
             except (ValueError, AttributeError):
                 self.active_since = None
 
+        # Load pending episodes (surviving HA restart between notification send and user response)
+        if "pending_episodes" in state and isinstance(state["pending_episodes"], dict):
+            restored = 0
+            for notif_id, ep in state["pending_episodes"].items():
+                try:
+                    parsed_key = ast.literal_eval(ep["state_key"])
+                    if isinstance(parsed_key, tuple):
+                        ts = ep.get("timestamp")
+                        self.pending_episodes[notif_id] = {
+                            "state_key": parsed_key,
+                            "action": ep["action"],
+                            "initial_power": ep["initial_power"],
+                            "timestamp": datetime.fromisoformat(ts) if isinstance(ts, str) else datetime.now(),
+                            "action_source": ep["action_source"],
+                            "opportunity_score": ep.get("opportunity_score"),
+                        }
+                        restored += 1
+                except (ValueError, SyntaxError, TypeError, KeyError) as e:
+                    _LOGGER.warning("Failed to restore pending episode %s: %s", notif_id, e)
+            if restored:
+                _LOGGER.info("Restored %d pending episodes from persistent state", restored)
+
         _LOGGER.info("Persistent AI state loaded successfully")
 
     async def _save_persistent_state(self):
@@ -267,6 +289,17 @@ class DecisionAgent:
             "episode_number": self.episode_number,
             "logged_weeks": list(self._logged_weeks),
             "active_since": self.active_since.isoformat() if self.active_since else None,
+            "pending_episodes": {
+                notif_id: {
+                    "state_key": str(ep["state_key"]),
+                    "action": ep["action"],
+                    "initial_power": ep["initial_power"],
+                    "timestamp": ep["timestamp"].isoformat() if isinstance(ep["timestamp"], datetime) else ep["timestamp"],
+                    "action_source": ep["action_source"],
+                    "opportunity_score": ep["opportunity_score"],
+                }
+                for notif_id, ep in self.pending_episodes.items()
+            },
         }
 
         current_state.update(ai_state)
@@ -524,6 +557,9 @@ class DecisionAgent:
                 "opportunity_score": opportunity_score
             }
             _LOGGER.debug("Pending episode stored for notification %s - Q-table will update after user response", notification_id)
+
+            # Save immediately so this episode survives a restart before the periodic save fires
+            await self._save_persistent_state()
 
     async def _shadow_decide_action(self):
         """
@@ -808,7 +844,7 @@ class DecisionAgent:
                     "template_index": notification.get("template_index"),
                     "title": notification["title"],
                     "message": notification["message"],
-                    "state_vector": self.state_vector.tolist() if self.state_vector is not None and hasattr(self.state_vector, 'tolist') else [],
+                    "state_vector": list(self.state_vector) if self.state_vector is not None else [],
                     "current_power": current_state.get("power", 0),
                     "anomaly_index": self.anomaly_index,
                     "behaviour_index": self.behaviour_index,
@@ -1131,8 +1167,8 @@ class DecisionAgent:
         current_state = self.data_collector.get_current_state()
         now = datetime.now()
 
-        # Serialize action mask
-        action_mask_dict = {int(k): bool(v) for k, v in self.action_mask.items()}
+        # Serialize action mask (may be None if agent hasn't run a full cycle yet after restart)
+        action_mask_dict = {int(k): bool(v) for k, v in self.action_mask.items()} if self.action_mask is not None else {}
 
         block_data = {
             "phase": self.phase,
@@ -1148,7 +1184,7 @@ class DecisionAgent:
             "adaptive_cooldown_minutes": adaptive_cooldown,
             "available_action_count": len(available_actions) if available_actions else 0,
             "action_mask": action_mask_dict,
-            "state_vector": self.state_vector.tolist() if self.state_vector is not None and hasattr(self.state_vector, 'tolist') else [],
+            "state_vector": list(self.state_vector) if self.state_vector is not None else [],
             "time_of_day_hour": now.hour
         }
 
@@ -1206,51 +1242,6 @@ class DecisionAgent:
 
         return reward
 
-    async def _calculate_reward(self) -> float:
-        """
-        Calculates reward R_t based on energy savings, engagement and fatigue.
-        NOTE: This is used for SHADOW LEARNING only (baseline phase).
-        Active phase uses _calculate_reward_with_feedback() for delayed Q-learning.
-
-        Formula: 
-            R_t = α·ΔE + β·I_engagement - δ·I_fatigue
-
-        Key components:
-        1. Energy savings (ΔE): Calculated as the percentage reduction in power consumption compared to a baseline (either the running mean or a predefined baseline). Higher savings yield higher rewards.
-        2. User engagement (I_engagement): Positive reward for user interactions with notifications (accepting nudges), negative for rejections. This encourages the agent to learn which actions are more effective for the user.
-        3. Fatigue penalty (I_fatigue): Negative reward that increases with the fatigue index, discouraging the agent from sending too many notifications when the user is likely to be fatigued.
-
-        Returns:
-            float: The calculated reward for the current action.
-        """
-        power_history_data = await self.data_collector.get_power_history(hours=1) # Last hour
-        power_values = [power for timestamp, power in power_history_data]
-
-        if len(power_values) < 10:
-            return 0.0
-
-        # Energy savings component
-        current = power_values[-1]
-        baseline = self.baseline_consumption if self.baseline_consumption > 0 else np.mean(power_values)
-        energy_saving = max(0, (baseline - current) / baseline) if baseline > 0 else 0
-
-        # User engagement component
-        engagement = self.behaviour_index
-
-        # Fatigue penalty
-        fatigue_penalty = self.fatigue_index
-
-        # Combined reward
-        reward = (
-            REWARD_WEIGHTS["alpha"] * energy_saving +
-            REWARD_WEIGHTS["beta"] * engagement -
-            REWARD_WEIGHTS["delta"] * fatigue_penalty
-        )
-        _LOGGER.debug("Reward calculated: Energy saving=%.4f, Engagement=%.4f, Fatigue penalty=%.4f, Total reward=%.4f",
-                      energy_saving, engagement, fatigue_penalty, reward)
-
-        return reward
-
     async def _log_rl_episode(self, state_key: tuple, action: int, reward: float, action_source: str, opportunity_score: float = None, accepted: bool = None):
         """
         Log RL decision episode to research database for convergence analysis.
@@ -1276,8 +1267,8 @@ class DecisionAgent:
         # Get current power
         current_state = self.data_collector.get_current_state()
 
-        # Serialize action mask
-        action_mask_dict = {int(k): bool(v) for k, v in self.action_mask.items()}
+        # Serialize action mask (may be None if agent hasn't run a full cycle yet after restart)
+        action_mask_dict = {int(k): bool(v) for k, v in self.action_mask.items()} if self.action_mask is not None else {}
 
         # Get time of day
         now = datetime.now()
@@ -1289,9 +1280,9 @@ class DecisionAgent:
             gamma_used = GAMMA if accepted else 0.0
 
         episode_data = {
-            "episode": self.episode_number,
+            "episode": self.shadow_episode_number if action_source.startswith("shadow") else self.episode_number,
             "phase": self.phase,
-            "state_vector": self.state_vector.tolist() if self.state_vector is not None and hasattr(self.state_vector, 'tolist') else [],
+            "state_vector": list(self.state_vector) if self.state_vector is not None else [],
             "state_key": state_key,
             "action": action,
             "action_name": action_name,
@@ -1382,9 +1373,16 @@ class DecisionAgent:
                     std = np.std(power_values)
                     current = power_values[-1]
 
+                    area_power_baseline = self.area_baselines.get(area, {}).get("power")
                     if std > 0:
                         z_score = abs((current - mean) / std)
                         area_anomalies["power"] = min(z_score / 3.0, 1.0)
+
+                    # Also check against area baseline if in active phase
+                    if area_power_baseline and area_power_baseline > 0:
+                        baseline_deviation = (current - area_power_baseline) / area_power_baseline
+                        if baseline_deviation > 0.3:  # More than 30% above baseline
+                            area_anomalies["power"] = max(area_anomalies.get("power", 0), min(baseline_deviation, 1.0))
 
             # Check humidity anomalies
             hum_history = await self.data_collector.get_area_history(area, "humidity", hours=2)
@@ -1438,8 +1436,8 @@ class DecisionAgent:
         responded = [n for n in recent_notifs if n.get("responded", False)]
 
         if not responded:
-            # No responses = moderate fatigue
-            self.fatigue_index = 0.4
+            # No responses yet = no startup penalty. Fatigue only builds from rejections
+            self.fatigue_index = 0.0
             return
 
         rejected = [n for n in responded if not n.get("accepted", False)]

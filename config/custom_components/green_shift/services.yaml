@@ -121,6 +121,11 @@ set_test_indices:
           step: 0.1
           mode: slider
 
+save_state:
+  name: Save State
+  description: Immediately persist the current AI agent state to JSON storage, without waiting for the periodic save interval.
+  fields: {}
+
 create_backup:
   name: Create Backup
   description: Manually create a backup of all Green Shift data

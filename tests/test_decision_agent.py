@@ -231,14 +231,15 @@ class TestUpdateFatigueIndex:
         assert agent.fatigue_index == 0.0
 
     @pytest.mark.asyncio
-    async def test_no_responded_sets_moderate_fatigue(self):
+    async def test_no_responded_sets_zero_fatigue(self):
+        """Notifications sent but not yet responded to should yield 0.0 fatigue (no startup penalty)."""
         agent = make_agent()
         agent.notification_history = deque(
             [_notif(responded=False), _notif(responded=False)],
             maxlen=100
         )
         await agent._update_fatigue_index()
-        assert agent.fatigue_index == pytest.approx(0.4)
+        assert agent.fatigue_index == pytest.approx(0.0)
 
     @pytest.mark.asyncio
     async def test_all_accepted_yields_low_fatigue(self):
