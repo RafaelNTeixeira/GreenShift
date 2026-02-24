@@ -191,8 +191,11 @@ class TaskManager:
         stats = await self.storage.get_task_difficulty_stats('power_reduction')
         difficulty = await self._calculate_task_difficulty(stats)
 
-        # Get average power from last 7 days
-        power_history = await self.data_collector.get_power_history(days=7)
+        # Get average power from last 7 days (working hours only in office mode)
+        is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+        working_hours_filter = True if is_office_mode else None
+
+        power_history = await self.data_collector.get_power_history(days=7, working_hours_only=working_hours_filter)
         if not power_history:
             return None
 
@@ -236,6 +239,7 @@ class TaskManager:
         difficulty = await self._calculate_task_difficulty(stats)
 
         # Get power usage during night hours (00:00-06:00) from last 7 days
+        # Note: standby tasks always use unfiltered data since night hours are outside working hours
         power_history = await self.data_collector.get_power_history(days=7)
         if not power_history:
             return None
@@ -282,8 +286,11 @@ class TaskManager:
         stats = await self.storage.get_task_difficulty_stats('daylight_usage')
         difficulty = await self._calculate_task_difficulty(stats)
 
-        # Get power usage during daylight hours (08:00-17:00)
-        power_history = await self.data_collector.get_power_history(days=7)
+        # Get power usage during daylight hours (08:00-17:00) (working hours only in office mode)
+        is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+        working_hours_filter = True if is_office_mode else None
+
+        power_history = await self.data_collector.get_power_history(days=7, working_hours_only=working_hours_filter)
         if not power_history:
             return None
 
@@ -381,8 +388,11 @@ class TaskManager:
         stats = await self.storage.get_task_difficulty_stats('peak_avoidance')
         difficulty = await self._calculate_task_difficulty(stats)
 
-        # Identify peak hour from last 7 days
-        power_history = await self.data_collector.get_power_history(days=7)
+        # Identify peak hour from last 7 days (working hours only in office mode)
+        is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+        working_hours_filter = True if is_office_mode else None
+
+        power_history = await self.data_collector.get_power_history(days=7, working_hours_only=working_hours_filter)
         if not power_history:
             return None
 
@@ -524,7 +534,7 @@ class TaskManager:
 
                 if task_type == 'daylight_usage':
                     # Filter for daytime hours only
-                    power_history = [(ts, p) for ts, p in power_history if 9 <= ts.hour < 17]
+                    power_history = [(ts, p) for ts, p in power_history if 8 <= ts.hour < 17]
 
                 if not power_history:
                     return False

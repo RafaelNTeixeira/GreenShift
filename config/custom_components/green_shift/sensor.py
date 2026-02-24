@@ -31,7 +31,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import DOMAIN, GS_UPDATE_SIGNAL, GS_AI_UPDATE_SIGNAL, BASELINE_DAYS, UPDATE_INTERVAL_SECONDS, PHASE_BASELINE
+from .const import CO2_FACTOR, DOMAIN, GS_UPDATE_SIGNAL, GS_AI_UPDATE_SIGNAL, BASELINE_DAYS, UPDATE_INTERVAL_SECONDS, PHASE_BASELINE
 from .helpers import get_normalized_value, get_entity_area, get_environmental_impact
 
 _LOGGER = logging.getLogger(__name__)
@@ -387,7 +387,7 @@ class DailyCO2EstimateSensor(GreenShiftBaseSensor):
     @property
     def state(self):
         """Calculate the daily CO2 emissions based on the daily energy consumption and a fixed carbon intensity factor."""
-        co2_factor_portugal = 0.097 # kg/kWh as of early 2026
+        co2_factor_portugal = CO2_FACTOR # kg/kWh as of early 2026
 
         # Get accurate daily kWh from the Odometer logic
         daily_kwh = self._collector.current_daily_energy
@@ -431,8 +431,22 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
 
     async def _async_update_state(self):
         """Fetch data asynchronously and calculate state."""
-        # Await the async database call
-        power_history_data = await self._collector.get_power_history()
+        # Only calculate savings during active phase, using data from when it started
+        active_since = getattr(self._agent, 'active_since', None)
+        if self._agent.phase == PHASE_BASELINE or active_since is None:
+            self._attr_native_value = 0
+            self._attr_extra_state_attributes = {
+                "avg_power_w": 0,
+                "baseline_consumption_w": round(self._agent.baseline_consumption, 2),
+                "saving_watts": 0,
+                "currency": self.unit_of_measurement,
+                "note": "Waiting for active phase",
+            }
+            return
+
+        # Limit history to only the active phase period (capped at DB retention of 14 days)
+        days_active = max(1, (datetime.now() - active_since).days + 1)
+        power_history_data = await self._collector.get_power_history(days=days_active)
         power_history = [power for timestamp, power in power_history_data]
 
         if len(power_history) < 10:
@@ -490,7 +504,15 @@ class CO2SavedSensor(GreenShiftAISensor):
 
     async def _async_update_state(self):
         """Fetch data asynchronously and calculate CO2 saved based on energy savings compared to the baseline."""
-        power_history_data = await self._collector.get_power_history()
+        # Only calculate CO2 savings during active phase, using data from when it started
+        active_since = getattr(self._agent, 'active_since', None)
+        if self._agent.phase == PHASE_BASELINE or active_since is None:
+            self._attr_native_value = 0
+            self._attr_extra_state_attributes = {}
+            return
+
+        days_active = max(1, (datetime.now() - active_since).days + 1)
+        power_history_data = await self._collector.get_power_history(days=days_active)
 
         power_history = [power for timestamp, power in power_history_data]
 
@@ -859,8 +881,8 @@ class OpportunityScoreSensor(GreenShiftAISensor):
             self._attr_extra_state_attributes = {
                 "score": round(score, 3),
                 "description": "Opportunity score for sending notification (0-1, higher = better)",
-                "threshold_high": 0.75,
-                "threshold_critical": 0.90
+                "threshold_high": 0.6,
+                "threshold_critical": 0.8
             }
         except Exception as e:
             _LOGGER.error("Error calculating opportunity score: %s", e)

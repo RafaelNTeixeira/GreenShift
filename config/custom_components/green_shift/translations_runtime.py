@@ -19,10 +19,6 @@ NOTIFICATION_TEMPLATES = {
                 "message": "🔌 {device_name} is currently using {device_power}W, which is higher than usual. Consider turning it off when not in use."
             },
             {
-                "title": "Device Energy Tip",
-                "message": "💡 {device_name} has been running continuously and is consuming {device_power}W. A quick power cycle might help optimize its efficiency."
-            },
-            {
                 "title": "Appliance Usage Notice",
                 "message": "⚡ Your {device_name} is drawing {device_power}W right now. If you're not actively using it, switching it off could save energy."
             }

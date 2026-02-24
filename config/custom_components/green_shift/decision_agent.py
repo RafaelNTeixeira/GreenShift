@@ -17,7 +17,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 import random
 
 from .storage import StorageManager
-from .helpers import get_friendly_name, should_ai_be_active
+from .helpers import get_friendly_name, get_normalized_value, should_ai_be_active
 from .translations_runtime import get_language, get_notification_templates, get_time_of_day_name
 from .const import (
     UPDATE_INTERVAL_SECONDS,
@@ -95,12 +95,16 @@ class DecisionAgent:
         # Area-specific anomaly tracking
         self.area_anomalies = {}  # {area: {metric: anomaly_score}}
 
-        # Pending episode for delayed Q-learning (experience replay)
-        self.pending_episode = None  # {state_key, action, notification_id, initial_power, timestamp, action_source, opportunity_score}
+        # Pending episodes for delayed Q-learning (experience replay), keyed by notification_id
+        self.pending_episodes = {}  # {notification_id: {state_key, action, initial_power, timestamp, action_source, opportunity_score}}
 
         # Challenges
         self.target_percentage = 15 # Default 15% reduction goal
         self.current_week_start_date = None  # Track when the current weekly challenge started
+        self._logged_weeks = set()  # Track which weeks have been logged to research DB
+
+        # Active phase tracking
+        self.active_since = None  # datetime when the system transitioned to PHASE_ACTIVE
 
     async def setup(self):
         """Initialize agent and load persistent state."""
@@ -203,6 +207,24 @@ class DecisionAgent:
             self.shadow_episode_number = state["shadow_episode_number"]
             _LOGGER.info("Loaded shadow episode number: %d", self.shadow_episode_number)
 
+        # Load episode number (active phase RL episodes)
+        if "episode_number" in state:
+            self.episode_number = state["episode_number"]
+            _LOGGER.info("Loaded episode number: %d", self.episode_number)
+
+        # Load logged weeks set
+        if "logged_weeks" in state and isinstance(state["logged_weeks"], list):
+            self._logged_weeks = set(state["logged_weeks"])
+            _LOGGER.info("Loaded %d logged weeks", len(self._logged_weeks))
+
+        # Load active phase start timestamp
+        if "active_since" in state and state["active_since"]:
+            try:
+                self.active_since = datetime.fromisoformat(state["active_since"])
+                _LOGGER.info("Loaded active_since: %s", self.active_since)
+            except (ValueError, AttributeError):
+                self.active_since = None
+
         _LOGGER.info("Persistent AI state loaded successfully")
 
     async def _save_persistent_state(self):
@@ -242,6 +264,9 @@ class DecisionAgent:
             "notification_history": trimmed_notification_history,
             "q_table": serializable_q_table,
             "shadow_episode_number": self.shadow_episode_number,
+            "episode_number": self.episode_number,
+            "logged_weeks": list(self._logged_weeks),
+            "active_since": self.active_since.isoformat() if self.active_since else None,
         }
 
         current_state.update(ai_state)
@@ -320,12 +345,12 @@ class DecisionAgent:
         # 1. Global power consumption
         power = current_state.get("power", 0.0)
         state.extend([power, 1.0 if power > 0 else 0.0])
-        _LOGGER.debug("Global power consumption: %.2f kW", state[0])
+        _LOGGER.debug("Global power consumption: %.2f W", state[0])
 
         # 2. Top power consumer (individual appliance)
         top_consumer = await self._get_top_power_consumer()
         state.extend([top_consumer, 1.0 if top_consumer > 0 else 0.0])
-        _LOGGER.debug("Top power consumer: %.2f kW", state[2])
+        _LOGGER.debug("Top power consumer: %.2f W", state[2])
 
         # 3. Temperature
         temp = current_state.get("temperature", 0.0)
@@ -389,8 +414,9 @@ class DecisionAgent:
             state = self.hass.states.get(entity_id)
             if state and state.state not in ['unknown', 'unavailable']:
                 try:
-                    power = float(state.state)
-                    max_power = max(max_power, power)
+                    normalized, _ = get_normalized_value(state, "power")
+                    if normalized is not None:
+                        max_power = max(max_power, normalized)
                 except (ValueError, TypeError):
                     continue
 
@@ -489,10 +515,9 @@ class DecisionAgent:
         if notification_id:
             # Store episode for Q-update after user responds
             current_state = self.data_collector.get_current_state()
-            self.pending_episode = {
+            self.pending_episodes[notification_id] = {
                 "state_key": state_key,
                 "action": action,
-                "notification_id": notification_id,
                 "initial_power": current_state.get("power", 0),
                 "timestamp": datetime.now(),
                 "action_source": action_source,
@@ -978,9 +1003,9 @@ class DecisionAgent:
             state = self.hass.states.get(entity_id)
             if state and state.state not in ['unknown', 'unavailable']:
                 try:
-                    power = float(state.state)
-                    if power > max_power:
-                        max_power = power
+                    normalized, _ = get_normalized_value(state, "power")
+                    if normalized is not None and normalized > max_power:
+                        max_power = normalized
                         top_device = get_friendly_name(self.hass, entity_id)
                 except (ValueError, TypeError):
                     continue
@@ -1010,35 +1035,6 @@ class DecisionAgent:
 
         return anomaly_area, anomaly_metric
 
-    async def _register_notification_handler(self, notification_id: str, action_type: str):
-        """
-        Register handler for notification feedback.
-        
-        Args:
-            notification_id (str): The unique ID of the notification to track responses for.
-            action_type (str): The type of action/notification (e.g., "specific", "anomaly", "behavioural", "normative") for contextual handling if needed.
-        """
-        async def handle_accept(call):
-            """Handle acceptance of notification."""
-            await self._handle_notification_feedback(notification_id, accepted=True)
-
-        async def handle_reject(call):
-            """Handle rejection of notification."""
-            await self._handle_notification_feedback(notification_id, accepted=False)
-
-        # Register temporary services for this notification
-        self.hass.services.async_register(
-            "green_shift",
-            f"accept_{notification_id}",
-            handle_accept
-        )
-
-        self.hass.services.async_register(
-            "green_shift",
-            f"reject_{notification_id}",
-            handle_reject
-        )
-
     async def _handle_notification_feedback(self, notification_id: str, accepted: bool):
         """
         Handle user feedback on notifications.
@@ -1063,8 +1059,8 @@ class DecisionAgent:
         self._update_behaviour_index()
 
         # Update Q-table with actual feedback (delayed Q-learning)
-        if self.pending_episode and self.pending_episode["notification_id"] == notification_id:
-            episode = self.pending_episode
+        if notification_id in self.pending_episodes:
+            episode = self.pending_episodes.pop(notification_id)
             
             # Calculate reward with actual user feedback
             reward = await self._calculate_reward_with_feedback(
@@ -1095,9 +1091,6 @@ class DecisionAgent:
             
             _LOGGER.info("Q-table updated with actual feedback: %s (reward=%.2f)", 
                         "accepted" if accepted else "rejected", reward)
-            
-            # Clear pending episode
-            self.pending_episode = None
         else:
             _LOGGER.warning("No pending episode found for notification %s", notification_id)
 
@@ -1726,10 +1719,6 @@ class DecisionAgent:
 
         _LOGGER.info("Calculated baselines for %d areas (office mode: %s)", len(self.area_baselines), is_office_mode)
 
-        # Save baselines
-        if self.storage:
-            await self._save_persistent_state()
-
     async def get_weekly_challenge_status(self, target_percentage: float = 15.0) -> dict:
         """
         Calculates weekly challenge status (consumption reduction goal).
@@ -1763,7 +1752,11 @@ class DecisionAgent:
             if self.storage:
                 await self._save_persistent_state()
 
-        # Calculate days from start of week to now
+        # Calculate hours from the start of the current week (Monday midnight) to now
+        # This ensures the data window aligns exactly with the week boundary
+        now = datetime.now()
+        week_start_datetime = datetime.combine(self.current_week_start_date, datetime.min.time())
+        hours_since_week_start = max(1, int((now - week_start_datetime).total_seconds() / 3600))
         days_in_current_week = (today - self.current_week_start_date).days + 1  # +1 to include today
 
         # Get power history from the start of the current week
@@ -1772,7 +1765,7 @@ class DecisionAgent:
         working_hours_filter = True if is_office_mode else None
 
         power_history_data = await self.data_collector.get_power_history(
-            days=days_in_current_week,
+            hours=hours_since_week_start,
             working_hours_only=working_hours_filter
         )
         power_values = [power for timestamp, power in power_history_data]
@@ -1807,7 +1800,9 @@ class DecisionAgent:
         else:
             progress = 0
 
-        status = "completed" if progress < 100 else "in_progress"
+        # "on_track"  = currently consuming below target (winning the challenge mid-week)
+        # "off_track" = currently consuming above target
+        status = "on_track" if progress < 100 else "off_track"
 
         # _LOGGER.info(
         #     "Weekly challenge calculation: %d readings, current_avg=%.2f, baseline=%.2f, target_pct=%.1f%%",
@@ -1817,11 +1812,11 @@ class DecisionAgent:
         if today.weekday() == 6 and days_in_current_week >= 7: # Sunday and full week complete
             # Check if we've already logged this week
             week_key = self.current_week_start_date.isoformat()
-            if not hasattr(self, '_logged_weeks'):
-                self._logged_weeks = set()
 
             if week_key not in self._logged_weeks and self.storage:
                 success = progress < 100
+                # savings_pct: actual percentage saved (positive = saving, negative = over-consuming)
+                savings_pct = ((self.baseline_consumption - current_avg) / self.baseline_consumption * 100) if self.baseline_consumption > 0 else 0.0
 
                 challenge_payload = {
                     'week_start_date': self.current_week_start_date.isoformat(),
@@ -1831,14 +1826,14 @@ class DecisionAgent:
                     'baseline_W': self.baseline_consumption,
                     'actual_W': current_avg,
                     'savings_W': self.baseline_consumption - current_avg,
-                    'savings_percentage': progress,
+                    'savings_percentage': savings_pct,
                     'achieved': success
                 }
 
                 await self.storage.log_weekly_challenge(challenge_data=challenge_payload)
 
                 self._logged_weeks.add(week_key)
-                _LOGGER.info("Logged weekly challenge: week=%s, success=%s, progress=%.1f%%", week_key, success, progress)
+                _LOGGER.info("Logged weekly challenge: week=%s, success=%s, savings=%.1f%%", week_key, success, savings_pct)
 
         return {
             "status": status,

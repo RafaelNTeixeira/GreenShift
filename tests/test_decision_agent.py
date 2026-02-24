@@ -6,7 +6,7 @@ Covers (pure logic only – no HA event loop required):
 - _update_fatigue_index   : no history, no responses, rejection rate, time decay
 - _update_behaviour_index : EMA update, empty history guard
 - _check_cooldown_with_opportunity: first call, critical bypass, high-opp reduced cooldown, standard cooldown
-- get_weekly_challenge_status : completed vs in_progress, pending on insufficient data
+- get_weekly_challenge_status : on_track vs off_track, pending on insufficient data
 - Baseline phase -> active phase: phase attribute flips after 14 days (logic unit)
 - Notification count reset across days
 """
@@ -48,6 +48,7 @@ sys.modules["custom_components.green_shift.const"] = const_mod
 # Stub helper module
 helpers_stub = types.ModuleType("custom_components.green_shift.helpers")
 helpers_stub.get_friendly_name = MagicMock(return_value="Mock Sensor")
+helpers_stub.get_normalized_value = MagicMock(return_value=(100.0, "W"))
 helpers_stub.should_ai_be_active = MagicMock(return_value=True)
 sys.modules["custom_components.green_shift.helpers"] = helpers_stub
 
@@ -419,7 +420,7 @@ class TestWeeklyChallenge:
         assert status["status"] == "pending"
 
     @pytest.mark.asyncio
-    async def test_consumption_below_target_is_completed(self):
+    async def test_consumption_below_target_is_on_track(self):
         agent = make_agent()
         agent.baseline_consumption = 1000.0
         # Generate 1 full hour of data at 800W (20% below 1000W baseline)
@@ -428,11 +429,11 @@ class TestWeeklyChallenge:
         agent.data_collector.get_power_history = AsyncMock(return_value=data)
         status = await agent.get_weekly_challenge_status(target_percentage=15.0)
         # Target avg = 1000 * 0.85 = 850 W; current avg = 800 W -> progress < 100%
-        assert status["status"] == "completed"
+        assert status["status"] == "on_track"
         assert status["progress"] < 100.0
 
     @pytest.mark.asyncio
-    async def test_consumption_above_target_is_in_progress(self):
+    async def test_consumption_above_target_is_off_track(self):
         agent = make_agent()
         agent.baseline_consumption = 1000.0
         readings_per_hour = int(3600 / 15)
@@ -440,7 +441,7 @@ class TestWeeklyChallenge:
         agent.data_collector.get_power_history = AsyncMock(return_value=data)
         status = await agent.get_weekly_challenge_status(target_percentage=15.0)
         # Target avg = 850 W; current avg = 950 W -> progress > 100%
-        assert status["status"] == "in_progress"
+        assert status["status"] == "off_track"
         assert status["progress"] > 100.0
 
     @pytest.mark.asyncio

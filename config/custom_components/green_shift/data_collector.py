@@ -795,10 +795,18 @@ class DataCollector:
             _LOGGER.info("Office mode detected - baseline calculations will use working hours data only")
 
         # Avg Daily Usage (kWh)
-        # Query the total energy history for the last 14 days
+        # Energy is accumulated daily (resets at midnight), so we take the max per day
+        # and then average across days to get the true daily consumption.
         energy_history = await self.get_energy_history(days=14, working_hours_only=working_hours_filter)
-        energy_values = [val for ts, val in energy_history]
-        avg_daily = np.mean(energy_values) if energy_values else 0.0
+        if energy_history:
+            daily_max = {}
+            for ts, val in energy_history:
+                day_key = ts.date()
+                if day_key not in daily_max or val > daily_max[day_key]:
+                    daily_max[day_key] = val
+            avg_daily = np.mean(list(daily_max.values())) if daily_max else 0.0
+        else:
+            avg_daily = 0.0
 
         # Peak Time Interval
         # Analyze power history to find which hour of the day has the highest average load

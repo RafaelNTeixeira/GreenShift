@@ -184,7 +184,7 @@ During the initial 14 days, the system is in **learning mode**:
 - ✅ Observes your consumption patterns
 - ✅ Learns the "normal" baseline (`E_baseline`)
 - ❌ Does NOT send notifications or challenges
-- 📊 Visible tabs: **Devices**, **Dashboard**, **Profile**, **Settings**
+- 📊 Visible tabs: **Devices**, **Dashboard**, **Settings**
 - 📋 Banner shows: "Calibration Mode: X days remaining"
 
 **State Vector Components** collected:
@@ -194,7 +194,7 @@ During the initial 14 days, the system is in **learning mode**:
 - Humidity (%)
 - Illuminance (lux)
 - Occupancy status (on/off)
-- Anomaly, behaviour, and Fatigue indices
+- Anomaly, Behaviour and Fatigue indices
 
 ### Phase 2: Active (Day 15+)
 

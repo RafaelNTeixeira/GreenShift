@@ -10,7 +10,7 @@ from typing import Tuple, Optional, Dict, List
 from datetime import datetime, time
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar, entity_registry as er, device_registry as dr
-from .const import ENVIRONMENT_HOME, ENVIRONMENT_OFFICE
+from .const import CO2_FACTOR, ENVIRONMENT_HOME, ENVIRONMENT_OFFICE
 
 def get_normalized_value(state, sensor_type: str) -> Tuple[Optional[float], Optional[str]]:
         """
@@ -65,7 +65,7 @@ def get_environmental_impact(kwh_saved: float) -> dict:
     """
     # Grid Intensity (kg CO2 per kWh)
     # 0.1 is the Portugal Average.
-    carbon_intensity = 0.1
+    carbon_intensity = CO2_FACTOR
 
     # Tree Metaphor (kg CO2 per "Tree Saved")
     # This represents the amount of CO2 a tree handles in a year (22kg).

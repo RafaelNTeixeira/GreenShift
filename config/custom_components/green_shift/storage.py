@@ -1594,7 +1594,7 @@ class StorageManager:
                 - baseline_W (float): Baseline power in watts
                 - actual_W (float): Actual average power during the week in watts
                 - savings_W (float): Power savings in watts
-                - savings_percentage (float): Energy savings percentage achieved
+                - savings_percentage (float): Energy savings percentage (positive = saving, negative = over-consuming)
                 - achieved (bool): Whether the challenge was achieved or not
         """
         def _insert():

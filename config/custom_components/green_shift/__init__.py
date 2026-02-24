@@ -151,11 +151,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Verify if the baseline phase is complete
         if days_running >= BASELINE_DAYS and agent.phase == PHASE_BASELINE:
             agent.phase = PHASE_ACTIVE
+            agent.active_since = datetime.now()
             _LOGGER.info("System entered active phase after %d days with baseline: %.2f W", days_running, agent.baseline_consumption)
 
             # Calculate area-specific baselines before entering active phase
             await agent.calculate_area_baselines()
-            _LOGGER.info("Area baselines calculated for active phase")
 
             # Record phase change in research database
             if storage:
@@ -489,6 +489,9 @@ async def async_setup_services(hass: HomeAssistant):
             noise = random.gauss(0, 150)
             power = max(50, base_power + noise)  # Never below 50W
 
+            # Cumulative energy for this interval (kWh)
+            energy = power * (UPDATE_INTERVAL_SECONDS / 3600)  # Convert to kWh for this interval
+
             # Temperature varies slightly
             base_temp = 21
             temp_variation = random.gauss(0, 1.5)
@@ -516,6 +519,7 @@ async def async_setup_services(hass: HomeAssistant):
             await storage.store_sensor_snapshot(
                 timestamp=timestamp,
                 power=power,
+                energy=energy,
                 temperature=temperature,
                 humidity=humidity,
                 illuminance=illuminance,
@@ -560,8 +564,8 @@ async def async_setup_services(hass: HomeAssistant):
         # Basic stats
         total_states = len(agent.q_table)
         _LOGGER.info(f"Total states in Q-table: {total_states}")
-        _LOGGER.info(f"Theoretical max states: 51*4*3*2*4*2 = 9,792")
-        _LOGGER.info(f"State space usage: {total_states/9792*100:.2f}%")
+        _LOGGER.info(f"Theoretical max states: 101*4*3*2*4*2 = 19,392")
+        _LOGGER.info(f"State space usage: {total_states/19392*100:.2f}%")
 
         # Current state
         current_state_key = agent._discretize_state()

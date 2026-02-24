@@ -123,3 +123,5 @@ WEATHER_ENTITIES = [
     "sensor.outside_temperature",
     "sensor.outdoor_temp"
 ]
+
+CO2_FACTOR = 0.1 # kg CO2/kWh as of early 2026 for Portugal
