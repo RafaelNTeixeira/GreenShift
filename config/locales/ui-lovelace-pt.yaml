@@ -244,7 +244,7 @@ views:
                 | sort(attribute='value', reverse=True)
                 | list
             -%}
-            {%- set max_val = top_devices[0].value if top_devices else 1 -%}
+            {%- set max_val = top_devices[0].value if (top_devices and top_devices[0].value > 0) else 1 -%}
             </br>
             <table width="100%">
               <thead>
