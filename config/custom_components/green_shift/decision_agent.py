@@ -1438,20 +1438,28 @@ class DecisionAgent:
         """
         Calculates user fatigue based on recent notification patterns.
 
-        Considers rejection rate, silence, frequency and time decay.
+        Considers interaction quality, frequency and time decay.
 
         Lower fatigue = more receptive to notifications.
 
         Components:
-        - rejection_rate   (0-1): proportion of responded notifications that were rejected
-        - silence_penalty  (0-1): proportion of recent notifications left unanswered
+        - interaction_factor (0-1): unified engagement score over the last 10 notifications.
+          Each notification contributes:
+            +1.0  explicit rejection  (responded=True,  accepted=False) — heavy penalty
+            +0.4  passive silence     (responded=False)                — moderate penalty
+            +0.0  accepted            (responded=True,  accepted=True)  — no penalty
+          The sum is normalised by the window size so the factor stays in [0, 1].
+          Guard: if no notification has been responded to yet, fatigue stays 0.0
+          (avoids a silent-only startup penalty on fresh installs).
         - frequency_factor (0-1): how quickly the last 3 notifications arrived (1/h ideal)
         - time_decay_factor(0.2-1): smoothly reduces fatigue when user has been left alone
 
         Formula:
 
-            base_fatigue = 0.5*rejection_rate + 0.2*silence_penalty + 0.3*frequency_factor
-            fatigue_index = clip(base_fatigue * time_decay_factor, 0, 1)
+            interaction_score  = Σ weight_i  for n in recent_notifs
+            interaction_factor = interaction_score / len(recent_notifs)
+            base_fatigue       = 0.7 * interaction_factor + 0.3 * frequency_factor
+            fatigue_index      = clip(base_fatigue * time_decay_factor, 0, 1)
         """
         if len(self.notification_history) == 0:
             self.fatigue_index = 0.0
@@ -1466,13 +1474,18 @@ class DecisionAgent:
             self.fatigue_index = 0.0
             return
 
-        # Rejection rate
-        rejected = [n for n in responded if not n.get("accepted", False)]
-        rejection_rate = len(rejected) / len(responded)
+        # Interaction scoring: combines explicit rejections and passive silence (not answering notifications)
+        interaction_score = 0.0
+        for n in recent_notifs:
+            if n.get("responded", False):
+                if not n.get("accepted", False):
+                    interaction_score += 1.0   # Explicit rejection: heavy penalty
+                # Accepted: no penalty
+            else:
+                interaction_score += 0.4       # Passive silence: moderate penalty
 
-        # Silence penalty
-        # Unresponded notifications suggest passive disengagement
-        silence_penalty = (len(recent_notifs) - len(responded)) / len(recent_notifs)
+        # Normalise to [0, 1]
+        interaction_factor = interaction_score / len(recent_notifs)
 
         # Frequency factor
         # How fast the last 3 notifications arrived (ideal is 1 per hour)
@@ -1494,18 +1507,16 @@ class DecisionAgent:
                 time_decay_factor = max(0.2, 1.0 - (hours_since_last - 1) * 0.1)
 
         base_fatigue = (
-            0.5 * rejection_rate
-            + 0.2 * silence_penalty
-            + 0.3 * frequency_factor
+            0.6 * interaction_factor
+            + 0.4 * frequency_factor
         )
         self.fatigue_index = float(np.clip(base_fatigue * time_decay_factor, 0.0, 1.0))
 
         _LOGGER.debug(
             "Fatigue index updated: %.2f "
-            "(rejection=%.2f, silence=%.2f, freq=%.2f, decay=%.2f)",
+            "(interaction=%.2f, freq=%.2f, decay=%.2f)",
             self.fatigue_index,
-            rejection_rate,
-            silence_penalty,
+            interaction_factor,
             frequency_factor,
             time_decay_factor,
         )

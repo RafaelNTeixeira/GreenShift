@@ -225,10 +225,10 @@ def _notif(accepted=True, responded=True, minutes_ago=30):
 class TestUpdateFatigueIndex:
     """
     Tests for the count-based (last-10) fatigue window with components:
-      - rejection_rate   : proportion of responded notifications that were rejected
-      - silence_penalty  : proportion of recent notifications left unanswered
-      - frequency_factor : how quickly the last 3 notifications arrived
-      - time_decay_factor: smoothly reduces fatigue when user has been left alone
+      - interaction_factor: unified score - explicit rejection (+1.0), passive silence (+0.4),
+                            accepted (+0.0); normalised by window size
+      - frequency_factor  : how quickly the last 3 notifications arrived
+      - time_decay_factor : smoothly reduces fatigue when user has been left alone
     """
 
     @pytest.mark.asyncio
@@ -281,9 +281,10 @@ class TestUpdateFatigueIndex:
         )
         agent.last_notification_time = datetime.now() - timedelta(hours=3)
         await agent._update_fatigue_index()
-        # rejection_rate=1.0, silence=0.0, freq=1.0 -> base_fatigue = 0.6+0.0+0.2 = 0.8
-        # time_decay = max(0.5, 1.0 - (3-1)*0.1) = 0.8 -> fatigue = 0.8 * 0.8 = 0.64
-        assert agent.fatigue_index == pytest.approx(0.64)
+        # All rejected -> interaction_factor=1.0, timestamps span negative -> freq=1.0
+        # base_fatigue = 0.7*1.0 + 0.3*1.0 = 1.0
+        # time_decay = max(0.2, 1.0 - (3-1)*0.1) = 0.8 -> fatigue = 1.0 * 0.8 = 0.8
+        assert agent.fatigue_index == pytest.approx(0.8)
 
     @pytest.mark.asyncio
     async def test_fatigue_clipped_between_0_and_1(self):
@@ -306,9 +307,10 @@ class TestUpdateFatigueIndex:
         )
         agent.last_notification_time = datetime.now() - timedelta(hours=5)
         await agent._update_fatigue_index()
-        # time_decay = max(0.5, 1-(5-1)*0.1) = 0.6 -> fatigue is reduced below the base of 0.8
-        assert agent.fatigue_index > 0.0       # still penalised (old rejects are in window)
-        assert agent.fatigue_index < 0.6       # but time_decay brings it down
+        # All rejected -> interaction_factor=1.0, freq=1.0 -> base=1.0
+        # time_decay = max(0.2, 1-(5-1)*0.1) = 0.6 -> fatigue = 1.0 * 0.6 = 0.6
+        assert agent.fatigue_index > 0.0              # still penalised (old rejects are in window)
+        assert agent.fatigue_index == pytest.approx(0.6)  # time_decay lands exactly at 0.6
 
     @pytest.mark.asyncio
     async def test_recent_rejections_raise_fatigue_despite_old_accepts(self):
@@ -335,10 +337,11 @@ class TestUpdateFatigueIndex:
         assert agent.fatigue_index == 0.0
 
     @pytest.mark.asyncio
-    async def test_silence_penalty_when_some_notifications_unanswered(self):
-        """Unanswered notifications contribute to fatigue through the silence_penalty component."""
+    async def test_silence_contributes_via_interaction_factor(self):
+        """Unanswered notifications raise fatigue via the interaction_factor (0.4 each)."""
         agent = make_agent()
-        # 2 responded (1 rejected, 1 accepted), 3 unanswered -> silence_penalty = 3/5 = 0.6
+        # 2 responded (1 rejected, 1 accepted), 3 unanswered
+        # interaction_score = 1.0 + 0.4 + 0.4 + 0.0 + 0.4 = 2.2 -> factor = 2.2/5 = 0.44
         agent.notification_history = deque([
             _notif(accepted=False, responded=True,  minutes_ago=25),
             _notif(responded=False,                 minutes_ago=20),
