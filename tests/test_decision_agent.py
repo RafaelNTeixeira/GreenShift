@@ -239,15 +239,17 @@ class TestUpdateFatigueIndex:
         assert agent.fatigue_index == 0.0
 
     @pytest.mark.asyncio
-    async def test_no_responded_sets_zero_fatigue(self):
-        """Notifications sent but not yet responded to should yield 0.0 fatigue (no startup penalty)."""
+    async def test_unanswered_notifications_raise_fatigue(self):
+        """Unanswered notifications now contribute +0.4 each via interaction_factor."""
         agent = make_agent()
+        # 2 unanswered (< 3 -> freq=0): interaction_score=0.8, factor=0.4
+        # base = 0.6*0.4 + 0.4*0.0 = 0.24; no last_notification_time -> no decay
         agent.notification_history = deque(
             [_notif(responded=False), _notif(responded=False)],
             maxlen=100
         )
         await agent._update_fatigue_index()
-        assert agent.fatigue_index == pytest.approx(0.0)
+        assert agent.fatigue_index == pytest.approx(0.24)
 
     @pytest.mark.asyncio
     async def test_all_accepted_yields_low_fatigue(self):
@@ -282,7 +284,7 @@ class TestUpdateFatigueIndex:
         agent.last_notification_time = datetime.now() - timedelta(hours=3)
         await agent._update_fatigue_index()
         # All rejected -> interaction_factor=1.0, timestamps span negative -> freq=1.0
-        # base_fatigue = 0.7*1.0 + 0.3*1.0 = 1.0
+        # base_fatigue = 0.6*1.0 + 0.4*1.0 = 1.0
         # time_decay = max(0.2, 1.0 - (3-1)*0.1) = 0.8 -> fatigue = 1.0 * 0.8 = 0.8
         assert agent.fatigue_index == pytest.approx(0.8)
 
@@ -307,7 +309,7 @@ class TestUpdateFatigueIndex:
         )
         agent.last_notification_time = datetime.now() - timedelta(hours=5)
         await agent._update_fatigue_index()
-        # All rejected -> interaction_factor=1.0, freq=1.0 -> base=1.0
+        # All rejected -> interaction_factor=1.0, freq=1.0 -> base = 0.6*1.0 + 0.4*1.0 = 1.0
         # time_decay = max(0.2, 1-(5-1)*0.1) = 0.6 -> fatigue = 1.0 * 0.6 = 0.6
         assert agent.fatigue_index > 0.0              # still penalised (old rejects are in window)
         assert agent.fatigue_index == pytest.approx(0.6)  # time_decay lands exactly at 0.6
@@ -325,16 +327,19 @@ class TestUpdateFatigueIndex:
         assert agent.fatigue_index > 0.3
 
     @pytest.mark.asyncio
-    async def test_all_unanswered_yields_zero_fatigue(self):
-        """All-unanswered history -> early return, fatigue stays 0 (no silence-only startup penalty)."""
+    async def test_all_unanswered_raises_fatigue_via_silence(self):
+        """All-unanswered history: silence penalty (+0.4 each) raises fatigue, no early return."""
         agent = make_agent()
+        # 10 unanswered at 0..90 min ago -> interaction_factor = (10*0.4)/10 = 0.4
+        # last 3 timestamps (70,80,90 min ago) give negative span -> freq = 1.0
+        # base = 0.6*0.4 + 0.4*1.0 = 0.64; last_notif=5min ago -> no decay
         agent.notification_history = deque(
             [_notif(responded=False, minutes_ago=10 * i) for i in range(10)],
             maxlen=100
         )
         agent.last_notification_time = datetime.now() - timedelta(minutes=5)
         await agent._update_fatigue_index()
-        assert agent.fatigue_index == 0.0
+        assert agent.fatigue_index == pytest.approx(0.64)
 
     @pytest.mark.asyncio
     async def test_silence_contributes_via_interaction_factor(self):
