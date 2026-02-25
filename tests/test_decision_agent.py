@@ -3,7 +3,8 @@ Tests for decision_agent.py
 
 Covers (pure logic only – no HA event loop required):
 - _discretize_state       : power bins, anomaly/fatigue/time levels, edge cases
-- _update_fatigue_index   : no history, no responses, rejection rate, time decay
+- _update_fatigue_index   : count-based last-10 window, rejection rate, silence_penalty,
+                            frequency_factor, time decay, edge cases (no streak penalty)
 - _update_behaviour_index : EMA update, empty history guard
 - _check_cooldown_with_opportunity: first call, critical bypass, high-opp reduced cooldown, standard cooldown
 - get_weekly_challenge_status : on_track vs off_track, pending on insufficient data
@@ -222,6 +223,13 @@ def _notif(accepted=True, responded=True, minutes_ago=30):
 
 
 class TestUpdateFatigueIndex:
+    """
+    Tests for the count-based (last-10) fatigue window with components:
+      - rejection_rate   : proportion of responded notifications that were rejected
+      - silence_penalty  : proportion of recent notifications left unanswered
+      - frequency_factor : how quickly the last 3 notifications arrived
+      - time_decay_factor: smoothly reduces fatigue when user has been left alone
+    """
 
     @pytest.mark.asyncio
     async def test_no_history_sets_zero(self):
@@ -261,23 +269,21 @@ class TestUpdateFatigueIndex:
         )
         agent.last_notification_time = datetime.now() - timedelta(minutes=5)
         await agent._update_fatigue_index()
-        # Rejection rate of 1.0 -> high fatigue
         assert agent.fatigue_index > 0.4
 
     @pytest.mark.asyncio
     async def test_time_decay_reduces_fatigue(self):
-        """Notifications that are old should decay fatigue downward."""
+        """Time decay reduces fatigue when the user has been left alone for several hours."""
         agent = make_agent()
-        # Mix of rejected, but last notification was 3 hours ago
         agent.notification_history = deque(
             [_notif(accepted=False, responded=True, minutes_ago=180 + i * 10) for i in range(5)],
             maxlen=100
         )
         agent.last_notification_time = datetime.now() - timedelta(hours=3)
         await agent._update_fatigue_index()
-        # time_decay_factor at 3 hours = max(0.5, 1.0 - 2*0.1) = 0.8
-        # base_fatigue = 0.6*1.0 + 0.4*1.0 = 1.0, final = 1.0 * 0.8 = 0.8
-        assert agent.fatigue_index == pytest.approx(0.8)
+        # rejection_rate=1.0, silence=0.0, freq=1.0 -> base_fatigue = 0.6+0.0+0.2 = 0.8
+        # time_decay = max(0.5, 1.0 - (3-1)*0.1) = 0.8 -> fatigue = 0.8 * 0.8 = 0.64
+        assert agent.fatigue_index == pytest.approx(0.64)
 
     @pytest.mark.asyncio
     async def test_fatigue_clipped_between_0_and_1(self):
@@ -289,6 +295,89 @@ class TestUpdateFatigueIndex:
         agent.last_notification_time = datetime.now() - timedelta(minutes=1)
         await agent._update_fatigue_index()
         assert 0.0 <= agent.fatigue_index <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_time_decay_reduces_old_rejection_fatigue(self):
+        """Count-based window includes old notifications, but time_decay still reduces their impact."""
+        agent = make_agent()
+        agent.notification_history = deque(
+            [_notif(accepted=False, responded=True, minutes_ago=300 + i * 10) for i in range(5)],
+            maxlen=100
+        )
+        agent.last_notification_time = datetime.now() - timedelta(hours=5)
+        await agent._update_fatigue_index()
+        # time_decay = max(0.5, 1-(5-1)*0.1) = 0.6 -> fatigue is reduced below the base of 0.8
+        assert agent.fatigue_index > 0.0       # still penalised (old rejects are in window)
+        assert agent.fatigue_index < 0.6       # but time_decay brings it down
+
+    @pytest.mark.asyncio
+    async def test_recent_rejections_raise_fatigue_despite_old_accepts(self):
+        """Recent rejections drive up fatigue even when many older responses were acceptances."""
+        agent = make_agent()
+        old_accepts = [_notif(accepted=True, responded=True, minutes_ago=300 + i * 10) for i in range(5)]
+        recent_rejects = [_notif(accepted=False, responded=True, minutes_ago=10 + i * 5) for i in range(3)]
+        agent.notification_history = deque(old_accepts + recent_rejects, maxlen=100)
+        agent.last_notification_time = datetime.now() - timedelta(minutes=10)
+        await agent._update_fatigue_index()
+        # Both rejection_rate (3/8=0.375) and streak_penalty (3->0.6) push fatigue up
+        assert agent.fatigue_index > 0.3
+
+    @pytest.mark.asyncio
+    async def test_all_unanswered_yields_zero_fatigue(self):
+        """All-unanswered history -> early return, fatigue stays 0 (no silence-only startup penalty)."""
+        agent = make_agent()
+        agent.notification_history = deque(
+            [_notif(responded=False, minutes_ago=10 * i) for i in range(10)],
+            maxlen=100
+        )
+        agent.last_notification_time = datetime.now() - timedelta(minutes=5)
+        await agent._update_fatigue_index()
+        assert agent.fatigue_index == 0.0
+
+    @pytest.mark.asyncio
+    async def test_silence_penalty_when_some_notifications_unanswered(self):
+        """Unanswered notifications contribute to fatigue through the silence_penalty component."""
+        agent = make_agent()
+        # 2 responded (1 rejected, 1 accepted), 3 unanswered -> silence_penalty = 3/5 = 0.6
+        agent.notification_history = deque([
+            _notif(accepted=False, responded=True,  minutes_ago=25),
+            _notif(responded=False,                 minutes_ago=20),
+            _notif(responded=False,                 minutes_ago=15),
+            _notif(accepted=True,  responded=True,  minutes_ago=10),
+            _notif(responded=False,                 minutes_ago=5),
+        ], maxlen=100)
+        agent.last_notification_time = datetime.now() - timedelta(minutes=5)
+        await agent._update_fatigue_index()
+        assert agent.fatigue_index > 0.0
+
+    @pytest.mark.asyncio
+    async def test_rejection_rate_drives_fatigue(self):
+        """Higher rejection rate yields higher fatigue than lower rejection rate (no streak effect)."""
+        agent = make_agent()
+
+        # Scenario A: 1 out of 4 rejected (rejection_rate = 0.25)
+        agent.notification_history = deque([
+            _notif(accepted=True,  responded=True, minutes_ago=20),
+            _notif(accepted=True,  responded=True, minutes_ago=15),
+            _notif(accepted=True,  responded=True, minutes_ago=10),
+            _notif(accepted=False, responded=True, minutes_ago=5),
+        ], maxlen=100)
+        agent.last_notification_time = datetime.now() - timedelta(minutes=5)
+        await agent._update_fatigue_index()
+        fatigue_low_rejection = agent.fatigue_index
+
+        # Scenario B: 4 out of 4 rejected (rejection_rate = 1.0), same pattern
+        agent.notification_history = deque([
+            _notif(accepted=False, responded=True, minutes_ago=20),
+            _notif(accepted=False, responded=True, minutes_ago=15),
+            _notif(accepted=False, responded=True, minutes_ago=10),
+            _notif(accepted=False, responded=True, minutes_ago=5),
+        ], maxlen=100)
+        agent.last_notification_time = datetime.now() - timedelta(minutes=5)
+        await agent._update_fatigue_index()
+        fatigue_high_rejection = agent.fatigue_index
+
+        assert fatigue_high_rejection > fatigue_low_rejection
 
 
 # ─────────────────────────────────────────────────────────────────────────────

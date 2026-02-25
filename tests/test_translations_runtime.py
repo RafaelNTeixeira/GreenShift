@@ -197,7 +197,6 @@ class TestGetTaskTemplates:
         expected_types = [
             "temperature_reduction",
             "power_reduction",
-            "standby_reduction",
             "daylight_usage",
             "unoccupied_power",
             "peak_avoidance",

@@ -40,6 +40,7 @@ Checklist to track remaining features, fixes and tests before completion.
     - [ ] Energy goals slider not appearing in settings page
     - [ ] Currency dropdown not appearing in settings page
     - [ ] Electricity dropdown not appearing in settings page
+- [ ] Ensure interface is clear enough to the users 
  
 ### 🎮 Gamification
 - [x] Improve gamification daily tasks
@@ -97,5 +98,6 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Test pending notifications backup after restart
 - [ ] Try setup from scratch
 - [ ] Update README
+- [ ] Consider metrics for analysis
 
 ---

@@ -71,21 +71,21 @@ class DecisionAgent:
         self.baseline_consumption = 0.0
 
         # Area-based baselines for anomaly detection
-        self.area_baselines = {}  # {area: {metric: baseline_value}}
+        self.area_baselines = {} # {area: {metric: baseline_value}}
 
         # Engagement history
         self.engagement_history = deque(maxlen=100)
-        self.notification_history = deque(maxlen=NOTIFICATION_HISTORY_LIMIT)  # Track recent notifications
+        self.notification_history = deque(maxlen=NOTIFICATION_HISTORY_LIMIT) # Track recent notifications
         self.notification_count_today = 0
         self.last_notification_date = None
         self.last_notification_time = None
 
         # Q-table for reinforcement learning
-        self.q_table = {}
-        self.learning_rate = 0.1
-        self.epsilon = 0.2  # Exploration rate
-        self.episode_number = 0  # Track RL episodes for research logging
-        self.shadow_episode_number = 0  # Track shadow RL episodes (baseline phase)
+        self.q_table = {}              # {state_key: {action: q_value}}
+        self.learning_rate = 0.1       # Learning rate for Q-learning updates
+        self.epsilon = 0.2             # Exploration rate
+        self.episode_number = 0        # Track RL episodes for research logging
+        self.shadow_episode_number = 0 # Track shadow RL episodes (baseline phase)
 
         # Behaviour indices
         self.anomaly_index = 0.0
@@ -93,18 +93,18 @@ class DecisionAgent:
         self.fatigue_index = 0.0
 
         # Area-specific anomaly tracking
-        self.area_anomalies = {}  # {area: {metric: anomaly_score}}
+        self.area_anomalies = {} # {area: {metric: anomaly_score}}
 
-        # Pending episodes for delayed Q-learning (experience replay), keyed by notification_id
-        self.pending_episodes = {}  # {notification_id: {state_key, action, initial_power, timestamp, action_source, opportunity_score}}
+        # Pending episodes for delayed Q-learning, keyed by notification_id
+        self.pending_episodes = {} # {notification_id: {state_key, action, initial_power, timestamp, action_source, opportunity_score}}
 
         # Challenges
-        self.target_percentage = 15 # Default 15% reduction goal
-        self.current_week_start_date = None  # Track when the current weekly challenge started
-        self._logged_weeks = set()  # Track which weeks have been logged to research DB
+        self.target_percentage = 15         # Default 15% reduction goal
+        self.current_week_start_date = None # Track when the current weekly challenge started
+        self._logged_weeks = set()          # Track which weeks have been logged to research DB
 
         # Active phase tracking
-        self.active_since = None  # datetime when the system transitioned to PHASE_ACTIVE
+        self.active_since = None # datetime when the system transitioned to PHASE_ACTIVE
 
     async def setup(self):
         """Initialize agent and load persistent state."""
@@ -401,8 +401,9 @@ class DecisionAgent:
         _LOGGER.debug("Indoor illuminance: %.2f lx", state[8])
 
         # 6. Occupancy
+        has_occupancy_sensors = bool(self.sensors.get("occupancy", []))
         occ = 1.0 if current_state.get("occupancy", False) else 0.0
-        state.extend([occ, 1.0]) # TODO: set flag to 0 if occupancy sensor is missing (currently assumes it's always present)
+        state.extend([occ, 1.0 if has_occupancy_sensors else 0.0])
 
         # 7-9. Indices
         state.extend([
@@ -1353,12 +1354,17 @@ class DecisionAgent:
                     std = np.std(temp_values)
                     current = temp_values[-1]
 
-                    # TODO: Also check against baseline if available
                     baseline_temp = self.area_baselines.get(area, {}).get("temperature")
 
                     if std > 0:
                         z_score = abs((current - mean) / std)
                         area_anomalies["temperature"] = min(z_score / 3.0, 1.0)
+
+                    # Also check against area baseline if available
+                    if baseline_temp and baseline_temp > 0:
+                        baseline_deviation = abs(current - baseline_temp) / baseline_temp
+                        if baseline_deviation > 0.2:  # More than 20% deviation from baseline
+                            area_anomalies["temperature"] = max(area_anomalies.get("temperature", 0), min(baseline_deviation, 1.0))
 
                     # Additional check: extreme values
                     if current < 16 or current > 28:
@@ -1390,11 +1396,18 @@ class DecisionAgent:
                 hum_values = [val for ts, val in hum_history if val is not None]
                 if len(hum_values) >= 10:
                     current = hum_values[-1]
+                    area_hum_baseline = self.area_baselines.get(area, {}).get("humidity")
 
                     # Check against comfortable range (30-60%)
                     if current < 30 or current > 60:
                         deviation = max(30 - current, current - 60, 0)
                         area_anomalies["humidity"] = min(deviation / 30.0, 1.0)
+
+                    # Also check against area baseline if available
+                    if area_hum_baseline and area_hum_baseline > 0:
+                        baseline_deviation = abs(current - area_hum_baseline) / area_hum_baseline
+                        if baseline_deviation > 0.2:  # More than 20% deviation from baseline
+                            area_anomalies["humidity"] = max(area_anomalies.get("humidity", 0), min(baseline_deviation, 1.0))
 
             if area_anomalies:
                 self.area_anomalies[area] = area_anomalies
@@ -1424,57 +1437,78 @@ class DecisionAgent:
     async def _update_fatigue_index(self):
         """
         Calculates user fatigue based on recent notification patterns.
-        Considers rejection rate, frequency of notifications, and time decay.
+
+        Considers rejection rate, silence, frequency and time decay.
+
         Lower fatigue = more receptive to notifications.
+
+        Components:
+        - rejection_rate   (0-1): proportion of responded notifications that were rejected
+        - silence_penalty  (0-1): proportion of recent notifications left unanswered
+        - frequency_factor (0-1): how quickly the last 3 notifications arrived (1/h ideal)
+        - time_decay_factor(0.2-1): smoothly reduces fatigue when user has been left alone
+
+        Formula:
+
+            base_fatigue = 0.5*rejection_rate + 0.2*silence_penalty + 0.3*frequency_factor
+            fatigue_index = clip(base_fatigue * time_decay_factor, 0, 1)
         """
         if len(self.notification_history) == 0:
             self.fatigue_index = 0.0
             return
 
-        # Count responses in the last 10 notifications
+        # Last 10 notifications
         recent_notifs = list(self.notification_history)[-10:]
         responded = [n for n in recent_notifs if n.get("responded", False)]
 
         if not responded:
-            # No responses yet = no startup penalty. Fatigue only builds from rejections
+            # No responses yet: fatigue only builds from explicit signals, not silence alone
             self.fatigue_index = 0.0
             return
 
+        # Rejection rate
         rejected = [n for n in responded if not n.get("accepted", False)]
-        rejection_rate = len(rejected) / len(responded) if responded else 0
+        rejection_rate = len(rejected) / len(responded)
 
-        # Frequency component: high frequency in short time = higher fatigue
+        # Silence penalty
+        # Unresponded notifications suggest passive disengagement
+        silence_penalty = (len(recent_notifs) - len(responded)) / len(recent_notifs)
+
+        # Frequency factor
+        # How fast the last 3 notifications arrived (ideal is 1 per hour)
         if len(recent_notifs) >= 3:
             timestamps = [datetime.fromisoformat(n["timestamp"]) for n in recent_notifs[-3:]]
             _LOGGER.debug("Timestamps of last 3 notifications for fatigue calculation: %s", timestamps)
             time_span = (timestamps[-1] - timestamps[0]).total_seconds() / 3600  # hours
-
-            if time_span > 0:
-                frequency_factor = min(3 / time_span, 1.0)  # Ideal: 1 per hour
-            else:
-                frequency_factor = 1.0
+            frequency_factor = min(3 / time_span, 1.0) if time_span > 0 else 1.0
         else:
             frequency_factor = 0.0
 
-        # Time decay component: fatigue naturally decreases over time
-        # If more than 1 hour since last notification, reduce fatigue
+        # Time decay
+        # Smoothly reduces fatigue if the user has been left alone for >1 hour.
+        # Never fully zeroes within the window: bottoms out at 0.2 to retain some memory.
         time_decay_factor = 1.0
         if self.last_notification_time:
             hours_since_last = (datetime.now() - self.last_notification_time).total_seconds() / 3600
             if hours_since_last > 1:
-                # Decay factor: approaches 0.5 as time passes (never goes to 0)
-                time_decay_factor = max(0.5, 1.0 - (hours_since_last - 1) * 0.1)
+                time_decay_factor = max(0.2, 1.0 - (hours_since_last - 1) * 0.1)
 
-        # Combined fatigue score with time decay
-        base_fatigue = 0.6 * rejection_rate + 0.4 * frequency_factor
-        self.fatigue_index = np.clip(
-            base_fatigue * time_decay_factor,
-            0.0,
-            1.0
+        base_fatigue = (
+            0.5 * rejection_rate
+            + 0.2 * silence_penalty
+            + 0.3 * frequency_factor
         )
+        self.fatigue_index = float(np.clip(base_fatigue * time_decay_factor, 0.0, 1.0))
 
-        _LOGGER.debug("Fatigue index updated: %.2f (rejection=%.2f, freq=%.2f, decay=%.2f)",
-                     self.fatigue_index, rejection_rate, frequency_factor, time_decay_factor)
+        _LOGGER.debug(
+            "Fatigue index updated: %.2f "
+            "(rejection=%.2f, silence=%.2f, freq=%.2f, decay=%.2f)",
+            self.fatigue_index,
+            rejection_rate,
+            silence_penalty,
+            frequency_factor,
+            time_decay_factor,
+        )
 
     def _discretize_state(self) -> tuple:
         """
@@ -1572,7 +1606,7 @@ class DecisionAgent:
         # Better times: morning (7-9), lunch (12-14), evening (18-21)
         if 7 <= hour <= 9 or 12 <= hour <= 14 or 18 <= hour <= 21:
             time_score = 1.0
-        elif 22 <= hour or hour < 7:  # Late night/early morning - poor time
+        elif 22 <= hour or hour < 7: # Late night/early morning - poor time
             time_score = 0.3
         else:
             time_score = 0.7
@@ -1791,8 +1825,6 @@ class DecisionAgent:
         target_avg = self.baseline_consumption * reduction_multiplier
 
         # Calculate progress as percentage of target consumption
-        # Under 100% = SUCCESS (consuming less than target)
-        # Over 100% = FAILURE (consuming more than target)
         if target_avg > 0:
             progress = (current_avg / target_avg) * 100
         else:
@@ -1801,11 +1833,6 @@ class DecisionAgent:
         # "on_track"  = currently consuming below target (winning the challenge mid-week)
         # "off_track" = currently consuming above target
         status = "on_track" if progress < 100 else "off_track"
-
-        # _LOGGER.info(
-        #     "Weekly challenge calculation: %d readings, current_avg=%.2f, baseline=%.2f, target_pct=%.1f%%",
-        #     len(power_values), np.mean(power_values), self.baseline_consumption, target_percentage
-        # )
 
         if today.weekday() == 6 and days_in_current_week >= 7: # Sunday and full week complete
             # Check if we've already logged this week

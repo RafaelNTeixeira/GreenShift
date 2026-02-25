@@ -1645,7 +1645,7 @@ class StorageManager:
 
         # Get all data for the day
         start_ts = datetime.strptime(date, "%Y-%m-%d").timestamp()
-        end_ts = start_ts + 86400
+        end_ts = start_ts + 86400 # Add 24 hours in seconds
 
         outdoor_temp = None
         hdd = None

@@ -220,10 +220,6 @@ TASK_TEMPLATES = {
             "title": "Reduce Power by {reduction_pct:.1f}%",
             "description": "Keep average power below {target_power:.0f}W today (7-day avg: {baseline_power:.0f}W)"
         },
-        "standby_reduction": {
-            "title": "Reduce Night Power by {reduction_pct:.1f}%",
-            "description": "Keep power below {target_power:.0f}W during 00:00-06:00 (avg: {baseline_power:.0f}W)"
-        },
         "daylight_usage": {
             "title": "Use Natural Light ({reduction_pct:.1f}% less power)",
             "description": "Keep daytime power (08:00-17:00) below {target_power:.0f}W by using natural light"
@@ -246,10 +242,6 @@ TASK_TEMPLATES = {
         "power_reduction": {
             "title": "Reduzir Potência em {reduction_pct:.1f}%",
             "description": "Mantenha a potência média abaixo de {target_power:.0f}W hoje (média 7 dias: {baseline_power:.0f}W)"
-        },
-        "standby_reduction": {
-            "title": "Reduzir Potência Noturna em {reduction_pct:.1f}%",
-            "description": "Mantenha a potência abaixo de {target_power:.0f}W durante 00:00-06:00 (média: {baseline_power:.0f}W)"
         },
         "daylight_usage": {
             "title": "Usar Luz Natural ({reduction_pct:.1f}% menos potência)",

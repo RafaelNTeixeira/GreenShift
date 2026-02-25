@@ -78,11 +78,6 @@ class TaskManager:
         if self.sensors.get("occupancy") and self.sensors.get("power"):
             available_task_generators.append(self._generate_unoccupied_power_task)
 
-        # TODO: ADD TASK GENERATORS THAT USE ENERGY DATA
-        # Energy-based tasks (always available if we have energy sensors)
-        # if self.sensors.get("energy"):
-        #
-
         # Select 3 random task generators
         num_tasks = min(3, len(available_task_generators))
         if num_tasks == 0:
@@ -222,54 +217,6 @@ class TaskManager:
             'target_value': target_power,
             'target_unit': 'W',
             'baseline_value': round(baseline_power),
-            'difficulty_level': difficulty,
-            'difficulty_display': get_difficulty_display(difficulty, language),
-            'area_name': None,
-        }
-
-    async def _generate_standby_power_task(self) -> Optional[Dict]:
-        """
-        Generate a task to reduce standby power during night hours.
-        
-        Returns:
-            dict: A task dictionary with details for a standby power reduction task, or None if it cannot be generated.
-        """
-        stats = await self.storage.get_task_difficulty_stats('standby_reduction')
-        difficulty = await self._calculate_task_difficulty(stats)
-
-        # Get power usage during night hours (00:00-06:00) from last 7 days
-        # Note: standby tasks always use unfiltered data since night hours are outside working hours
-        power_history = await self.data_collector.get_power_history(days=7)
-        if not power_history:
-            return None
-
-        night_powers = [power for timestamp, power in power_history if 0 <= timestamp.hour < 6]
-        if not night_powers:
-            return None
-
-        baseline_night_power = np.mean(night_powers)
-
-        # Target: reduce night power by 5% to 25%
-        base_reduction_pct = 12.0
-        reduction_pct = base_reduction_pct * self.difficulty_multipliers[difficulty]
-        target_power = round(baseline_night_power * (1 - reduction_pct / 100))
-
-        # Get user's language and templates
-        language = await get_language(self.hass)
-        templates = get_task_templates(language)
-        template = templates['standby_reduction']
-
-        return {
-            'task_id': f"standby_{datetime.now().strftime('%Y%m%d')}",
-            'task_type': 'standby_reduction',
-            'title': template['title'].format(reduction_pct=reduction_pct),
-            'description': template['description'].format(
-                target_power=target_power,
-                baseline_power=round(baseline_night_power)
-            ),
-            'target_value': target_power,
-            'target_unit': 'W',
-            'baseline_value': round(baseline_night_power),
             'difficulty_level': difficulty,
             'difficulty_display': get_difficulty_display(difficulty, language),
             'area_name': None,
@@ -544,18 +491,6 @@ class TaskManager:
                 _LOGGER.debug("Average power for verification: %.2fW, target: %.2fW", avg_power, target_value)
                 return avg_power <= target_value, round(avg_power, 2)
 
-            elif task_type == 'standby_reduction':
-                # Keep backward compatibility for previously generated standby tasks
-                power_history = await self.data_collector.get_power_history(hours=int(hours_passed))
-                night_powers = [p for ts, p in power_history if 0 <= ts.hour < 6]
-
-                if not night_powers:
-                    return False, None  # Can only verify after 6am
-
-                avg_night_power = np.mean(night_powers)
-                _LOGGER.debug("Average night power for verification: %.2fW, target: %.2fW", avg_night_power, target_value)
-                return avg_night_power <= target_value, round(avg_night_power, 2)
-
             elif task_type == 'unoccupied_power':
                 # Check area-specific power
                 if not area_name:
@@ -577,8 +512,7 @@ class TaskManager:
                 if not power_history:
                     return False, None
 
-                # For now, check if any hour exceeded the target
-                # Group by hour
+                # Check if any hour exceeded the target. Group by hour
                 hourly_powers = {}
                 for ts, power in power_history:
                     hour = ts.hour

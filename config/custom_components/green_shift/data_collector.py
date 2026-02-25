@@ -31,30 +31,30 @@ class DataCollector:
         self.hass = hass
         self.sensors = discovered_sensors
         self.main_energy_sensor = main_energy_sensor # Sensor that reads building energy consumption (kWh)
-        self.main_power_sensor = main_power_sensor # Sensor that reads current building power consumption (kW)
+        self.main_power_sensor = main_power_sensor   # Sensor that reads current building power consumption (kW)
         self.storage = storage_manager
         self.config_data = config_data or {}
 
         # Current readings (latest values - global aggregates)
-        self.current_total_power = 0.0
-        self.current_daily_energy = 0.0
-        self.current_temperature = 0.0 # Global average
-        self.current_humidity = 0.0 # Global average
-        self.current_illuminance = 0.0 # Global average
-        self.current_occupancy = False # Any area occupied
+        self.current_total_power = 0.0  # Current total power consumption (kW)
+        self.current_daily_energy = 0.0 # Current daily energy consumption (kWh)
+        self.current_temperature = 0.0  # Global temperature average
+        self.current_humidity = 0.0     # Global humidity average
+        self.current_illuminance = 0.0  # Global illuminance average
+        self.current_occupancy = False  # Any area occupied
 
         # Instant sensor cache
-        self._power_sensor_cache = {} # Stores the current readings of each power sensor (including the main one)
-        self._energy_sensor_cache = {} # Stores the current readings of each energy sensor (including the main one)
+        self._power_sensor_cache = {}       # Stores the current readings of each power sensor (including the main one)
+        self._energy_sensor_cache = {}      # Stores the current readings of each energy sensor (including the main one)
         self._temperature_sensor_cache = {} # Stores the current readings of each temperature sensor
-        self._humidity_sensor_cache = {} # Stores the current readings of each humidity sensor
+        self._humidity_sensor_cache = {}    # Stores the current readings of each humidity sensor
         self._illuminance_sensor_cache = {} # Stores the current readings of each illuminance sensor
-        self._occupancy_sensor_cache = {} # Stores the current readings of each occupancy sensor
+        self._occupancy_sensor_cache = {}   # Stores the current readings of each occupancy sensor
 
         self._energy_midnight_points = {}
 
-        self.area_sensors = {}  # Maps sensor_type -> area_name -> [entity_ids]
-        self.area_data = {}  # Maps area_name -> {temperature, humidity, illuminance, occupancy}
+        self.area_sensors = {} # Maps sensor_type -> area_name -> [entity_ids]
+        self.area_data = {}    # Maps area_name -> {temperature, humidity, illuminance, occupancy}
 
     async def _load_persistent_data(self):
         """Load persistent data from JSON storage."""
