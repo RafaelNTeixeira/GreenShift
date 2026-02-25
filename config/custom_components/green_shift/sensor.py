@@ -511,6 +511,7 @@ class CO2SavedSensor(GreenShiftAISensor):
 
         if len(power_history) < 10:
             self._attr_native_value = 0
+            self._attr_extra_state_attributes = {"trees": 0, "flights": 0, "car_km": 0}
             return
 
         avg_consumption = sum(power_history) / len(power_history)

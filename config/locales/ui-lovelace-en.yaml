@@ -42,22 +42,42 @@ views:
           columns: 2
           square: false
           cards:
-            - type: sensor
-              entity: sensor.current_consumption
-              name: ⚡ Total Load
-              graph: line
-            - type: sensor
-              entity: sensor.current_hourly_cost
-              name: 💵 Hourly Cost
-              graph: line
-            - type: sensor
-              entity: sensor.daily_cost
-              name: 💰 Daily Cost
-              graph: line
-            - type: sensor
-              entity: sensor.daily_co2_estimate
-              name: 🌱 Daily CO2
-              graph: line
+            - type: vertical-stack
+              cards:
+                - type: sensor
+                  entity: sensor.current_consumption
+                  name: ⚡ Total Load
+                  graph: line
+                - type: markdown
+                  content: >
+                    <p style="margin: -12px 16px 8px; font-size: 12px; color: var(--secondary-text-color);">Instantaneous power being consumed right now (W)</p>
+            - type: vertical-stack
+              cards:
+                - type: sensor
+                  entity: sensor.current_cost_per_hour
+                  name: 💵 Hourly Cost
+                  graph: line
+                - type: markdown
+                  content: >
+                    <p style="margin: -12px 16px 8px; font-size: 12px; color: var(--secondary-text-color);">Estimated cost at the current rate of consumption</p>
+            - type: vertical-stack
+              cards:
+                - type: sensor
+                  entity: sensor.daily_cost
+                  name: 💰 Daily Cost
+                  graph: line
+                - type: markdown
+                  content: >
+                    <p style="margin: -12px 16px 8px; font-size: 12px; color: var(--secondary-text-color);">Total energy cost accumulated today</p>
+            - type: vertical-stack
+              cards:
+                - type: sensor
+                  entity: sensor.daily_co2_estimate
+                  name: 🌱 Daily CO2
+                  graph: line
+                - type: markdown
+                  content: >
+                    <p style="margin: -12px 16px 8px; font-size: 12px; color: var(--secondary-text-color);">Estimated CO₂ emissions from today's energy use (kg)</p>
 
         # --- DYNAMIC AREA DASHBOARD ---
         - type: vertical-stack
@@ -633,11 +653,11 @@ views:
               # DYNAMIC HEADER & STATUS
               - type: markdown
                 content: |
-                  # 🎯 Week {{ state_attr('sensor.weekly_challenge', 'week_start') }} Challenge
+                  # 🎯 Week {{ state_attr('sensor.weekly_challenge_progress', 'week_start') }} Challenge
 
-                  {% set current = state_attr('sensor.weekly_challenge', 'current_avg_w') | float(0) %}
-                  {% set target = state_attr('sensor.weekly_challenge', 'target_avg_w') | float(0) %}
-                  {% set pct = state_attr('sensor.weekly_challenge', 'progress') | float(0) %}
+                  {% set current = state_attr('sensor.weekly_challenge_progress', 'current_avg_w') | float(0) %}
+                  {% set target = state_attr('sensor.weekly_challenge_progress', 'target_avg_w') | float(0) %}
+                  {% set pct = state_attr('sensor.weekly_challenge_progress', 'progress') | float(0) %}
 
                   {% if pct <= 100 %}
                   ### Status: ✅ On Track ({{ pct }}%)
@@ -652,7 +672,7 @@ views:
                 cards:
                   # The Target Gauge
                   - type: gauge
-                    entity: sensor.weekly_challenge
+                    entity: sensor.weekly_challenge_progress
                     name: Budget Used
                     min: 0
                     max: 150
@@ -667,8 +687,8 @@ views:
                     content: |
                       ### 🏆 The Reward
 
-                      {% set baseline = state_attr('sensor.weekly_challenge', 'baseline_w') | float(0) %}
-                      {% set target = state_attr('sensor.weekly_challenge', 'target_avg_w') | float(0) %}
+                      {% set baseline = state_attr('sensor.weekly_challenge_progress', 'baseline_w') | float(0) %}
+                      {% set target = state_attr('sensor.weekly_challenge_progress', 'target_avg_w') | float(0) %}
                       {% set price = states('input_number.electricity_price') | float(0.25) %}
                       {% set currency = states('input_select.currency') %}
 
@@ -687,13 +707,13 @@ views:
                 show_header_toggle: false
                 entities:
                   - type: attribute
-                    entity: sensor.weekly_challenge
+                    entity: sensor.weekly_challenge_progress
                     attribute: current_avg_w
                     name: Current Average Load
                     icon: mdi:flash
                     suffix: "W"
                   - type: attribute
-                    entity: sensor.weekly_challenge
+                    entity: sensor.weekly_challenge_progress
                     attribute: target_avg_w
                     name: Target Average Load
                     icon: mdi:target
@@ -915,7 +935,7 @@ views:
               # --- PLAYER LEVEL CARD ---
               - type: markdown
                 content: |
-                  {% set tasks = states('sensor.tasks_completed') | int %}
+                  {% set tasks = states('sensor.tasks_completed_today') | int %}
                   {% if tasks < 5 %}
                   # 🐣 Level 1: Novice
                   *Complete more daily tasks to evolve!* 🌱
@@ -938,7 +958,7 @@ views:
               - type: horizontal-stack
                 cards:
                   - type: gauge
-                    entity: sensor.behaviour_index
+                    entity: sensor.behavior_index
                     name: 💪 Engagement
                     min: 0
                     max: 1
@@ -962,20 +982,20 @@ views:
                 title: 🌟 Lifetime Impact
                 columns: 3
                 entities:
-                  - entity: sensor.savings_accumulated
+                  - entity: sensor.accumulated_savings
                     name: 💰 Money Saved
                   - entity: sensor.co2_saved
                     name: 🌱 CO₂ Avoided
-                  - entity: sensor.weekly_challenge
+                  - entity: sensor.weekly_challenge_progress
                     name: 🎯 Current Goal
 
               # --- "DID YOU KNOW?" CONTEXT ---
               - type: markdown
                 content: |
                   ### 🌍 Your Real-World Impact
-                  {% set trees = state_attr('sensor.co2_saved', 'trees') %}
-                  {% set flights = state_attr('sensor.co2_saved', 'flights') %}
-                  {% set km = state_attr('sensor.co2_saved', 'car_km') %}
+                  {% set trees = state_attr('sensor.co2_saved', 'trees') | default(0) %}
+                  {% set flights = state_attr('sensor.co2_saved', 'flights') | default(0) %}
+                  {% set km = state_attr('sensor.co2_saved', 'car_km') | default(0) %}
 
                   Your savings so far are equivalent to:
                   * 🌲 Planting **{{ trees }} mature trees**

@@ -29,19 +29,19 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Test interface on mobile
 - [x] Mention that user level is based in completed tasks from the last 30 days
 - [x] Update hardcoded watt values from Live Focus Area table: use instead classifications based on mean consumption for each area
-- [ ] Top 5 consumers section not appearing after setup
-- [ ] "Entity Not Found" errors:
-    - [ ] Current consumption cost not appearing
-    - [ ] Gauge Week challenge not appearing
-    - [ ] Section below gauge not appearing also
-    - [ ] Engagement index not appearing in profile page
-    - [ ] Accumulated savings not appearing in profile page
-    - [ ] Weekly challenge not appearing in profile page
-    - [ ] Energy goals slider not appearing in settings page
-    - [ ] Currency dropdown not appearing in settings page
-    - [ ] Electricity dropdown not appearing in settings page
-- [ ] Ensure interface is clear enough to the users 
- 
+- [x] Top 5 consumers section not appearing after setup
+- [x] "Entity Not Found" errors:
+    - [x] Current consumption cost not appearing
+    - [x] Gauge Week challenge not appearing
+    - [x] Section below gauge not appearing also
+    - [x] Engagement index not appearing in profile page
+    - [x] Accumulated savings not appearing in profile page
+    - [x] Weekly challenge not appearing in profile page
+    - [x] Energy goals slider not appearing in settings page
+    - [x] Currency dropdown not appearing in settings page
+    - [x] Electricity dropdown not appearing in settings page
+- [x] Ensure interface is clear enough to the users 
+
 ### 🎮 Gamification
 - [x] Improve gamification daily tasks
 - [x] Create a service to check if daily tasks have been completed
@@ -96,7 +96,7 @@ Checklist to track remaining features, fixes and tests before completion.
 - [x] Add pre-commit hook to run tests before executing a commit
 - [x] Improve code documentation where needed
 - [x] Test pending notifications backup after restart
-- [ ] Try setup from scratch
+- [x] Try setup from scratch
 - [ ] Update README
 - [ ] Consider metrics for analysis
 
