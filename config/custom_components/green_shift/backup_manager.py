@@ -135,7 +135,7 @@ class BackupManager:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _do_backup)
 
-    async def cleanup_old_backups(self, keep_auto: int = 18, keep_startup: int = 10, keep_shutdown: int = 10) -> None:
+    async def cleanup_old_backups(self, keep_auto: int = 3, keep_startup: int = 10, keep_shutdown: int = 10) -> None:
         """Remove old backups to save space.
 
         Note: Manual backups are never auto-deleted.
