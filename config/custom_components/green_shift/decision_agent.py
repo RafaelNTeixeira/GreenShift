@@ -1326,9 +1326,9 @@ class DecisionAgent:
         _LOGGER.debug(f"Anomaly stats: mean={mean:.2f}W, std={std:.2f}W, current={current:.2f}W")
 
         # Z-score normalized to [0,1]
-        if std > 0:
+        if std > 10.0:
             z_score = max((current - mean) / std, 0) # Consider only positive deviations (consumption above mean)
-            self.anomaly_index = min(z_score / 3.0, 1.0)
+            self.anomaly_index = min(z_score / 5.0, 1.0)
             _LOGGER.debug("Anomaly index updated: %.2f (z-score: %.2f)", self.anomaly_index, z_score)
         else:
             self.anomaly_index = 0.0
@@ -1356,7 +1356,7 @@ class DecisionAgent:
 
                     baseline_temp = self.area_baselines.get(area, {}).get("temperature")
 
-                    if std > 0:
+                    if std > 0.5:
                         z_score = abs((current - mean) / std)
                         area_anomalies["temperature"] = min(z_score / 3.0, 1.0)
 
@@ -1380,9 +1380,9 @@ class DecisionAgent:
                     current = power_values[-1]
 
                     area_power_baseline = self.area_baselines.get(area, {}).get("power")
-                    if std > 0:
-                        z_score = abs((current - mean) / std)
-                        area_anomalies["power"] = min(z_score / 3.0, 1.0)
+                    if std > 10.0:
+                        z_score = max((current - mean) / std, 0)
+                        area_anomalies["power"] = min(z_score / 5.0, 1.0)
 
                     # Also check against area baseline if in active phase
                     if area_power_baseline and area_power_baseline > 0:
@@ -1395,13 +1395,20 @@ class DecisionAgent:
             if hum_history:
                 hum_values = [val for ts, val in hum_history if val is not None]
                 if len(hum_values) >= 10:
+                    mean = np.mean(hum_values)
+                    std = np.std(hum_values)
                     current = hum_values[-1]
                     area_hum_baseline = self.area_baselines.get(area, {}).get("humidity")
+
+                    # Z-score for humidity anomalies
+                    if std > 1.0:
+                        z_score = abs((current - mean) / std)
+                        area_anomalies["humidity"] = min(z_score / 4.0, 1.0)
 
                     # Check against comfortable range (30-60%)
                     if current < 30 or current > 60:
                         deviation = max(30 - current, current - 60, 0)
-                        area_anomalies["humidity"] = min(deviation / 30.0, 1.0)
+                        area_anomalies["humidity"] = max(area_anomalies.get("humidity", 0), min(deviation / 30.0, 1.0))
 
                     # Also check against area baseline if available
                     if area_hum_baseline and area_hum_baseline > 0:
