@@ -4,19 +4,18 @@ Green Shift includes a comprehensive test suite covering core functionality and 
 
 ## Test Coverage
 
-**256 tests** across 8 modules:
+**293 tests** across 8 modules:
 
 | Module | Tests | Coverage |
 |--------|-------|----------|
 | `test_backup_manager.py` | 19 | Backup creation, cleanup, restoration |
 | `test_config_flow.py` | 24 | Config flow, sensor discovery, area assignment |
 | `test_data_collector.py` | 28 | Real-time monitoring, energy tracking |
-| `test_decision_agent.py` | 37 | AI model, Q-learning, fatigue tracking |
+| `test_decision_agent.py` | 75 | AI model, Q-learning, fatigue tracking, engagement persistence |
 | `test_helpers.py` | 28 | Utility functions, conversions |
-| `test_storage.py` | 33 | Database operations, data persistence |
-| `test_task_manager.py` | 14 | Task generation, difficulty adjustment |
-| `test_translations_runtime.py` | 40 | Multilingual support, templates |
-| **Parametrized tests** | +33 | Additional test cases from @pytest.mark.parametrize |
+| `test_storage.py` | 37 | Database operations, data persistence, task interactions |
+| `test_task_manager.py` | 28 | Task generation, difficulty adjustment, verification |
+| `test_translations_runtime.py` | 54 | Multilingual support, templates |
 
 ## Running Tests
 

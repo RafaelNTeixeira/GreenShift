@@ -253,41 +253,45 @@ $$\langle S, A, M, P, R, \gamma \rangle$$
 11. Time of day (normalized 0-1)
 12. Day of week (normalized 0-1)
 
-**A - Action Space** (5 discrete actions):
+**A - Action Space** (4 discrete actions):
 ```python
 ACTIONS = {
-    "noop": 0,          # No action
     "specific": 1,      # Appliance-specific tip
     "anomaly": 2,       # Anomaly alert
-    "behavioural": 3,   # behaviour change suggestion
+    "behavioural": 3,   # Behaviour change suggestion
     "normative": 4,     # Social/group comparison
 }
 ```
 
 **M - Action Mask** (context-dependent availability):
-- `noop`: Always available
-- `specific`: Requires power sensors (smart plugs)
+- `specific`: Requires individual power sensors
 - `anomaly`: Requires 100+ historical samples
-- `behavioural`: Always available (if in active phase)
-- `normative`: Requires non-zero baseline
+- `behavioural`: Always available in active phase
+- `normative`: Requires non-zero baseline consumption
 
-**R - Reward Function**:
-$$R_t = \alpha \cdot \Delta E - \beta \cdot I_{fatigue} + \gamma \cdot I_{engagement}$$
+**R - Reward Function** (called after user responds - delayed Q-learning):
+$$R_t = \alpha \cdot \Delta E + \beta \cdot f_{feedback} - \delta \cdot I_{fatigue}$$
 
 Where:
-- **α = 1.0**: Energy savings weight
-- **β = 0.5**: Engagement weight (user feedback)
-- **δ = 0.3**: Fatigue penalty weight
+- **α = 1.0**: Energy savings weight ($\Delta E$ = normalised power drop vs. baseline)
+- **β = 0.5**: Feedback signal weight ($f_{feedback}$ = +1.0 accept, −0.5 reject)
+- **δ = 0.3**: Fatigue penalty weight ($I_{fatigue}$ = current fatigue index at response time)
 
 ### Q-Learning Implementation
 
-**Update Rule:**
-$$Q(s,a) \leftarrow Q(s,a) + \alpha [R + \gamma \max Q(s',a') - Q(s,a)]$$
+**Update Rule (dynamic γ based on user response):**
+$$Q(s,a) \leftarrow Q(s,a) + \alpha [R + \gamma_{dyn} \max Q(s',a') - Q(s,a)]$$
+
+$$\gamma_{dyn} = \begin{cases} 0.95 & \text{(accepted)} \\ 0.0 & \text{(rejected -- terminal)} \end{cases}$$
+
+Rejection is treated as a terminal state: future value estimation is disabled, so the agent learns solely from the negative immediate reward without being partially offset by future Q-values.
 
 **Parameters:**
 - Learning rate (α): 0.1
-- Discount factor (γ): 0.95
+- Discount factor (γ): 0.95 (accept) / 0.0 (reject)
 - Exploration rate (ε): 0.2
+- Shadow exploration rate: 0.5
+- Shadow learning rate: 0.05
 
 **Epsilon-Greedy Policy:**
 - 20% exploration (random available action)
@@ -372,8 +376,10 @@ Configure these parameters:
 ### Notification Limits
 
 - **Max notifications per day**: 10 (prevents user fatigue)
-- **Min time between notifications**: 1 hour
+- **Min time between notifications**: 30 minutes (base cooldown)
 - **Fatigue threshold**: 0.7 (notifications pause above this)
+- **High opportunity bypass threshold**: 0.6 (can bypass standard cooldown)
+- **Critical opportunity threshold**: 0.8 (can bypass fatigue block)
 - **Baseline days**: 14 (calibration period before recommendations)
 
 ---
@@ -384,7 +390,7 @@ Green Shift includes comprehensive data protection to ensure your energy data an
 
 ### Automatic Protection
 - ✅ **Write-Ahead Logging (WAL)**: Protects against crashes and power failures
-- ✅ **Automatic Backups**: Every 4 hours, keeps last 18 (~3 days of protection)
+- ✅ **Automatic Backups**: Every 6 hours, keeps last 10 (~2.5 days of protection)
 - ✅ **Atomic Writes**: State files never partially written (no corruption)
 - ✅ **Startup/Shutdown Backups**: Snapshots before and after restarts
 
@@ -412,16 +418,16 @@ All data is stored in: `config/green_shift_data/`
 - `research_data.db` - Permanent research and analytics data
 - `state.json` - AI model state (Q-table, indices)
 - `backups/` - Organized backup snapshots:
-  - `auto/` - Every 6 hours (keeps last 10)
-  - `startup/` - On integration startup (keeps last 3)
-  - `shutdown/` - On integration shutdown (keeps last 3)
+  - `auto/` - Every 6 hours, keeps last 10 (~2.5 days)
+  - `startup/` - On integration startup, keeps last 3
+  - `shutdown/` - On integration shutdown, keeps last 3
   - `manual/` - User-created backups (never auto-deleted)
 
 ---
 
 ## 🧪 Testing
 
-Green Shift includes currently **256 comprehensive tests** covering AI logic, backup systems, configuration and utility functions.
+Green Shift includes currently **293 comprehensive tests** covering AI logic, backup systems, configuration and utility functions.
 
 ### Quick Start
 
@@ -451,12 +457,11 @@ pytest test_decision_agent.py -v
 - ✅ **19 tests** - Backup management
 - ✅ **24 tests** - Config flow & sensor discovery
 - ✅ **28 tests** - Real-time data collection & energy tracking
-- ✅ **37 tests** - AI decision agent & Q-learning
+- ✅ **75 tests** - AI decision agent & Q-learning
 - ✅ **28 tests** - Helper functions & conversions
-- ✅ **33 tests** - Database operations & persistence
-- ✅ **14 tests** - Task generation & difficulty
-- ✅ **40 tests** - Multilingual support & translations
-- ✅ **33 tests** - Additional coverage (parametrized & integration tests)
+- ✅ **37 tests** - Database operations & persistence
+- ✅ **28 tests** - Task generation & difficulty
+- ✅ **54 tests** - Multilingual support & translations
 
 ### Pre-Commit Hooks
 
