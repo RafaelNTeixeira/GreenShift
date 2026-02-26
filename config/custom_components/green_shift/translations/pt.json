@@ -10,12 +10,24 @@
         "description": "Por favor, forneça a sua moeda local e o custo atual de eletricidade por kWh para calcular as poupanças.",
         "data": {
           "currency": "Moeda",
-          "electricity_price": "Preço por kWh"
+          "electricity_price": "Preço por kWh",
+          "environment_mode": "Tipo de Ambiente"
         }
       },
       "working_hours": {
         "title": "Defina o Seu Horário",
-        "description": "Selecione as suas horas de trabalho típicas. Isso ajuda a IA a entender quando você provavelmente está fora de casa, permitindo que ela forneça insights mais precisos e recomendações personalizadas de economia de energia."
+        "description": "Selecione as suas horas de trabalho típicas. Isso ajuda a IA a entender quando você provavelmente está fora de casa, permitindo que ela forneça insights mais precisos e recomendações personalizadas de economia de energia.",
+        "data": {
+          "working_start": "Hora de Início",
+          "working_end": "Hora de Fim",
+          "working_monday": "Segunda-feira",
+          "working_tuesday": "Terça-feira",
+          "working_wednesday": "Quarta-feira",
+          "working_thursday": "Quinta-feira",
+          "working_friday": "Sexta-feira",
+          "working_saturday": "Sábado",
+          "working_sunday": "Domingo"
+        }
       },
       "sensor_confirmation": {
         "title": "Validação de Sensores",
@@ -59,6 +71,12 @@
         "EUR": "Euro (€)",
         "USD": "Dólar Americano ($)",
         "GBP": "Libra Esterlina (£)"
+      }
+    },
+    "environment_mode": {
+      "options": {
+        "home": "Casa",
+        "office": "Escritório"
       }
     }
   },

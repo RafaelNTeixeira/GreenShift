@@ -644,3 +644,91 @@ class TestRLEpisodeCleanup:
 
         count = count_episodes()
         assert count == 1  # Only recent episode remains
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_active_phase_savings
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestActivePhraseSavings:
+    """Tests for get_active_phase_savings (uses research_daily_aggregates)."""
+
+    def _insert_daily_aggregate(self, storage, date: str, phase: str, avg_power_w: float):
+        """Helper: insert a minimal research_daily_aggregates row."""
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO research_daily_aggregates
+                (date, phase, avg_power_w)
+            VALUES (?, ?, ?)
+        """, (date, phase, avg_power_w))
+        conn.commit()
+        conn.close()
+
+    @pytest.mark.asyncio
+    async def test_no_data_returns_zero(self, storage):
+        result = await storage.get_active_phase_savings("2026-01-01", baseline_w=1000.0)
+        assert result["total_savings_kwh"] == 0.0
+        assert result["days_with_data"] == 0
+        assert result["overall_avg_power_w"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_single_day_savings_calculated(self, storage):
+        """One active day consuming 200 W below 1000 W baseline = 4.8 kWh saved."""
+        self._insert_daily_aggregate(storage, "2026-03-01", "active", 800.0)
+        result = await storage.get_active_phase_savings("2026-03-01", baseline_w=1000.0)
+        # saving_w = 200 W; over 24h = 4.8 kWh
+        assert result["days_with_data"] == 1
+        assert result["total_savings_kwh"] == pytest.approx(4.8, abs=0.01)
+        assert result["overall_avg_power_w"] == pytest.approx(800.0, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_multiple_days_accumulated(self, storage):
+        """3 days at 500 W below 1000 W baseline => 3 * 12 = 36 kWh."""
+        for day in ("2026-03-01", "2026-03-02", "2026-03-03"):
+            self._insert_daily_aggregate(storage, day, "active", 500.0)
+        result = await storage.get_active_phase_savings("2026-03-01", baseline_w=1000.0)
+        assert result["days_with_data"] == 3
+        assert result["total_savings_kwh"] == pytest.approx(36.0, abs=0.1)
+
+    @pytest.mark.asyncio
+    async def test_baseline_rows_excluded(self, storage):
+        """baseline-phase rows must not contribute to savings calculations."""
+        self._insert_daily_aggregate(storage, "2026-02-01", "baseline", 200.0)
+        self._insert_daily_aggregate(storage, "2026-03-01", "active", 800.0)
+        result = await storage.get_active_phase_savings("2026-02-01", baseline_w=1000.0)
+        # Only the active row contributes
+        assert result["days_with_data"] == 1
+        assert result["total_savings_kwh"] == pytest.approx(4.8, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_rows_before_active_since_excluded(self, storage):
+        """Active rows older than active_since_date must be ignored."""
+        self._insert_daily_aggregate(storage, "2026-02-28", "active", 700.0)
+        self._insert_daily_aggregate(storage, "2026-03-01", "active", 800.0)
+        # Only rows from 2026-03-01 onward should be included
+        result = await storage.get_active_phase_savings("2026-03-01", baseline_w=1000.0)
+        assert result["days_with_data"] == 1
+
+    @pytest.mark.asyncio
+    async def test_negative_saving_still_summed(self, storage):
+        """Days where consumption exceeds baseline produce negative savings."""
+        self._insert_daily_aggregate(storage, "2026-03-01", "active", 1200.0)
+        result = await storage.get_active_phase_savings("2026-03-01", baseline_w=1000.0)
+        # saving_w = -200 W; over 24h = -4.8 kWh
+        assert result["total_savings_kwh"] == pytest.approx(-4.8, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_null_avg_power_rows_skipped(self, storage):
+        """Rows with NULL avg_power_w must be skipped without raising."""
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO research_daily_aggregates (date, phase, avg_power_w) VALUES (?, ?, ?)",
+            ("2026-03-01", "active", None)
+        )
+        conn.commit()
+        conn.close()
+        result = await storage.get_active_phase_savings("2026-03-01", baseline_w=1000.0)
+        assert result["days_with_data"] == 0
+        assert result["total_savings_kwh"] == 0.0

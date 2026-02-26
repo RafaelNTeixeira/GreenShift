@@ -10,12 +10,24 @@
         "description": "Please provide your local currency and current electricity cost per kWh to calculate savings.",
         "data": {
           "currency": "Currency",
-          "electricity_price": "Price per kWh"
+          "electricity_price": "Price per kWh",
+          "environment_mode": "Environment Type"
         }
       },
       "working_hours": {
         "title": "Define Your Schedule",
-        "description": "Select your typical working hours. This helps the AI understand when you're likely away from home, allowing it to provide more accurate insights and personalized energy-saving recommendations."
+        "description": "Select your typical working hours. This helps the AI understand when you're likely away from home, allowing it to provide more accurate insights and personalized energy-saving recommendations.",
+        "data": {
+          "working_start": "Start Time",
+          "working_end": "End Time",
+          "working_monday": "Monday",
+          "working_tuesday": "Tuesday",
+          "working_wednesday": "Wednesday",
+          "working_thursday": "Thursday",
+          "working_friday": "Friday",
+          "working_saturday": "Saturday",
+          "working_sunday": "Sunday"
+        }
       },
       "sensor_confirmation": {
         "title": "Sensor Validation",
@@ -59,6 +71,12 @@
         "EUR": "Euro (€)",
         "USD": "US Dollar ($)",
         "GBP": "British Pound (£)"
+      }
+    },
+    "environment_mode": {
+      "options": {
+        "home": "Home",
+        "office": "Office"
       }
     }
   },

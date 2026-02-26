@@ -450,6 +450,9 @@ class DecisionAgent:
 
         max_power = 0.0
         for entity_id in power_sensors:
+            # Exclude main power sensor to find individual devices
+            if entity_id == self.data_collector.main_power_sensor:
+                continue
             state = self.hass.states.get(entity_id)
             if state and state.state not in ['unknown', 'unavailable']:
                 try:
@@ -859,6 +862,24 @@ class DecisionAgent:
 
             _LOGGER.info("Nudge notification added to dashboard (%d/%d today): %s - %s", self.notification_count_today, MAX_NOTIFICATIONS_PER_DAY, action_name, notification["title"])
 
+            # Try to send push notification to mobile app if available
+            try:
+                notify_services = self.hass.services.async_services().get("notify", {})
+                mobile_services = [svc for svc in notify_services if svc.startswith("mobile_app_")]
+                if mobile_services:
+                    await self.hass.services.async_call(
+                        "notify", mobile_services[0],
+                        {
+                            "title": notification["title"],
+                            "message": notification["message"],
+                        }
+                    )
+                    _LOGGER.info("Push notification sent to mobile app '%s': %s", mobile_services[0], notification["title"])
+                else:
+                    _LOGGER.debug("No mobile_app notify service found; notification only visible in dashboard")
+            except Exception as notify_err:
+                _LOGGER.warning("Failed to send mobile push notification: %s", notify_err)
+
             async_dispatcher_send(self.hass, GS_AI_UPDATE_SIGNAL)
             
             return notification_id
@@ -1042,6 +1063,9 @@ class DecisionAgent:
         top_device = None
 
         for entity_id in power_sensors:
+            # Exclude main power sensor to find individual devices
+            if entity_id == self.data_collector.main_power_sensor:
+                continue
             state = self.hass.states.get(entity_id)
             if state and state.state not in ['unknown', 'unavailable']:
                 try:
@@ -1465,7 +1489,7 @@ class DecisionAgent:
         # Normalize to [0, 1] range for stability (engagement scores are between -0.5 and +1.0)
         # Ensure that neutral users (50/50 acceptance) are around 0.5, highly engaged users approach 1.0 and disengaged users approach 0.0
         new_index = np.clip((weighted_engagement + 0.5) / 1.5, 0.0, 1.0)
-        self.behaviour_index = 0.4 * new_index + 0.6 * self.behaviour_index
+        self.behaviour_index = 0.5 * new_index + 0.5 * self.behaviour_index
 
         _LOGGER.debug("Behaviour index updated: %.2f (raw: %.2f, normalised: %.2f, history size: %d)", self.behaviour_index, weighted_engagement, new_index, len(self.engagement_history))
 

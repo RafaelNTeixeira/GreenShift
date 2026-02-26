@@ -520,6 +520,56 @@ class StorageManager:
 
         await self.hass.async_add_executor_job(_cleanup)
 
+    async def get_active_phase_savings(self, active_since_date: str, baseline_w: float) -> dict:
+        """
+        Calculate accumulated energy savings using research_daily_aggregates.
+
+        Args:
+            active_since_date (str): Date when active phase started, in 'YYYY-MM-DD' format.
+            baseline_w (float): Baseline consumption in Watts, used to compute per-day savings.
+
+        Returns:
+            dict:
+                total_savings_kwh (float): Cumulative energy saved across all active-phase days.
+                days_with_data (int): Number of days that had valid avg_power_w data.
+                overall_avg_power_w (float): Mean power across all days with data.
+        """
+        def _query():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT date, avg_power_w, total_energy_kwh
+                FROM research_daily_aggregates
+                WHERE phase = 'active' AND date >= ?
+                ORDER BY date ASC
+            """, (active_since_date,))
+            rows = cursor.fetchall()
+            conn.close()
+            return rows
+
+        rows = await self.hass.async_add_executor_job(_query)
+
+        total_savings_kwh = 0.0
+        days_with_data = 0
+        avg_powers = []
+
+        for _date, avg_power_w, _total_energy in rows:
+            if avg_power_w is None:
+                continue
+            days_with_data += 1
+            avg_powers.append(avg_power_w)
+            saving_w = baseline_w - avg_power_w
+            # Each daily aggregate covers a full 24-hour day
+            total_savings_kwh += (saving_w / 1000.0) * 24.0
+
+        overall_avg_power_w = sum(avg_powers) / len(avg_powers) if avg_powers else 0.0
+
+        return {
+            "total_savings_kwh": total_savings_kwh,
+            "days_with_data": days_with_data,
+            "overall_avg_power_w": overall_avg_power_w,
+        }
+
     # ==================== TEMPORAL DATA (SQLite) ====================
 
     async def store_sensor_snapshot(
@@ -1693,7 +1743,7 @@ class StorageManager:
             # Get energy metrics from sensor database
             sensor_cursor.execute("""
                 SELECT
-                    energy as total_energy_kwh,
+                    MAX(energy) as total_energy_kwh,
                     AVG(power) as avg_power,
                     MAX(power) as peak_power,
                     MIN(power) as min_power,

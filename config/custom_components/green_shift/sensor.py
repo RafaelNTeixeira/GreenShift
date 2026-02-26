@@ -60,8 +60,8 @@ async def async_setup_entry(
         CurrentCostConsumptionSensor(hass, collector),
         DailyCostConsumptionSensor(hass, collector),
         DailyCO2EstimateSensor(hass, collector),
-        SavingsAccumulatedSensor(agent, collector),
-        CO2SavedSensor(agent, collector),
+        SavingsAccumulatedSensor(agent, collector, storage),
+        CO2SavedSensor(agent, collector, storage),
         TasksCompletedSensor(storage),
         WeeklyChallengeSensor(agent),
         BehaviourIndexSensor(agent),
@@ -402,9 +402,10 @@ class DailyCO2EstimateSensor(GreenShiftBaseSensor):
 class SavingsAccumulatedSensor(GreenShiftAISensor):
     """Sensor with the accumulated savings in EUR."""
 
-    def __init__(self, agent, collector):
+    def __init__(self, agent, collector, storage):
         self._agent = agent
         self._collector = collector
+        self._storage = storage
         self._attr_translation_key = "savings_accumulated"
         self._attr_unique_id = f"{DOMAIN}_savings"
         self._attr_icon = "mdi:cash-check"
@@ -423,8 +424,10 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
         return self._attr_extra_state_attributes
 
     async def _async_update_state(self):
-        """Fetch data asynchronously and calculate state."""
-        # Only calculate savings during active phase, using data from when it started
+        """Fetch data asynchronously and calculate state.
+
+        Uses research_daily_aggregates (never purged) instead of sensor_data.db
+        """
         active_since = getattr(self._agent, 'active_since', None)
         if self._agent.phase == PHASE_BASELINE or active_since is None:
             self._attr_native_value = 0
@@ -437,57 +440,52 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
             }
             return
 
-        # Limit history to only the active phase period (capped at DB retention of 14 days)
-        hours_active = max(1, int((datetime.now() - active_since).total_seconds() / 3600))
-        power_history_data = await self._collector.get_power_history(hours=hours_active)
-        power_history = [power for timestamp, power in power_history_data]
-
-        if len(power_history) < 10:
-            self._attr_native_value = 0
-            self._attr_extra_state_attributes = {
-                "avg_power_w": 0,
-                "baseline_consumption_w": round(self._agent.baseline_consumption, 2),
-                "saving_watts": 0,
-                "currency": self.unit_of_measurement,
-            }
-            return
-
         price_state = self.hass.states.get("input_number.electricity_price")
         try:
             price_per_kwh = float(price_state.state) if price_state else 0.25
         except (ValueError, TypeError):
             price_per_kwh = 0.25
 
-        avg_consumption = sum(power_history) / len(power_history)
-        saving_watts = self._agent.baseline_consumption - avg_consumption
+        active_since_date = active_since.strftime("%Y-%m-%d")
+        savings_data = await self._storage.get_active_phase_savings(
+            active_since_date, self._agent.baseline_consumption
+        )
 
-        # Calculate hours covered by history based on update interval
-        readings_per_hour = 3600 / UPDATE_INTERVAL_SECONDS
-        hours = len(power_history) / readings_per_hour
+        if savings_data["days_with_data"] == 0:
+            self._attr_native_value = 0
+            self._attr_extra_state_attributes = {
+                "avg_power_w": 0,
+                "baseline_consumption_w": round(self._agent.baseline_consumption, 2),
+                "saving_watts": 0,
+                "currency": self.unit_of_measurement,
+                "days_tracked": 0,
+            }
+            return
 
-        # Convert W to kW then to kWh
-        saving_kwh = (saving_watts / 1000.0) * hours
-        savings_total = saving_kwh * price_per_kwh
+        total_savings_kwh = savings_data["total_savings_kwh"]
+        avg_power_w = savings_data["overall_avg_power_w"]
+        saving_watts = self._agent.baseline_consumption - avg_power_w
+        savings_total = total_savings_kwh * price_per_kwh
 
         self._attr_native_value = round(max(0, savings_total), 2)
-
-        # Update attributes with calculation details
         self._attr_extra_state_attributes = {
-            "avg_power_w": round(avg_consumption, 2),
+            "avg_power_w": round(avg_power_w, 2),
             "baseline_consumption_w": round(self._agent.baseline_consumption, 2),
             "saving_watts": round(saving_watts, 2),
+            "total_savings_kwh": round(total_savings_kwh, 4),
+            "days_tracked": savings_data["days_with_data"],
             "currency": self.unit_of_measurement,
             "price_per_kwh": price_per_kwh,
         }
 
 
-
 class CO2SavedSensor(GreenShiftAISensor):
     """Sensor with the saved CO2 (kg)."""
 
-    def __init__(self, agent, collector):
+    def __init__(self, agent, collector, storage):
         self._agent = agent
         self._collector = collector
+        self._storage = storage
         self._attr_translation_key = "co2_saved"
         self._attr_unique_id = f"{DOMAIN}_co2"
         self._attr_unit_of_measurement = "kg"
@@ -496,40 +494,35 @@ class CO2SavedSensor(GreenShiftAISensor):
         self._attr_extra_state_attributes = {}
 
     async def _async_update_state(self):
-        """Fetch data asynchronously and calculate CO2 saved based on energy savings compared to the baseline."""
-        # Only calculate CO2 savings during active phase, using data from when it started
+        """Fetch data asynchronously and calculate CO2 saved.
+
+        Uses research_daily_aggregates (never purged) for full-study accuracy.
+        """
         active_since = getattr(self._agent, 'active_since', None)
         if self._agent.phase == PHASE_BASELINE or active_since is None:
             self._attr_native_value = 0
             self._attr_extra_state_attributes = {}
             return
 
-        hours_active = max(1, int((datetime.now() - active_since).total_seconds() / 3600))
-        power_history_data = await self._collector.get_power_history(hours=hours_active)
+        active_since_date = active_since.strftime("%Y-%m-%d")
+        savings_data = await self._storage.get_active_phase_savings(
+            active_since_date, self._agent.baseline_consumption
+        )
 
-        power_history = [power for timestamp, power in power_history_data]
-
-        if len(power_history) < 10:
+        if savings_data["days_with_data"] == 0:
             self._attr_native_value = 0
             self._attr_extra_state_attributes = {"trees": 0, "flights": 0, "car_km": 0}
             return
 
-        avg_consumption = sum(power_history) / len(power_history)
-        saving_watts = self._agent.baseline_consumption - avg_consumption
-
-        readings_per_hour = 3600 / UPDATE_INTERVAL_SECONDS
-        hours = len(power_history) / readings_per_hour
-
-        saving_kwh = (saving_watts * hours) / 1000
-
+        saving_kwh = savings_data["total_savings_kwh"]
         impact = get_environmental_impact(max(0, saving_kwh))
 
         self._attr_native_value = impact["co2_kg"]
-
         self._attr_extra_state_attributes = {
             "trees": impact["trees"],
             "flights": impact["flights"],
-            "car_km": impact["km"]
+            "car_km": impact["km"],
+            "total_savings_kwh": round(saving_kwh, 4),
         }
 
 

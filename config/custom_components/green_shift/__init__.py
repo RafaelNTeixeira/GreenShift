@@ -302,6 +302,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, rl_cleanup_callback, hour=3, minute=0, second=0
     )
 
+    # Daily sensor data cleanup at 3:30 AM (sensor_data.db rolling 14-day window)
+    async def sensor_data_cleanup_callback(now):
+        """Remove sensor data older than 14 days from sensor_data.db."""
+        _LOGGER.debug("Running periodic sensor data cleanup...")
+        try:
+            await storage._cleanup_old_data()
+            _LOGGER.info("Periodic sensor data cleanup completed successfully")
+        except Exception as e:
+            _LOGGER.error("Periodic sensor data cleanup error: %s", e)
+
+    hass.data[DOMAIN]["sensor_cleanup_listener"] = async_track_time_change(
+        hass, sensor_data_cleanup_callback, hour=3, minute=30, second=0
+    )
+
     # Generate tasks immediately if none exist for today (only in active phase)
     if agent.phase == PHASE_ACTIVE:
         today_tasks = await storage.get_today_tasks()
@@ -1092,6 +1106,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Cancel RL cleanup listener
         if "rl_cleanup_listener" in hass.data[DOMAIN]:
             hass.data[DOMAIN]["rl_cleanup_listener"]()
+
+        # Cancel sensor data cleanup listener
+        if "sensor_cleanup_listener" in hass.data[DOMAIN]:
+            hass.data[DOMAIN]["sensor_cleanup_listener"]()
 
         # Close storage connections
         storage = hass.data[DOMAIN].get("storage")

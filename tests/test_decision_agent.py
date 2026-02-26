@@ -836,3 +836,82 @@ class TestCalculateRewardWithFeedback:
         reward = await agent._calculate_reward_with_feedback(accepted=False, initial_power=500.0)
 
         assert reward < 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _execute_action – mobile push notification
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestExecuteActionMobileNotify:
+    """Verify mobile push notification behaviour in _execute_action."""
+
+    def _make_agent_with_services(self, notify_services: dict):
+        """Create an agent whose hass.services.async_services() returns the given map."""
+        agent = make_agent()
+        agent.phase = "active"
+        agent.baseline_consumption = 1000.0
+        agent.fatigue_index = 0.0
+        agent.behaviour_index = 0.5
+        agent.anomaly_index = 0.0
+        agent.notification_count_today = 0
+        agent.last_notification_time = None
+        agent.data_collector.main_power_sensor = None
+
+        # Stub hass async_services
+        agent.hass.services.async_services = MagicMock(return_value={"notify": notify_services})
+        agent.hass.services.async_call = AsyncMock()
+        return agent
+
+    def _patch_generate_notification(self, agent, title="Test Alert", message="Test message"):
+        """Patch _generate_notification to return a canned notification."""
+        async def _fake_generate(action_type):
+            return {"title": title, "message": message, "template_index": 0}
+        agent._generate_notification = _fake_generate
+
+    @pytest.mark.asyncio
+    async def test_mobile_notify_called_when_service_available(self):
+        """When a mobile_app_ service exists, async_call must be invoked with notify domain."""
+        agent = self._make_agent_with_services({"mobile_app_pixel": MagicMock()})
+        self._patch_generate_notification(agent)
+
+        await agent._execute_action(1)
+
+        # At least one call to hass.services.async_call should target 'notify'
+        calls = agent.hass.services.async_call.call_args_list
+        notify_calls = [c for c in calls if c.args[0] == "notify"]
+        assert len(notify_calls) >= 1, "Expected async_call to 'notify' domain"
+        assert notify_calls[0].args[1] == "mobile_app_pixel"
+
+    @pytest.mark.asyncio
+    async def test_no_mobile_notify_when_no_service(self):
+        """When there are no mobile_app_ services, async_call must not be called."""
+        agent = self._make_agent_with_services({})
+        self._patch_generate_notification(agent)
+
+        await agent._execute_action(1)
+
+        calls = agent.hass.services.async_call.call_args_list
+        notify_calls = [c for c in calls if c.args and c.args[0] == "notify"]
+        assert len(notify_calls) == 0, "Should not call notify when no mobile service exists"
+
+    @pytest.mark.asyncio
+    async def test_notification_added_to_history_regardless_of_mobile(self):
+        """Whether or not mobile is available, notification must appear in history."""
+        agent = self._make_agent_with_services({})
+        self._patch_generate_notification(agent, title="Energy Tip")
+
+        await agent._execute_action(1)
+
+        assert len(agent.notification_history) == 1
+        assert agent.notification_history[0]["title"] == "Energy Tip"
+
+    @pytest.mark.asyncio
+    async def test_mobile_notify_error_does_not_crash_execute_action(self):
+        """If mobile notification raises, the action must still complete normally."""
+        agent = self._make_agent_with_services({"mobile_app_phone": MagicMock()})
+        self._patch_generate_notification(agent)
+        agent.hass.services.async_call = AsyncMock(side_effect=Exception("Service unavailable"))
+
+        # Should not raise
+        notification_id = await agent._execute_action(1)
+        assert notification_id is not None
