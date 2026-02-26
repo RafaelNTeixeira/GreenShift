@@ -241,3 +241,284 @@ class TestDifficultyMultipliers:
     def test_easy_is_half_of_normal(self):
         tm = make_task_manager()
         assert tm.difficulty_multipliers[1] == pytest.approx(0.5)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Peak Avoidance Task — peak_hour storage and targeted verification
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPeakAvoidanceTask:
+
+    @pytest.mark.asyncio
+    async def test_peak_hour_stored_in_task(self):
+        """Generated peak_avoidance task must include peak_hour for verification."""
+        sensors = {"power": ["sensor.power_1"]}
+        tm = make_task_manager(sensors=sensors)
+        tm.storage.get_today_tasks = AsyncMock(return_value=[])
+
+        tasks = await tm.generate_daily_tasks()
+        peak_tasks = [t for t in tasks if t["task_type"] == "peak_avoidance"]
+        if peak_tasks:
+            assert "peak_hour" in peak_tasks[0], "peak_hour key must be present in the task"
+            assert 0 <= peak_tasks[0]["peak_hour"] <= 23
+
+    @pytest.mark.asyncio
+    async def test_verification_checks_only_stored_peak_hour(self):
+        """Verification must succeed when only the stored peak_hour is below target,
+        even though another hour in the same day would fail if it were checked."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        sensors = {"power": ["sensor.power_1"]}
+        tm = make_task_manager(sensors=sensors)
+
+        # Hour 10 → 900 W (would fail if checked against target 450 W)
+        # Hour 14 → 400 W (below target 450 W) — this is the stored peak_hour
+        base_10 = real_dt(2026, 2, 19, 10, 0, 0)
+        base_14 = real_dt(2026, 2, 19, 14, 0, 0)
+        power_data = (
+            [( base_10 + timedelta(minutes=i), 900.0) for i in range(60)]
+            + [(base_14 + timedelta(minutes=i), 400.0) for i in range(60)]
+        )
+        tm.data_collector.get_power_history = AsyncMock(return_value=power_data)
+
+        task = {
+            "task_id": "peak_test",
+            "task_type": "peak_avoidance",
+            "target_value": 450,
+            "area_name": None,
+            "peak_hour": 14,  # Only this hour should be evaluated
+            "verified": False,
+        }
+
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual = await tm._verify_single_task(task)
+
+        assert verified  # True: only peak_hour=14 (400W) evaluated, below target 450W
+        assert actual == pytest.approx(400.0, abs=1.0)
+
+    @pytest.mark.asyncio
+    async def test_verification_fails_when_stored_peak_hour_exceeds_target(self):
+        """Verification must fail when the stored peak_hour average exceeds the target."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        sensors = {"power": ["sensor.power_1"]}
+        tm = make_task_manager(sensors=sensors)
+
+        base_14 = real_dt(2026, 2, 19, 14, 0, 0)
+        power_data = [(base_14 + timedelta(minutes=i), 600.0) for i in range(60)]
+        tm.data_collector.get_power_history = AsyncMock(return_value=power_data)
+
+        task = {
+            "task_id": "peak_test_fail",
+            "task_type": "peak_avoidance",
+            "target_value": 450,
+            "area_name": None,
+            "peak_hour": 14,
+            "verified": False,
+        }
+
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual = await tm._verify_single_task(task)
+
+        assert not verified  # 600W > 450W target
+
+    @pytest.mark.asyncio
+    async def test_verification_returns_false_when_peak_hour_missing(self):
+        """If peak_hour is absent (legacy task), verification must return False gracefully."""
+        tm = make_task_manager()
+        task = {
+            "task_id": "peak_legacy",
+            "task_type": "peak_avoidance",
+            "target_value": 450,
+            "area_name": None,
+            # No 'peak_hour' key
+            "verified": False,
+        }
+        # hours_passed check will run first — give enough data so it doesn't exit early
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual = await tm._verify_single_task(task)
+        assert not verified  # peak_hour key absent -> graceful False
+        assert actual is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Unoccupied Power Task — occupancy-aware generation and verification
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUnoccupiedPowerTask:
+
+    def _make_tm_with_area(self, mixed_occ=False):
+        """Helper: task manager with one mocked area 'Office'."""
+        sensors = {
+            "power": ["sensor.power_1"],
+            "occupancy": ["binary_sensor.occ_1"],
+        }
+        tm = make_task_manager(sensors=sensors)
+        tm.storage.get_today_tasks = AsyncMock(return_value=[])
+        tm.data_collector.get_all_areas = MagicMock(return_value=["Office"])
+
+        base_time = datetime(2026, 2, 19, 12, 0, 0)
+        if mixed_occ:
+            # First half occupied (800 W), second half unoccupied (200 W)
+            power_data = (
+                [(base_time + timedelta(minutes=i), 800.0) for i in range(50)]
+                + [(base_time + timedelta(minutes=50 + i), 200.0) for i in range(50)]
+            )
+            occ_data = (
+                [(base_time + timedelta(minutes=i), 1) for i in range(50)]
+                + [(base_time + timedelta(minutes=50 + i), 0) for i in range(50)]
+            )
+        else:
+            power_data = [(base_time + timedelta(minutes=i), 200.0) for i in range(100)]
+            occ_data   = [(base_time + timedelta(minutes=i), 0)     for i in range(100)]
+
+        async def area_history(area, metric, **kwargs):
+            if metric == "power":
+                return power_data
+            if metric == "occupancy":
+                return occ_data
+            return []
+
+        tm.data_collector.get_area_history = AsyncMock(side_effect=area_history)
+        return tm
+
+    @pytest.mark.asyncio
+    async def test_generation_baseline_reflects_unoccupied_power_only(self):
+        """Baseline in generated task should be the average power during unoccupied periods."""
+        tm = self._make_tm_with_area(mixed_occ=True)
+        task = await tm._generate_unoccupied_power_task()
+        assert task is not None
+        # Unoccupied periods have 200 W average; occupied periods have 800 W
+        assert task["baseline_value"] == pytest.approx(200.0, abs=1.0)
+
+    @pytest.mark.asyncio
+    async def test_generation_falls_back_without_occupancy_data(self):
+        """When occupancy data is unavailable, all power readings are used as fallback."""
+        sensors = {"power": ["sensor.power_1"], "occupancy": ["binary_sensor.occ_1"]}
+        tm = make_task_manager(sensors=sensors)
+        tm.data_collector.get_all_areas = MagicMock(return_value=["Office"])
+
+        base_time = datetime(2026, 2, 19, 12, 0, 0)
+        power_data = [(base_time + timedelta(minutes=i), 300.0) for i in range(100)]
+
+        async def area_history(area, metric, **kwargs):
+            if metric == "power":
+                return power_data
+            return []  # No occupancy data
+
+        tm.data_collector.get_area_history = AsyncMock(side_effect=area_history)
+        task = await tm._generate_unoccupied_power_task()
+        assert task is not None
+        assert task["baseline_value"] == pytest.approx(300.0, abs=1.0)
+
+    @pytest.mark.asyncio
+    async def test_generation_skips_area_without_power_data(self):
+        """Area with no power data should be skipped and not become the target area."""
+        sensors = {"power": ["sensor.power_1"], "occupancy": ["binary_sensor.occ_1"]}
+        tm = make_task_manager(sensors=sensors)
+        tm.data_collector.get_all_areas = MagicMock(return_value=["EmptyRoom"])
+
+        async def area_history(area, metric, **kwargs):
+            return []  # No data at all
+
+        tm.data_collector.get_area_history = AsyncMock(side_effect=area_history)
+        task = await tm._generate_unoccupied_power_task()
+        assert task is None
+
+    @pytest.mark.asyncio
+    async def test_verification_measures_unoccupied_intervals_only(self):
+        """Verification should pass when unoccupied power is below target,
+        even if occupied intervals would push the overall average above target."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        sensors = {"power": ["sensor.power_1"], "occupancy": ["binary_sensor.occ_1"]}
+        tm = make_task_manager(sensors=sensors)
+
+        base_time = real_dt(2026, 2, 19, 12, 0, 0)
+        # Occupied half: 900 W; unoccupied half: 200 W (target 250 W)
+        power_data = (
+            [(base_time + timedelta(minutes=i),      900.0) for i in range(30)]
+            + [(base_time + timedelta(minutes=30+i), 200.0) for i in range(30)]
+        )
+        occ_data = (
+            [(base_time + timedelta(minutes=i),      1) for i in range(30)]
+            + [(base_time + timedelta(minutes=30+i), 0) for i in range(30)]
+        )
+
+        async def area_history(area, metric, **kwargs):
+            if metric == "power":
+                return power_data
+            if metric == "occupancy":
+                return occ_data
+            return []
+
+        tm.data_collector.get_area_history = AsyncMock(side_effect=area_history)
+
+        task = {
+            "task_id": "unocc_verify",
+            "task_type": "unoccupied_power",
+            "target_value": 250,
+            "area_name": "Office",
+            "verified": False,
+        }
+
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual = await tm._verify_single_task(task)
+
+        assert verified  # 200W unoccupied avg is below target 250W
+        assert actual == pytest.approx(200.0, abs=1.0)
+
+    @pytest.mark.asyncio
+    async def test_verification_fails_when_unoccupied_power_exceeds_target(self):
+        """Verification must fail when unoccupied power average is above the target."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        sensors = {"power": ["sensor.power_1"], "occupancy": ["binary_sensor.occ_1"]}
+        tm = make_task_manager(sensors=sensors)
+
+        base_time = real_dt(2026, 2, 19, 12, 0, 0)
+        power_data = [(base_time + timedelta(minutes=i), 400.0) for i in range(60)]
+        occ_data   = [(base_time + timedelta(minutes=i), 0)     for i in range(60)]  # always unoccupied
+
+        async def area_history(area, metric, **kwargs):
+            if metric == "power":
+                return power_data
+            if metric == "occupancy":
+                return occ_data
+            return []
+
+        tm.data_collector.get_area_history = AsyncMock(side_effect=area_history)
+
+        task = {
+            "task_id": "unocc_fail",
+            "task_type": "unoccupied_power",
+            "target_value": 250,
+            "area_name": "Office",
+            "verified": False,
+        }
+
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual = await tm._verify_single_task(task)
+
+        assert not verified  # 400W unoccupied avg > 250W target

@@ -1319,20 +1319,29 @@ class DecisionAgent:
             return
 
         recent = power_values[-readings_per_hour:]
-        mean = np.mean(recent)
-        std = np.std(recent)
         current = recent[-1]
 
-        _LOGGER.debug(f"Anomaly stats: mean={mean:.2f}W, std={std:.2f}W, current={current:.2f}W")
+        _LOGGER.debug(f"Anomaly detection: current={current:.2f}W, baseline={self.baseline_consumption:.2f}W")
 
-        # Z-score normalized to [0,1]
+        # Signal 1: local z-score: detects sudden spikes within the 1-hour window
+        local_anomaly = 0.0
+        std = np.std(recent)
         if std > 10.0:
-            z_score = max((current - mean) / std, 0) # Consider only positive deviations (consumption above mean)
-            self.anomaly_index = min(z_score / 5.0, 1.0)
-            _LOGGER.debug("Anomaly index updated: %.2f (z-score: %.2f)", self.anomaly_index, z_score)
-        else:
-            self.anomaly_index = 0.0
-            _LOGGER.debug("No variance in data, anomaly index set to 0")
+            mean = np.mean(recent)
+            z_score = max((current - mean) / std, 0)  # Positive deviations only
+            local_anomaly = min(z_score / 5.0, 1.0)
+            _LOGGER.debug("Local z-score anomaly: %.2f (z=%.2f, mean=%.2fW, std=%.2fW)", local_anomaly, z_score, mean, std)
+
+        # Signal 2: baseline comparison: detects sustained high consumption
+        baseline_anomaly = 0.0
+        if self.baseline_consumption > 0:
+            baseline_deviation = (current - self.baseline_consumption) / self.baseline_consumption
+            if baseline_deviation > 0.3:  # More than 30% above historical baseline
+                baseline_anomaly = min(baseline_deviation, 1.0)
+                _LOGGER.debug("Baseline anomaly: %.2f (deviation=+%.0f%%)", baseline_anomaly, baseline_deviation * 100)
+
+        self.anomaly_index = max(local_anomaly, baseline_anomaly)
+        _LOGGER.debug("Anomaly index updated: %.2f", self.anomaly_index)
 
     async def _update_area_anomalies(self):
         """Detects anomalies in each area for spatial awareness."""
@@ -1435,11 +1444,12 @@ class DecisionAgent:
 
         weighted_engagement = np.average(self.engagement_history, weights=weights)
 
-        # Smooth update to avoid volatility: new index is 40% new engagement, 60% old index
-        new_index = np.clip(weighted_engagement, 0, 1)
+        # Normalize to [0, 1] range for stability (engagement scores are between -0.5 and +1.0)
+        # Ensure that neutral users (50/50 acceptance) are around 0.5, highly engaged users approach 1.0 and disengaged users approach 0.0
+        new_index = np.clip((weighted_engagement + 0.5) / 1.5, 0.0, 1.0)
         self.behaviour_index = 0.4 * new_index + 0.6 * self.behaviour_index
 
-        _LOGGER.debug("Behaviour index updated: %.2f (raw: %.2f, history size: %d)", self.behaviour_index, weighted_engagement, len(self.engagement_history))
+        _LOGGER.debug("Behaviour index updated: %.2f (raw: %.2f, normalised: %.2f, history size: %d)", self.behaviour_index, weighted_engagement, new_index, len(self.engagement_history))
 
     async def _update_fatigue_index(self):
         """

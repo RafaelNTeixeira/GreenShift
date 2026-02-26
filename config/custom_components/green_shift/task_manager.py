@@ -279,7 +279,7 @@ class TaskManager:
         stats = await self.storage.get_task_difficulty_stats('unoccupied_power')
         difficulty = await self._calculate_task_difficulty(stats)
 
-        # Find the area with highest average power
+        # Find the area with highest average power during unoccupied periods
         areas = self.data_collector.get_all_areas()
         if not areas or len(areas) == 0:
             return None
@@ -290,9 +290,32 @@ class TaskManager:
         for area in areas:
             if area == "No Area":
                 continue
-            area_stats = await self.storage.get_area_stats(area, "power", days=7)
-            if area_stats['mean'] > max_power:
-                max_power = area_stats['mean']
+
+            power_history = await self.data_collector.get_area_history(area, 'power', days=7)
+            if not power_history:
+                continue
+
+            occ_history = await self.data_collector.get_area_history(area, 'occupancy', days=7)
+            if occ_history:
+                # Build occupancy lookup keyed by minute (both streams share the same snapshot interval)
+                occ_by_minute = {
+                    ts.replace(second=0, microsecond=0): bool(occ)
+                    for ts, occ in occ_history
+                }
+                unoccupied_powers = [
+                    p for ts, p in power_history
+                    if not occ_by_minute.get(ts.replace(second=0, microsecond=0), False)
+                ]
+            else:
+                # No occupancy data: fall back to all power readings
+                unoccupied_powers = [p for _, p in power_history]
+
+            if not unoccupied_powers:
+                continue
+
+            avg_unoccupied = np.mean(unoccupied_powers)
+            if avg_unoccupied > max_power:
+                max_power = avg_unoccupied
                 target_area = area
 
         if not target_area or max_power == 0:
@@ -375,6 +398,7 @@ class TaskManager:
             'target_value': target_power,
             'target_unit': 'W',
             'baseline_value': round(peak_power),
+            'peak_hour': peak_hour,  # Stored so verification checks this hour exclusively
             'difficulty_level': difficulty,
             'difficulty_display': get_difficulty_display(difficulty, language),
             'area_name': None,
@@ -492,45 +516,63 @@ class TaskManager:
                 return avg_power <= target_value, round(avg_power, 2)
 
             elif task_type == 'unoccupied_power':
-                # Check area-specific power
+                # Check area-specific power during unoccupied periods only
                 if not area_name:
                     return False, None
 
-                area_history = await self.data_collector.get_area_history(
+                area_power_history = await self.data_collector.get_area_history(
                     area_name, 'power', hours=int(hours_passed)
                 )
-                if not area_history:
+                if not area_power_history:
                     return False, None
 
-                avg_area_power = np.mean([power for _, power in area_history])
-                _LOGGER.debug("Average power in area %s for verification: %.2fW, target: %.2fW", area_name, avg_area_power, target_value)
-                return avg_area_power <= target_value, round(avg_area_power, 2)
+                area_occ_history = await self.data_collector.get_area_history(
+                    area_name, 'occupancy', hours=int(hours_passed)
+                )
+                if area_occ_history:
+                    occ_by_minute = {
+                        ts.replace(second=0, microsecond=0): bool(occ)
+                        for ts, occ in area_occ_history
+                    }
+                    unoccupied_powers = [
+                        p for ts, p in area_power_history
+                        if not occ_by_minute.get(ts.replace(second=0, microsecond=0), False)
+                    ]
+                else:
+                    unoccupied_powers = [p for _, p in area_power_history]
+
+                if not unoccupied_powers:
+                    return False, None
+
+                avg_unoccupied_power = np.mean(unoccupied_powers)
+                _LOGGER.debug(
+                    "Average unoccupied power in area %s for verification: %.2fW, target: %.2fW",
+                    area_name, avg_unoccupied_power, target_value
+                )
+                return avg_unoccupied_power <= target_value, round(avg_unoccupied_power, 2)
 
             elif task_type == 'peak_avoidance':
-                # Extract peak hour from description or use baseline
+                # Use the peak_hour stored at task generation: only that hour is evaluated
+                peak_hour = task.get('peak_hour')
+                if peak_hour is None:
+                    _LOGGER.warning("peak_avoidance task %s missing peak_hour field; cannot verify", task.get('task_id'))
+                    return False, None
+
                 power_history = await self.data_collector.get_power_history(hours=int(hours_passed))
                 if not power_history:
                     return False, None
 
-                # Check if any hour exceeded the target. Group by hour
-                hourly_powers = {}
-                for ts, power in power_history:
-                    hour = ts.hour
-                    if hour not in hourly_powers:
-                        hourly_powers[hour] = []
-                    hourly_powers[hour].append(power)
+                peak_hour_powers = [p for ts, p in power_history if ts.hour == peak_hour]
+                if not peak_hour_powers:
+                    # Peak hour not reached yet today
+                    return False, None
 
-                # Check all hours and track max hourly average
-                max_hourly_avg = 0.0
-                for hour_powers in hourly_powers.values():
-                    hourly_avg = np.mean(hour_powers)
-                    max_hourly_avg = max(max_hourly_avg, hourly_avg)
-                    if hourly_avg > target_value:
-                        _LOGGER.debug("Peak avoidance task failed due to hour with average power %.2fW exceeding target %.2fW", hourly_avg, target_value)
-                        return False, round(max_hourly_avg, 2)
-
-                _LOGGER.debug("Peak avoidance task verified successfully with all hours below target %.2fW", target_value)
-                return True, round(max_hourly_avg, 2)
+                avg_peak = np.mean(peak_hour_powers)
+                _LOGGER.debug(
+                    "Peak avoidance: hour %02d average %.2fW vs target %.2fW",
+                    peak_hour, avg_peak, target_value
+                )
+                return avg_peak <= target_value, round(avg_peak, 2)
 
         except Exception as e:
             _LOGGER.error("Error verifying task %s: %s", task['task_id'], e)

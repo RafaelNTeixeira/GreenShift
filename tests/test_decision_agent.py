@@ -422,6 +422,36 @@ class TestUpdateBehaviourIndex:
             agent._update_behaviour_index()
         assert 0.0 <= agent.behaviour_index <= 1.0
 
+    def test_rejection_scores_normalized_not_clipped(self):
+        """Engagement scores are +1.0 (accept) or -0.5 (reject)."""
+        agent = make_agent()
+        agent.behaviour_index = 0.8
+        agent.engagement_history = deque([-0.5] * 20, maxlen=100)
+        for _ in range(10):
+            agent._update_behaviour_index()
+        # Should converge toward 0.0, definitely well below the initial 0.8
+        assert agent.behaviour_index < 0.4
+
+    def test_50_50_engagement_converges_to_midpoint(self):
+        """Equal accepts (+1.0) and rejects (-0.5) should produce a weighted average
+        near 0.25 raw, which normalises to 0.5 — so the index should hover near 0.5."""
+        agent = make_agent()
+        agent.behaviour_index = 0.5
+        agent.engagement_history = deque([1.0, -0.5] * 10, maxlen=100)
+        for _ in range(15):
+            agent._update_behaviour_index()
+        # After enough updates with 50/50 signal the index should be close to 0.5
+        assert agent.behaviour_index == pytest.approx(0.5, abs=0.1)
+
+    def test_all_rejections_drive_index_toward_zero(self):
+        """History full of -0.5 scores should drive the index toward 0, not to 0.25."""
+        agent = make_agent()
+        agent.behaviour_index = 1.0
+        agent.engagement_history = deque([-0.5] * 50, maxlen=100)
+        for _ in range(30):
+            agent._update_behaviour_index()
+        assert agent.behaviour_index < 0.15
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # _check_cooldown_with_opportunity
@@ -631,3 +661,88 @@ class TestPhaseTransition:
             agent.phase = "active"
 
         assert agent.phase == "baseline"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _update_anomaly_index — baseline-consumption signal
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUpdateAnomalyIndex:
+    """
+    Verifies that _update_anomaly_index uses *both* signals:
+      1. Local z-score  — detects sudden spikes within the 1-hour window
+      2. Baseline deviation — detects sustained high consumption that the
+                              local z-score misses (window mean rises with load)
+    """
+
+    @pytest.mark.asyncio
+    async def test_insufficient_data_sets_zero(self):
+        agent = make_agent()
+        # Fewer readings than 80% of the expected hourly count -> index stays 0
+        agent.data_collector.get_power_history = AsyncMock(return_value=[(i, 500.0) for i in range(5)])
+        await agent._update_anomaly_index()
+        assert agent.anomaly_index == 0.0
+
+    @pytest.mark.asyncio
+    async def test_no_variance_and_no_baseline_sets_zero(self):
+        """Constant consumption with no historical baseline -> zero anomaly."""
+        agent = make_agent()
+        agent.baseline_consumption = 0.0
+        # Generate enough readings (≥80% of hourly) all equal -> std=0
+        readings_per_hour = int(3600 / 15)
+        data = [(i, 500.0) for i in range(readings_per_hour)]
+        agent.data_collector.get_power_history = AsyncMock(return_value=data)
+        await agent._update_anomaly_index()
+        assert agent.anomaly_index == 0.0
+
+    @pytest.mark.asyncio
+    async def test_sustained_high_consumption_detected_via_baseline(self):
+        """Consumption consistently 50% above baseline should raise anomaly_index
+        even when there is no variance in the 1-hour window (z-score would be 0)."""
+        agent = make_agent()
+        agent.baseline_consumption = 500.0  # Historical baseline
+        readings_per_hour = int(3600 / 15)
+        # All readings at 750 W (50% above 500 W baseline): no variance, z-score = 0
+        data = [(i, 750.0) for i in range(readings_per_hour)]
+        agent.data_collector.get_power_history = AsyncMock(return_value=data)
+        await agent._update_anomaly_index()
+        # baseline_deviation = (750-500)/500 = 0.5  ->  anomaly_index = 0.5
+        assert agent.anomaly_index == pytest.approx(0.5, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_baseline_below_threshold_not_flagged(self):
+        """Consumption 20% above baseline is below the 30% threshold -> no anomaly."""
+        agent = make_agent()
+        agent.baseline_consumption = 500.0
+        readings_per_hour = int(3600 / 15)
+        data = [(i, 600.0) for i in range(readings_per_hour)]  # 20% above baseline
+        agent.data_collector.get_power_history = AsyncMock(return_value=data)
+        await agent._update_anomaly_index()
+        assert agent.anomaly_index == 0.0
+
+    @pytest.mark.asyncio
+    async def test_sudden_spike_detected_by_zscore_even_without_baseline(self):
+        """A spike within the window should still be caught by the local z-score
+        when baseline_consumption is 0 (baseline phase)."""
+        agent = make_agent()
+        agent.baseline_consumption = 0.0
+        readings_per_hour = int(3600 / 15)
+        # Mostly 500 W, last reading is a large spike at 1500 W
+        data = [(i, 500.0) for i in range(readings_per_hour - 1)] + [(readings_per_hour, 1500.0)]
+        agent.data_collector.get_power_history = AsyncMock(return_value=data)
+        await agent._update_anomaly_index()
+        # z-score of spike should be large enough to produce non-zero anomaly
+        assert agent.anomaly_index > 0.0
+
+    @pytest.mark.asyncio
+    async def test_anomaly_index_capped_at_one(self):
+        """anomaly_index must never exceed 1.0 regardless of how extreme the deviation is."""
+        agent = make_agent()
+        agent.baseline_consumption = 100.0
+        readings_per_hour = int(3600 / 15)
+        # 10× the baseline — deviation = 9.0 -> clamped to 1.0
+        data = [(i, 1000.0) for i in range(readings_per_hour)]
+        agent.data_collector.get_power_history = AsyncMock(return_value=data)
+        await agent._update_anomaly_index()
+        assert agent.anomaly_index <= 1.0
+        assert agent.anomaly_index > 0.5
