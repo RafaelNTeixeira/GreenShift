@@ -152,6 +152,10 @@ class DecisionAgent:
         if "behaviour_index" in state:
             self.behaviour_index = state["behaviour_index"]
 
+        if "engagement_history" in state:
+            self.engagement_history = deque(state["engagement_history"], maxlen=100)
+            _LOGGER.info("Loaded engagement history (%d entries)", len(self.engagement_history))
+
         if "fatigue_index" in state:
             self.fatigue_index = state["fatigue_index"]
 
@@ -279,6 +283,7 @@ class DecisionAgent:
             "current_week_start_date": self.current_week_start_date.isoformat() if self.current_week_start_date else None,
             "anomaly_index": float(self.anomaly_index),
             "behaviour_index": float(self.behaviour_index),
+            "engagement_history": list(self.engagement_history),
             "fatigue_index": float(self.fatigue_index),
             "notification_count_today": self.notification_count_today,
             "last_notification_date": self.last_notification_date.isoformat() if self.last_notification_date else None,

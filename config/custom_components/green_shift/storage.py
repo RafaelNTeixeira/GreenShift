@@ -343,7 +343,7 @@ class StorageManager:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS research_task_interactions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    task_id TEXT NOT NULL,
+                    task_id TEXT NOT NULL UNIQUE,
                     date TEXT NOT NULL,
                     phase TEXT,
 
@@ -861,8 +861,9 @@ class StorageManager:
                     cursor.execute("""
                         INSERT OR REPLACE INTO daily_tasks
                         (task_id, date, task_type, title, description, target_value,
-                         target_unit, baseline_value, area_name, difficulty_level, peak_hour)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         target_unit, baseline_value, area_name, difficulty_level, peak_hour,
+                         created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         task['task_id'],
                         task['date'],
@@ -874,7 +875,8 @@ class StorageManager:
                         task.get('baseline_value'),
                         task.get('area_name'),
                         task.get('difficulty_level', 1),
-                        task.get('peak_hour')  # None for non-peak tasks
+                        task.get('peak_hour'),  # None for non-peak tasks
+                        task.get('created_at', datetime.now().isoformat()),  # Explicit local-time ISO; avoids SQLite CURRENT_TIMESTAMP (UTC)
                     ))
                 except Exception as e:
                     _LOGGER.error("Error saving task %s: %s", task['task_id'], e)
@@ -941,20 +943,22 @@ class StorageManager:
 
     async def get_total_completed_tasks_count(self) -> int:
         """
-        Get the total count of completed tasks in the last 30 days (rolling window).
-        
+        Get the total count of verified tasks in the last 30 days (rolling window).
+
         Returns:
-            int: Total count of tasks marked as completed or verified in the last 30 days from the sensor database.
+            int: Count of tasks with verified=1 whose date falls in the last 30 days.
         """
         def _query():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
 
+            cutoff = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
             cursor.execute("""
                 SELECT COUNT(*)
                 FROM daily_tasks
-                WHERE completed = 1 OR verified = 1
-            """)
+                WHERE verified = 1
+                  AND date >= ?
+            """, (cutoff,))
 
             count = cursor.fetchone()[0]
             conn.close()
@@ -986,38 +990,6 @@ class StorageManager:
             return count
 
         return await self.hass.async_add_executor_job(_query)
-
-    async def mark_task_completed(self, task_id: str, completion_value: float = None) -> bool:
-        """
-        Mark a task as completed.
-        
-        Args:
-            task_id: The unique identifier of the task to mark as completed.
-            completion_value: The value achieved upon completion (e.g., actual energy saved), which can
-
-        Returns:
-            bool: True if the task was successfully marked as completed, False otherwise.
-        """
-        def _update():
-            conn = sqlite3.connect(str(self.db_path))
-            cursor = conn.cursor()
-
-            cursor.execute("""
-                UPDATE daily_tasks
-                SET completed = 1,
-                    completion_value = ?,
-                    completion_timestamp = ?
-                WHERE task_id = ?
-            """, (completion_value, datetime.now().timestamp(), task_id))
-
-            _LOGGER.debug("Marking task %s as completed with value %s", task_id, completion_value)
-
-            success = cursor.rowcount > 0
-            conn.commit()
-            conn.close()
-            return success
-
-        return await self.hass.async_add_executor_job(_update)
 
     async def mark_task_verified(self, task_id: str, verified: bool = True) -> bool:
         """
@@ -1508,8 +1480,9 @@ class StorageManager:
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
 
+            # INSERT OR REPLACE ensures re-generation (regenerate_tasks) overwrites the previous row instead of creating a duplicate (task_id has a UNIQUE constraint).
             cursor.execute("""
-                INSERT INTO research_task_interactions
+                INSERT OR REPLACE INTO research_task_interactions
                 (task_id, date, phase, task_type, difficulty_level,
                  target_value, baseline_value, area_name, generation_timestamp,
                  power_at_generation, occupancy_at_generation)

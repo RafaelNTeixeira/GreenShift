@@ -513,6 +513,33 @@ class TestDailyTasks:
         assert retrieved[0]["created_at"] is not None
 
     @pytest.mark.asyncio
+    async def test_created_at_is_local_time(self, storage):
+        """created_at stored by save_daily_tasks must be a local-time ISO string,
+        not the UTC CURRENT_TIMESTAMP that SQLite would insert by default.
+        The value must fall within a 2-second window around datetime.now()."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        before = datetime.now()
+        tasks = [
+            {
+                "task_id": "ts_local",
+                "task_type": "power_reduction",
+                "date": today,
+                "title": "T",
+                "description": "D",
+            }
+        ]
+        await storage.save_daily_tasks(tasks)
+        after = datetime.now()
+
+        retrieved = await storage.get_today_tasks()
+        assert len(retrieved) == 1
+
+        created_at = datetime.fromisoformat(retrieved[0]["created_at"])
+        assert before - timedelta(seconds=2) <= created_at <= after + timedelta(seconds=2), (
+            f"created_at={created_at} is not in local-time window [{before}, {after}]"
+        )
+
+    @pytest.mark.asyncio
     async def test_get_today_tasks_filters_by_date(self, storage):
         today = datetime.now().strftime("%Y-%m-%d")
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -548,7 +575,6 @@ class TestDailyTasks:
     async def test_returns_empty_when_no_tasks(self, storage):
         result = await storage.get_today_tasks()
         assert result == []
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data cleanup
