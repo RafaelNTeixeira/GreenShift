@@ -746,3 +746,93 @@ class TestUpdateAnomalyIndex:
         await agent._update_anomaly_index()
         assert agent.anomaly_index <= 1.0
         assert agent.anomaly_index > 0.5
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _calculate_reward_with_feedback
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCalculateRewardWithFeedback:
+    """Verify that _calculate_reward_with_feedback uses initial_power (notification-
+    time snapshot) in addition to baseline_consumption, so a real power drop is
+    credited even when current power is still above the historical baseline."""
+
+    @pytest.mark.asyncio
+    async def test_large_drop_from_initial_power_credited(self):
+        """2500 W -> 1200 W drop gives positive energy_saving even when 1200 > baseline."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0  # baseline below current (old code would give 0)
+        agent.fatigue_index = 0.0
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 1200.0})
+
+        # direct_impact  = (2500 - 1200) / 2500 = 0.52
+        # baseline_comp  = (1000 - 1200) / 1000 = -0.20
+        # energy_saving  = max(0, 0.5*0.52 + 0.5*(-0.20)) = max(0, 0.16) = 0.16
+        # reward         = 1.0*0.16 + 0.5*1.0 - 0.3*0 = 0.66
+        reward = await agent._calculate_reward_with_feedback(accepted=True, initial_power=2500.0)
+
+        assert reward == pytest.approx(0.66, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_no_change_from_initial_power_uses_baseline_signal(self):
+        """When power doesn't change from initial, only baseline signal contributes."""
+        agent = make_agent()
+        agent.baseline_consumption = 2000.0
+        agent.fatigue_index = 0.0
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 1500.0})
+
+        # direct_impact  = (1500 - 1500) / 1500 = 0.0
+        # baseline_comp  = (2000 - 1500) / 2000 = 0.25
+        # energy_saving  = max(0, 0.5*0 + 0.5*0.25) = 0.125
+        # reward         = 1.0*0.125 + 0.5*1.0 = 0.625
+        reward = await agent._calculate_reward_with_feedback(accepted=True, initial_power=1500.0)
+
+        assert reward == pytest.approx(0.625, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_zero_initial_power_falls_back_to_baseline_only(self):
+        """When initial_power=0 (data unavailable), falls back to baseline comparison."""
+        agent = make_agent()
+        agent.baseline_consumption = 800.0
+        agent.fatigue_index = 0.0
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 600.0})
+
+        # initial_power = 0 -> falls back to baseline-only branch
+        # energy_saving = max(0, (800 - 600) / 800) = 0.25
+        # reward        = 1.0*0.25 + 0.5*1.0 = 0.75
+        reward = await agent._calculate_reward_with_feedback(accepted=True, initial_power=0.0)
+
+        assert reward == pytest.approx(0.75, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_accepted_yields_higher_reward_than_rejected(self):
+        """Same power context: accepting a notification must reward more than rejecting."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.fatigue_index = 0.0
+
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 700.0})
+        reward_accept = await agent._calculate_reward_with_feedback(accepted=True, initial_power=1000.0)
+
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 700.0})
+        reward_reject = await agent._calculate_reward_with_feedback(accepted=False, initial_power=1000.0)
+
+        assert reward_accept > reward_reject
+
+    @pytest.mark.asyncio
+    async def test_rejection_with_energy_increase_gives_negative_reward(self):
+        """Rejected notification + power went up -> reward must be negative."""
+        agent = make_agent()
+        agent.baseline_consumption = 500.0
+        agent.fatigue_index = 0.0
+        # Power went UP from initial: direct_impact < 0; baseline also below
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 800.0})
+
+        # direct_impact  = (500 - 800) / 500 = -0.6
+        # baseline_comp  = (500 - 800) / 500 = -0.6
+        # energy_saving  = max(0, ...) = 0.0
+        # feedback       = -0.5
+        # reward         = 0 + 0.5*(-0.5) - 0 = -0.25
+        reward = await agent._calculate_reward_with_feedback(accepted=False, initial_power=500.0)
+
+        assert reward < 0

@@ -272,8 +272,8 @@ class TestPeakAvoidanceTask:
         sensors = {"power": ["sensor.power_1"]}
         tm = make_task_manager(sensors=sensors)
 
-        # Hour 10 → 900 W (would fail if checked against target 450 W)
-        # Hour 14 → 400 W (below target 450 W) — this is the stored peak_hour
+        # Hour 10 -> 900 W (would fail if checked against target 450 W)
+        # Hour 14 -> 400 W (below target 450 W) — this is the stored peak_hour
         base_10 = real_dt(2026, 2, 19, 10, 0, 0)
         base_14 = real_dt(2026, 2, 19, 14, 0, 0)
         power_data = (
@@ -522,3 +522,176 @@ class TestUnoccupiedPowerTask:
             verified, actual = await tm._verify_single_task(task)
 
         assert not verified  # 400W unoccupied avg > 250W target
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Power Reduction / Daylight Usage — working_hours_filter in office mode
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestVerificationWorkingHoursFilter:
+    """In office mode, power_reduction and daylight_usage verification must pass
+    working_hours_only=True to get_power_history; in home mode it must be falsy."""
+
+    @pytest.mark.asyncio
+    async def test_power_reduction_office_mode_passes_working_hours_filter(self):
+        """get_power_history called with working_hours_only=True in office mode."""
+        from unittest.mock import patch, call
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager(config={"environment_mode": "office"})
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 12, i), 300.0) for i in range(30)
+        ])
+
+        task = {
+            "task_id": "pr_office",
+            "task_type": "power_reduction",
+            "target_value": 500,  # 300W < 500W -> should pass
+            "area_name": None,
+            "verified": False,
+        }
+
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm._verify_single_task(task)
+
+        call_kwargs = tm.data_collector.get_power_history.call_args
+        assert call_kwargs.kwargs.get("working_hours_only") is True
+
+    @pytest.mark.asyncio
+    async def test_power_reduction_home_mode_no_working_hours_filter(self):
+        """get_power_history called WITHOUT working_hours_only=True in home mode."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager(config={"environment_mode": "home"})
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 12, i), 300.0) for i in range(30)
+        ])
+
+        task = {
+            "task_id": "pr_home",
+            "task_type": "power_reduction",
+            "target_value": 500,
+            "area_name": None,
+            "verified": False,
+        }
+
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm._verify_single_task(task)
+
+        call_kwargs = tm.data_collector.get_power_history.call_args
+        assert not call_kwargs.kwargs.get("working_hours_only")
+
+    @pytest.mark.asyncio
+    async def test_daylight_usage_office_mode_passes_working_hours_filter(self):
+        """daylight_usage verification in office mode must pass working_hours_only=True."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager(config={"environment_mode": "office"})
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 12, i), 200.0) for i in range(30)
+        ])
+
+        task = {
+            "task_id": "day_office",
+            "task_type": "daylight_usage",
+            "target_value": 400,
+            "area_name": None,
+            "verified": False,
+        }
+
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm._verify_single_task(task)
+
+        call_kwargs = tm.data_collector.get_power_history.call_args
+        assert call_kwargs.kwargs.get("working_hours_only") is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Verification time anchor — created_at vs TASK_GENERATION_TIME fallback
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestVerificationTimeAnchor:
+    """When a task carries 'created_at', verification uses that timestamp as the
+    window anchor instead of the hardcoded TASK_GENERATION_TIME (06:00)."""
+
+    @pytest.mark.asyncio
+    async def test_created_at_anchors_hours_passed_window(self):
+        """Task created at 10:00, now is 20:00 -> hours_passed ~10, not ~14."""
+        from unittest.mock import patch, call
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 12, i), 300.0) for i in range(30)
+        ])
+
+        # created_at at 10:00; now at 20:00 -> hours ≈ 10
+        task = {
+            "task_id": "anchor_10h",
+            "task_type": "power_reduction",
+            "target_value": 500,
+            "area_name": None,
+            "created_at": "2026-02-19T10:00:00",
+            "verified": False,
+        }
+
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm._verify_single_task(task)
+
+        call_kwargs = tm.data_collector.get_power_history.call_args
+        # hours should be ~10 (from 10:00 to 20:00), not ~14 (from 06:00)
+        hours_arg = call_kwargs.kwargs.get("hours")
+        if hours_arg is None and call_kwargs.args:
+            hours_arg = call_kwargs.args[0]
+        assert hours_arg is not None
+        assert abs(hours_arg - 10) < 1, f"Expected ~10 hours but got {hours_arg}"
+
+    @pytest.mark.asyncio
+    async def test_missing_created_at_falls_back_to_task_generation_time(self):
+        """Task without created_at uses TASK_GENERATION_TIME (06:00) as anchor."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 12, i), 300.0) for i in range(30)
+        ])
+
+        # No created_at -> fallback to 06:00; now is 20:00 -> hours ≈ 14
+        task = {
+            "task_id": "fallback_anchor",
+            "task_type": "power_reduction",
+            "target_value": 500,
+            "area_name": None,
+            # no 'created_at'
+            "verified": False,
+        }
+
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm._verify_single_task(task)
+
+        call_kwargs = tm.data_collector.get_power_history.call_args
+        hours_arg = call_kwargs.kwargs.get("hours")
+        if hours_arg is None and call_kwargs.args:
+            hours_arg = call_kwargs.args[0]
+        assert hours_arg is not None
+        # TASK_GENERATION_TIME = (6, 0, 0) -> 20:00 - 06:00 = 14 hours
+        assert abs(hours_arg - 14) < 1, f"Expected ~14 hours (06:00 fallback) but got {hours_arg}"

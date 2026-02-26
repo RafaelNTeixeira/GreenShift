@@ -477,8 +477,21 @@ class TaskManager:
         target_value = task['target_value']
         area_name = task.get('area_name')
 
-        # Get today's data
-        today_start = datetime.now().replace(hour=TASK_GENERATION_TIME[0], minute=TASK_GENERATION_TIME[1], second=TASK_GENERATION_TIME[2], microsecond=0)
+        # Get today's data. Use the task's created_at as the starting point to ensure we only evaluate data from the day the task was generated.
+        created_at_str = task.get('created_at')
+        if created_at_str:
+            try:
+                today_start = datetime.fromisoformat(str(created_at_str))
+            except (ValueError, TypeError):
+                today_start = datetime.now().replace(
+                    hour=TASK_GENERATION_TIME[0], minute=TASK_GENERATION_TIME[1],
+                    second=TASK_GENERATION_TIME[2], microsecond=0
+                )
+        else:
+            today_start = datetime.now().replace(
+                hour=TASK_GENERATION_TIME[0], minute=TASK_GENERATION_TIME[1],
+                second=TASK_GENERATION_TIME[2], microsecond=0
+            )
         hours_passed = (datetime.now() - today_start).total_seconds() / 3600
 
         if hours_passed < 1:
@@ -499,8 +512,13 @@ class TaskManager:
                 return avg_temp <= target_value, round(avg_temp, 2)
 
             elif task_type in ['power_reduction', 'daylight_usage']:
-                # Check average power today
-                power_history = await self.data_collector.get_power_history(hours=int(hours_passed))
+                # Check average power today (working hours only in office mode)
+                is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+                working_hours_filter = True if is_office_mode else None
+
+                power_history = await self.data_collector.get_power_history(
+                    hours=int(hours_passed), working_hours_only=working_hours_filter
+                )
                 if not power_history:
                     return False, None
 

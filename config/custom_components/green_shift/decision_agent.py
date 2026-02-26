@@ -757,7 +757,7 @@ class DecisionAgent:
         new_q = current_q + SHADOW_LEARNING_RATE * (reward + GAMMA * max_next_q - current_q)
         self.q_table[state_key][action] = new_q
 
-        _LOGGER.debug("Shadow Q-table updated: state=%s, action=%d, reward=%.2f, Q: %.2f → %.2f", state_key[:3], action, reward, current_q, new_q)
+        _LOGGER.debug("Shadow Q-table updated: state=%s, action=%d, reward=%.2f, Q: %.2f -> %.2f", state_key[:3], action, reward, current_q, new_q)
 
     async def _update_q_table_with_feedback(self, state_key: tuple, action: int, reward: float, accepted: bool):
         """
@@ -798,7 +798,7 @@ class DecisionAgent:
         new_q = current_q + self.learning_rate * (reward + gamma * max_next_q - current_q)
         
         _LOGGER.debug(
-            "Q-table updated (%s): state=%s, action=%d, reward=%.2f, γ=%.2f, next_max_Q=%.2f, Q: %.2f → %.2f",
+            "Q-table updated (%s): state=%s, action=%d, reward=%.2f, γ=%.2f, next_max_Q=%.2f, Q: %.2f -> %.2f",
             "ACCEPT" if accepted else "REJECT", state_key[:3], action, reward, gamma, max_next_q, current_q, new_q
         )
 
@@ -1212,13 +1212,26 @@ class DecisionAgent:
         Returns:
             float: The calculated reward for this episode.
         """
-        # Energy savings component: compare current power to power at notification time
+        # Energy savings component: two complementary signals combined equally.
+        #
+        # Signal 1 (direct impact): did consumption drop since the notification was sent?
+        #   direct_impact = (initial_power - current_power) / initial_power
+        #   positive -> load decreased (good);  negative -> load increased
+        #
+        # Signal 2 (baseline comparison): is current consumption below historical average?
+        #   baseline_comparison = (baseline - current_power) / baseline
+        #   positive -> below baseline (good);  negative -> above baseline
         current_state = self.data_collector.get_current_state()
         current_power = current_state.get("power", 0)
-        
+
         baseline = self.baseline_consumption if self.baseline_consumption > 0 else initial_power
-        if baseline > 0:
-            energy_saving = max(0, (baseline - current_power) / baseline)
+
+        if initial_power > 0:
+            direct_impact = (initial_power - current_power) / initial_power
+            baseline_comparison = (baseline - current_power) / baseline if baseline > 0 else direct_impact
+            energy_saving = max(0.0, 0.5 * direct_impact + 0.5 * baseline_comparison)
+        elif baseline > 0:
+            energy_saving = max(0.0, (baseline - current_power) / baseline)
         else:
             energy_saving = 0.0
 

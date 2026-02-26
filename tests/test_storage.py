@@ -453,6 +453,66 @@ class TestDailyTasks:
         assert retrieved[0]["task_id"] == "t1"
 
     @pytest.mark.asyncio
+    async def test_peak_hour_persisted_and_retrieved(self, storage):
+        """peak_hour saved with a peak_avoidance task must be returned unchanged."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        tasks = [
+            {
+                "task_id": "peak_persist",
+                "task_type": "peak_avoidance",
+                "date": today,
+                "title": "Avoid peak",
+                "description": "Peak avoidance test",
+                "peak_hour": 14,
+            }
+        ]
+        await storage.save_daily_tasks(tasks)
+
+        retrieved = await storage.get_today_tasks()
+        assert len(retrieved) == 1
+        assert retrieved[0]["peak_hour"] == 14
+
+    @pytest.mark.asyncio
+    async def test_non_peak_task_has_none_peak_hour(self, storage):
+        """Non-peak tasks should round-trip with peak_hour=None."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        tasks = [
+            {
+                "task_id": "no_peak",
+                "task_type": "power_reduction",
+                "date": today,
+                "title": "Power task",
+                "description": "No peak_hour field",
+                # No peak_hour key at all
+            }
+        ]
+        await storage.save_daily_tasks(tasks)
+
+        retrieved = await storage.get_today_tasks()
+        assert len(retrieved) == 1
+        assert retrieved[0]["peak_hour"] is None
+
+    @pytest.mark.asyncio
+    async def test_created_at_returned_for_task(self, storage):
+        """get_today_tasks must include created_at for each task (verification time anchor)."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        tasks = [
+            {
+                "task_id": "anchor_test",
+                "task_type": "power_reduction",
+                "date": today,
+                "title": "Power task",
+                "description": "Anchor test",
+            }
+        ]
+        await storage.save_daily_tasks(tasks)
+
+        retrieved = await storage.get_today_tasks()
+        assert len(retrieved) == 1
+        assert "created_at" in retrieved[0]
+        assert retrieved[0]["created_at"] is not None
+
+    @pytest.mark.asyncio
     async def test_get_today_tasks_filters_by_date(self, storage):
         today = datetime.now().strftime("%Y-%m-%d")
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")

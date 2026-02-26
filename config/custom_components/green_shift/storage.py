@@ -117,6 +117,7 @@ class StorageManager:
                     completion_value REAL,
                     completion_timestamp REAL,
                     user_feedback TEXT,
+                    peak_hour INTEGER,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -860,8 +861,8 @@ class StorageManager:
                     cursor.execute("""
                         INSERT OR REPLACE INTO daily_tasks
                         (task_id, date, task_type, title, description, target_value,
-                         target_unit, baseline_value, area_name, difficulty_level)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         target_unit, baseline_value, area_name, difficulty_level, peak_hour)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         task['task_id'],
                         task['date'],
@@ -872,7 +873,8 @@ class StorageManager:
                         task.get('target_unit'),
                         task.get('baseline_value'),
                         task.get('area_name'),
-                        task.get('difficulty_level', 1)
+                        task.get('difficulty_level', 1),
+                        task.get('peak_hour')  # None for non-peak tasks
                     ))
                 except Exception as e:
                     _LOGGER.error("Error saving task %s: %s", task['task_id'], e)
@@ -902,7 +904,7 @@ class StorageManager:
                 SELECT task_id, date, task_type, title, description,
                        target_value, target_unit, baseline_value, area_name,
                        difficulty_level, completed, verified, completion_value,
-                       completion_timestamp, user_feedback
+                       completion_timestamp, user_feedback, peak_hour, created_at
                 FROM daily_tasks
                 WHERE date = ?
                 ORDER BY id ASC
@@ -928,7 +930,9 @@ class StorageManager:
                     'verified': bool(row[11]),
                     'completion_value': row[12],
                     'completion_timestamp': row[13],
-                    'user_feedback': row[14]
+                    'user_feedback': row[14],
+                    'peak_hour': row[15],
+                    'created_at': row[16],  # ISO string, used as verification time anchor
                 })
 
             return tasks
