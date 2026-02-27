@@ -415,6 +415,8 @@ async def async_setup_services(hass: HomeAssistant):
 
         notification_id = selector_state.state
 
+        _LOGGER.debug("Responding to notification %s with decision: %s", notification_id, decision)
+
         if notification_id == "No pending notifications" or notification_id in ["unknown", "unavailable"]:
             _LOGGER.warning("No valid notification selected")
             return

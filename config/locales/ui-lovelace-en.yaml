@@ -355,6 +355,44 @@ views:
                   📭 No tasks available for today.
                   {% endif %}
 
+              # --- STREAK BANNER ---
+              - type: horizontal-stack
+                cards:
+                  - type: markdown
+                    content: |
+                      {% set s = states('sensor.daily_task_streak') | int(0) %}
+                      {% if s >= 7 %}
+                      ## 🔥 {{ s }} days
+                      *Unstoppable!* ⭐
+                      {% elif s >= 3 %}
+                      ## 🔥 {{ s }} days
+                      *Keep it going!* 💪
+                      {% elif s == 1 %}
+                      ## 🔥 1 day
+                      *Good start!* 🌱
+                      {% else %}
+                      ## 🔥 0 days
+                      *Complete a task to start!*
+                      {% endif %}
+                      <small>Daily task streak</small>
+                  - type: markdown
+                    content: |
+                      {% set s = states('sensor.weekly_challenge_streak') | int(0) %}
+                      {% if s >= 4 %}
+                      ## 🏆 {{ s }} weeks
+                      *Legendary!* 🌟
+                      {% elif s >= 2 %}
+                      ## 🏆 {{ s }} weeks
+                      *On a roll!* 🎯
+                      {% elif s == 1 %}
+                      ## 🏆 1 week
+                      *First win!* 🎉
+                      {% else %}
+                      ## 🏆 0 weeks
+                      *Win this week to start!*
+                      {% endif %}
+                      <small>Weekly challenge streak</small>
+
               # Task 1 Card - Only show if at least 1 task exists
               - type: conditional
                 conditions:
@@ -954,7 +992,18 @@ views:
                   **📊 Tasks Completed (Last 30 Days):** {{ tasks }}
                   <small>*Your level is based on completed tasks in the last 30 days*</small>
 
-              # --- RPG STATS GAUGES ---
+              # --- STREAKS ---
+              - type: markdown
+                content: |
+                  ### 🔥 Your Streaks
+                  {% set daily = states('sensor.daily_task_streak') | int(0) %}
+                  {% set weekly = states('sensor.weekly_challenge_streak') | int(0) %}
+
+                  | | Streak | Status |
+                  |---|---|---|
+                  | 🔥 Daily Tasks | **{{ daily }} day{% if daily != 1 %}s{% endif %}** | {{ '⭐ Unstoppable!' if daily >= 7 else ('💪 Building!' if daily >= 3 else ('🌱 Good start!' if daily >= 1 else '▶️ Complete a task!')) }} |
+                  | 🏆 Weekly Goals | **{{ weekly }} week{% if weekly != 1 %}s{% endif %}** | {{ '🌟 Legendary!' if weekly >= 4 else ('🎯 On a roll!' if weekly >= 2 else ('🎉 First win!' if weekly >= 1 else '🎯 Win this week!')) }} |
+
               - type: horizontal-stack
                 cards:
                   - type: gauge

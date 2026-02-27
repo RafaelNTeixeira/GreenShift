@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import TASK_GENERATION_TIME, ENVIRONMENT_OFFICE
 from .translations_runtime import get_language, get_task_templates, get_difficulty_display
-from .helpers import should_ai_be_active
+from .helpers import should_ai_be_active, get_working_days_from_config
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,12 +46,27 @@ class TaskManager:
         Returns:
             List[Dict]: A list of generated tasks with details such as task_id, type, title, description, target values, difficulty level and area (if applicable).
         """
-        # Check if AI should be active (working hours for office mode)
-        if not should_ai_be_active(self.config_data):
-            _LOGGER.debug("Outside working hours - task generation paused")
-            return []
+        # In office mode: only generate tasks on working days.
+        if self.config_data.get("environment") == ENVIRONMENT_OFFICE:
+            working_days = get_working_days_from_config(self.config_data)
+            today_weekday = datetime.now().weekday()
+            if today_weekday not in working_days:
+                _LOGGER.debug(
+                    "Not a working day (weekday=%d, working_days=%s) - task generation skipped",
+                    today_weekday, working_days
+                )
+                return []
 
         today = datetime.now().strftime("%Y-%m-%d")
+
+        # Task-streak: check yesterday's completion before generating a new day
+        if self.decision_agent:
+            yesterday = (datetime.now().date() - timedelta(days=1))
+            yesterday_tasks = await self.storage.get_tasks_for_date(yesterday)
+            if yesterday_tasks:
+                any_done = any(t['verified'] for t in yesterday_tasks)
+                if not any_done:
+                    self.decision_agent.update_task_streak(False, yesterday)
 
         # Check if tasks already exist for today
         existing_tasks = await self.storage.get_today_tasks()
@@ -459,6 +474,10 @@ class TaskManager:
                 )
 
                 _LOGGER.info("Task %s verified successfully (measured: %s)", task['task_id'], actual_value)
+
+        # Task-streak: credit streak as soon as at least one task is verified today
+        if self.decision_agent and tasks and any(results.values()):
+            self.decision_agent.update_task_streak(True, datetime.now().date())
 
         return results
 

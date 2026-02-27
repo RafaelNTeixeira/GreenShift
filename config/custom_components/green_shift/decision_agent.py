@@ -106,6 +106,12 @@ class DecisionAgent:
         # Active phase tracking
         self.active_since = None # datetime when the system transitioned to PHASE_ACTIVE
 
+        # Gamification streaks
+        self.task_streak = 0              # consecutive days with all daily tasks verified
+        self.task_streak_last_date = None # date (date obj) of last successful task-streak credit
+        self.weekly_streak = 0            # consecutive weeks with weekly challenge achieved
+        self.weekly_streak_last_week = None # week_key (ISO str) of last successful weekly-streak credit
+
     async def setup(self):
         """Initialize agent and load persistent state."""
         if self.storage:
@@ -251,6 +257,20 @@ class DecisionAgent:
             if restored:
                 _LOGGER.info("Restored %d pending episodes from persistent state", restored)
 
+        # Load gamification streaks
+        if "task_streak" in state:
+            self.task_streak = int(state["task_streak"])
+        if "task_streak_last_date" in state and state["task_streak_last_date"]:
+            try:
+                from datetime import date as _date_cls
+                self.task_streak_last_date = _date_cls.fromisoformat(state["task_streak_last_date"])
+            except (ValueError, AttributeError):
+                self.task_streak_last_date = None
+        if "weekly_streak" in state:
+            self.weekly_streak = int(state["weekly_streak"])
+        if "weekly_streak_last_week" in state and state["weekly_streak_last_week"]:
+            self.weekly_streak_last_week = state["weekly_streak_last_week"]
+
         _LOGGER.info("Persistent AI state loaded successfully")
 
     async def _save_persistent_state(self):
@@ -294,6 +314,10 @@ class DecisionAgent:
             "episode_number": self.episode_number,
             "logged_weeks": list(self._logged_weeks),
             "active_since": self.active_since.isoformat() if self.active_since else None,
+            "task_streak": self.task_streak,
+            "task_streak_last_date": self.task_streak_last_date.isoformat() if self.task_streak_last_date else None,
+            "weekly_streak": self.weekly_streak,
+            "weekly_streak_last_week": self.weekly_streak_last_week,
             "pending_episodes": {
                 notif_id: {
                     "state_key": str(ep["state_key"]),
@@ -310,6 +334,79 @@ class DecisionAgent:
         current_state.update(ai_state)
 
         await self.storage.save_state(current_state)
+
+    # ------------------------------------------------------------------
+    # Gamification streak helpers
+    # ------------------------------------------------------------------
+
+    def update_task_streak(self, all_tasks_verified: bool, check_date=None) -> None:
+        """
+        Update the daily task streak.
+
+        Args:
+            all_tasks_verified: Whether all tasks for the day were verified successfully.
+            check_date: Optional date to check (for testing); if None, uses today's date.
+
+        Consecutive-day logic (only SUCCESS dates advance the pointer):
+        - Same day called again -> ignored (idempotent).
+        - Next calendar day     -> streak += 1.
+        - Gap > 1 day           -> streak resets to 1.
+        - Failure               -> streak resets to 0 (last_date unchanged so the next success detects the gap correctly).
+        """
+        from datetime import date as _date_cls, timedelta as _td
+        today = check_date if isinstance(check_date, _date_cls) else datetime.now().date()
+
+        if all_tasks_verified:
+            if self.task_streak_last_date is None:
+                self.task_streak = 1
+            elif (today - self.task_streak_last_date).days == 0:
+                return  # already credited today
+            elif (today - self.task_streak_last_date).days == 1:
+                self.task_streak += 1  # consecutive day
+            else:
+                self.task_streak = 1   # gap - reset
+            self.task_streak_last_date = today
+            _LOGGER.info("Task streak: %d consecutive day(s) (date=%s)", self.task_streak, today)
+        else:
+            # Only reset if we haven't already recorded today as a failure
+            if self.task_streak_last_date != today:
+                if self.task_streak > 0:
+                    _LOGGER.info("Task streak broken after %d day(s), reset to 0", self.task_streak)
+                self.task_streak = 0
+
+    def update_weekly_streak(self, achieved: bool, week_key: str) -> None:
+        """
+        Update the weekly challenge streak.
+
+        Args:
+            achieved: Whether the weekly challenge was achieved this week.
+            week_key: A string representing the week (e.g., "2024-W23"). Is the ISO date of the Monday that started the week.
+        """
+        if achieved:
+            if self.weekly_streak_last_week is None:
+                self.weekly_streak = 1
+            elif week_key == self.weekly_streak_last_week:
+                return  # already credited this week
+            else:
+                from datetime import date as _date_cls
+                try:
+                    last_monday = _date_cls.fromisoformat(self.weekly_streak_last_week)
+                    this_monday = _date_cls.fromisoformat(week_key)
+                    delta = (this_monday - last_monday).days
+                    if delta == 7:
+                        self.weekly_streak += 1
+                    elif delta > 7:
+                        self.weekly_streak = 1  # gap
+                    else:
+                        return  # delta < 7 – duplicate / out-of-order call
+                except (ValueError, AttributeError):
+                    self.weekly_streak = 1
+            self.weekly_streak_last_week = week_key
+            _LOGGER.info("Weekly streak: %d consecutive week(s) (week=%s)", self.weekly_streak, week_key)
+        else:
+            if self.weekly_streak > 0:
+                _LOGGER.info("Weekly streak broken after %d week(s), reset to 0", self.weekly_streak)
+            self.weekly_streak = 0
 
     async def process_ai_model(self):
         """
@@ -1489,7 +1586,8 @@ class DecisionAgent:
         # Normalize to [0, 1] range for stability (engagement scores are between -0.5 and +1.0)
         # Ensure that neutral users (50/50 acceptance) are around 0.5, highly engaged users approach 1.0 and disengaged users approach 0.0
         new_index = np.clip((weighted_engagement + 0.5) / 1.5, 0.0, 1.0)
-        self.behaviour_index = 0.5 * new_index + 0.5 * self.behaviour_index
+        # 0.7 weight makes the behaviour index converge faster (a fully-engaged user can reach ~0.85+ within ~5 interactions)
+        self.behaviour_index = 0.7 * new_index + 0.3 * self.behaviour_index
 
         _LOGGER.debug("Behaviour index updated: %.2f (raw: %.2f, normalised: %.2f, history size: %d)", self.behaviour_index, weighted_engagement, new_index, len(self.engagement_history))
 
@@ -1525,26 +1623,35 @@ class DecisionAgent:
         # Last 10 notifications
         recent_notifs = list(self.notification_history)[-10:]
 
-        # Interaction scoring: combines explicit rejections and passive silence (not answering notifications)
+        # Interaction scoring: combines explicit rejections and passive silence.
+        # Passive silence (+0.4) is only counted for notifications older than MIN_COOLDOWN_MINUTES: recent notifications may simply not have been read yet, so penalising them immediately would inflate fatigue unfairly.
         interaction_score = 0.0
+        now_ts = datetime.now()
         for n in recent_notifs:
             if n.get("responded", False):
                 if not n.get("accepted", False):
                     interaction_score += 1.0   # Explicit rejection: heavy penalty
                 # Accepted: no penalty
             else:
-                interaction_score += 0.4       # Passive silence: moderate penalty
+                # Only count passive silence once the cooldown window has elapsed
+                try:
+                    notif_age_min = (now_ts - datetime.fromisoformat(n["timestamp"])).total_seconds() / 60
+                except (KeyError, ValueError, TypeError):
+                    notif_age_min = MIN_COOLDOWN_MINUTES + 1  # assume old if unparseable
+                if notif_age_min > MIN_COOLDOWN_MINUTES:
+                    interaction_score += 0.4   # Passive silence: moderate penalty
 
         # Normalise to [0, 1]
         interaction_factor = interaction_score / len(recent_notifs)
 
         # Frequency factor
-        # How fast the last 3 notifications arrived (ideal is 1 per hour)
+        # Measures how quickly the last 3 notifications arrived.
+        # min(1/time_span, 1) reaches 1.0 only at the absolute minimum time_span (1h with 30-min cooldown), and gives 0.5 at 2h, 0.25 at 4h.
         if len(recent_notifs) >= 3:
             timestamps = [datetime.fromisoformat(n["timestamp"]) for n in recent_notifs[-3:]]
             _LOGGER.debug("Timestamps of last 3 notifications for fatigue calculation: %s", timestamps)
             time_span = (timestamps[-1] - timestamps[0]).total_seconds() / 3600  # hours
-            frequency_factor = min(3 / time_span, 1.0) if time_span > 0 else 1.0
+            frequency_factor = min(1.0 / time_span, 1.0) if time_span > 0 else 1.0
         else:
             frequency_factor = 0.0
 
@@ -1920,6 +2027,7 @@ class DecisionAgent:
                 await self.storage.log_weekly_challenge(challenge_data=challenge_payload)
 
                 self._logged_weeks.add(week_key)
+                self.update_weekly_streak(success, week_key)
                 _LOGGER.info("Logged weekly challenge: week=%s, success=%s, savings=%.1f%%", week_key, success, savings_pct)
 
         return {

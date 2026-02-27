@@ -217,7 +217,7 @@ class TestDiscreteState:
 # _update_fatigue_index
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _notif(accepted=True, responded=True, minutes_ago=30):
+def _notif(accepted=True, responded=True, minutes_ago=60):
     ts = (datetime.now() - timedelta(minutes=minutes_ago)).isoformat()
     return {"timestamp": ts, "accepted": accepted, "responded": responded}
 
@@ -240,27 +240,34 @@ class TestUpdateFatigueIndex:
 
     @pytest.mark.asyncio
     async def test_unanswered_notifications_raise_fatigue(self):
-        """Unanswered notifications now contribute +0.4 each via interaction_factor."""
+        """Unanswered notifications older than MIN_COOLDOWN_MINUTES contribute +0.4 each."""
         agent = make_agent()
-        # 2 unanswered (< 3 -> freq=0): interaction_score=0.8, factor=0.4
+        # 2 unanswered at 60 min ago (> 30-min cooldown threshold) -> passive silence counted
+        # interaction_score=0.8, factor=0.4; < 3 notifs -> freq=0
         # base = 0.6*0.4 + 0.4*0.0 = 0.24; no last_notification_time -> no decay
         agent.notification_history = deque(
-            [_notif(responded=False), _notif(responded=False)],
+            [_notif(responded=False, minutes_ago=60), _notif(responded=False, minutes_ago=60)],
             maxlen=100
         )
         await agent._update_fatigue_index()
         assert agent.fatigue_index == pytest.approx(0.24)
 
     @pytest.mark.asyncio
-    async def test_all_accepted_yields_low_fatigue(self):
+    async def test_unanswered_within_cooldown_window_not_counted(self):
+        """Unanswered notifications sent < MIN_COOLDOWN_MINUTES ago must not penalise fatigue.
+        The user may simply not have had time to respond yet.
+        Using 2 notifications so frequency_factor=0 (need >=3 for that component)."""
         agent = make_agent()
+        # 2 unanswered at 5 min ago: within the 30-min cooldown window
+        # < 3 notifications -> frequency_factor = 0; passive silence NOT counted
+        # -> interaction_factor = 0 -> base = 0 -> fatigue = 0
         agent.notification_history = deque(
-            [_notif(accepted=True, responded=True, minutes_ago=60 * i) for i in range(5)],
+            [_notif(responded=False, minutes_ago=5),
+             _notif(responded=False, minutes_ago=5)],
             maxlen=100
         )
-        agent.last_notification_time = None
         await agent._update_fatigue_index()
-        assert agent.fatigue_index <= 0.4
+        assert agent.fatigue_index == pytest.approx(0.0)
 
     @pytest.mark.asyncio
     async def test_all_rejected_yields_high_fatigue(self):
@@ -328,29 +335,34 @@ class TestUpdateFatigueIndex:
 
     @pytest.mark.asyncio
     async def test_all_unanswered_raises_fatigue_via_silence(self):
-        """All-unanswered history: silence penalty (+0.4 each) raises fatigue, no early return."""
+        """All-unanswered history: only notifications clearly older than MIN_COOLDOWN_MINUTES
+        count as passive silence. Uses values well away from the 30-min boundary."""
         agent = make_agent()
-        # 10 unanswered at 0..90 min ago -> interaction_factor = (10*0.4)/10 = 0.4
-        # last 3 timestamps (70,80,90 min ago) give negative span -> freq = 1.0
-        # base = 0.6*0.4 + 0.4*1.0 = 0.64; last_notif=5min ago -> no decay
-        agent.notification_history = deque(
-            [_notif(responded=False, minutes_ago=10 * i) for i in range(10)],
-            maxlen=100
-        )
+        # 4 recent (< 30 min): 5, 10, 15, 20 min ago -> NOT counted
+        # 6 old (> 30 min): 35, 45, 55, 65, 75, 85 min ago -> COUNTED
+        not_counted = [_notif(responded=False, minutes_ago=m) for m in [5, 10, 15, 20]]
+        counted     = [_notif(responded=False, minutes_ago=m) for m in [35, 45, 55, 65, 75, 85]]
+        agent.notification_history = deque(not_counted + counted, maxlen=100)
         agent.last_notification_time = datetime.now() - timedelta(minutes=5)
         await agent._update_fatigue_index()
-        assert agent.fatigue_index == pytest.approx(0.64)
+        # interaction_score = 6 * 0.4 = 2.4; window = 10; factor = 0.24
+        # last 3 in deque: 65, 75, 85 min ago -> time_span = (now-85)-(now-65) = -20 min < 0 -> freq=1.0
+        # base = 0.6*0.24 + 0.4*1.0 = 0.544; last_notif=5min -> no decay
+        assert agent.fatigue_index == pytest.approx(0.544)
 
     @pytest.mark.asyncio
     async def test_silence_contributes_via_interaction_factor(self):
-        """Unanswered notifications raise fatigue via the interaction_factor (0.4 each)."""
+        """Unanswered notifications older than MIN_COOLDOWN_MINUTES raise fatigue via interaction_factor."""
         agent = make_agent()
-        # 2 responded (1 rejected, 1 accepted), 3 unanswered
-        # interaction_score = 1.0 + 0.4 + 0.4 + 0.0 + 0.4 = 2.2 -> factor = 2.2/5 = 0.44
+        # 1 rejected responded (25 min ago; responded=True -> always counted)
+        # 2 old unanswered (>30 min ago -> counted): at 35 and 40 min ago
+        # 1 accepted (10 min ago; responded=True -> 0.0)
+        # 1 recent unanswered (5 min ago; < 30 min -> NOT counted)
+        # interaction_score = 1.0 + 0.4 + 0.4 + 0.0 + 0.0 = 1.8 -> factor = 1.8/5 = 0.36
         agent.notification_history = deque([
             _notif(accepted=False, responded=True,  minutes_ago=25),
-            _notif(responded=False,                 minutes_ago=20),
-            _notif(responded=False,                 minutes_ago=15),
+            _notif(responded=False,                 minutes_ago=40),
+            _notif(responded=False,                 minutes_ago=35),
             _notif(accepted=True,  responded=True,  minutes_ago=10),
             _notif(responded=False,                 minutes_ago=5),
         ], maxlen=100)
@@ -452,6 +464,16 @@ class TestUpdateBehaviourIndex:
             agent._update_behaviour_index()
         assert agent.behaviour_index < 0.15
 
+    def test_70_30_ema_converges_faster_than_50_50(self):
+        """With the 0.7/0.3 EMA weight a fully-engaged user should reach a higher
+        index than the old 0.5/0.5 after the same number of updates."""
+        agent = make_agent()
+        agent.behaviour_index = 0.5
+        agent.engagement_history = deque([1.0] * 5, maxlen=100)
+        for _ in range(5):
+            agent._update_behaviour_index()
+        # With 0.7 weight on new value the index should climb well above 0.5
+        assert agent.behaviour_index > 0.7
 
 # ─────────────────────────────────────────────────────────────────────────────
 # _check_cooldown_with_opportunity
@@ -915,3 +937,189 @@ class TestExecuteActionMobileNotify:
         # Should not raise
         notification_id = await agent._execute_action(1)
         assert notification_id is not None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Gamification Streaks
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestStreaks:
+    """Pure-logic tests for update_task_streak and update_weekly_streak."""
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _agent():
+        return make_agent()
+
+    @staticmethod
+    def _day(delta: int = 0):
+        from datetime import date, timedelta
+        return date(2026, 2, 20) + timedelta(days=delta)
+
+    @staticmethod
+    def _week(delta_weeks: int = 0):
+        """Return a week_key (Monday ISO date) delta_weeks from a fixed origin."""
+        from datetime import date, timedelta
+        return (date(2026, 2, 2) + timedelta(weeks=delta_weeks)).isoformat()
+
+    # ── task_streak – basic increments ────────────────────────────────────────
+
+    def test_task_streak_first_success_gives_one(self):
+        agent = self._agent()
+        agent.update_task_streak(True, self._day(0))
+        assert agent.task_streak == 1
+        assert agent.task_streak_last_date == self._day(0)
+
+    def test_task_streak_two_consecutive_days(self):
+        agent = self._agent()
+        agent.update_task_streak(True, self._day(0))
+        agent.update_task_streak(True, self._day(1))
+        assert agent.task_streak == 2
+
+    def test_task_streak_three_consecutive_days(self):
+        agent = self._agent()
+        for i in range(3):
+            agent.update_task_streak(True, self._day(i))
+        assert agent.task_streak == 3
+
+    # ── task_streak – gap resets ──────────────────────────────────────────────
+
+    def test_task_streak_gap_resets_to_one(self):
+        """Streak breaks when there is a day gap and the next success counts as 1."""
+        agent = self._agent()
+        agent.update_task_streak(True, self._day(0))   # Mon
+        # Tue missing
+        agent.update_task_streak(True, self._day(2))   # Wed → gap → reset to 1
+        assert agent.task_streak == 1
+        assert agent.task_streak_last_date == self._day(2)
+
+    def test_task_streak_week_gap_resets_to_one(self):
+        agent = self._agent()
+        agent.update_task_streak(True, self._day(0))
+        agent.update_task_streak(True, self._day(7))   # one-week gap
+        assert agent.task_streak == 1
+
+    # ── task_streak – idempotency ─────────────────────────────────────────────
+
+    def test_task_streak_same_day_is_idempotent(self):
+        agent = self._agent()
+        agent.update_task_streak(True, self._day(0))
+        agent.update_task_streak(True, self._day(0))  # called again same day
+        assert agent.task_streak == 1
+
+    def test_task_streak_same_day_does_not_advance_to_next_day_count(self):
+        agent = self._agent()
+        agent.update_task_streak(True, self._day(0))
+        # Simulate three same-day calls
+        for _ in range(5):
+            agent.update_task_streak(True, self._day(0))
+        assert agent.task_streak == 1
+
+    # ── task_streak – failures ────────────────────────────────────────────────
+
+    def test_task_streak_failure_resets_to_zero(self):
+        agent = self._agent()
+        agent.update_task_streak(True, self._day(0))
+        agent.update_task_streak(True, self._day(1))
+        agent.update_task_streak(True, self._day(2))
+        assert agent.task_streak == 3
+        agent.update_task_streak(False, self._day(3))  # failed today
+        assert agent.task_streak == 0
+
+    def test_task_streak_failure_does_not_update_last_date(self):
+        """Last-date pointer must stay at the last SUCCESS so gap detection works."""
+        agent = self._agent()
+        agent.update_task_streak(True, self._day(0))   # streak=1, last=day 0
+        agent.update_task_streak(False, self._day(1))  # failure on day 1
+        assert agent.task_streak == 0
+        assert agent.task_streak_last_date == self._day(0)  # not day 1
+
+    def test_task_streak_after_failure_gap_to_next_success_resets(self):
+        """day0 success → day1 failure → day3 success: streak = 1 (gap was > 1)."""
+        agent = self._agent()
+        agent.update_task_streak(True, self._day(0))
+        agent.update_task_streak(False, self._day(1))
+        agent.update_task_streak(True, self._day(3))   # gap: day0 to day3 = 3 days
+        assert agent.task_streak == 1
+
+    def test_task_streak_failure_on_new_day_only_resets_once(self):
+        """Multiple failure calls for the same day keep streak at 0, no side effects."""
+        agent = self._agent()
+        agent.update_task_streak(True, self._day(0))
+        agent.update_task_streak(False, self._day(1))
+        agent.update_task_streak(False, self._day(1))  # duplicate failure call
+        assert agent.task_streak == 0
+
+    def test_task_streak_starts_correctly_after_zero_history(self):
+        """With no prior history, a single success gives streak=1."""
+        agent = self._agent()
+        assert agent.task_streak == 0
+        assert agent.task_streak_last_date is None
+        agent.update_task_streak(True, self._day(0))
+        assert agent.task_streak == 1
+
+    # ── weekly_streak – basic increments ──────────────────────────────────────
+
+    def test_weekly_streak_first_achieved_gives_one(self):
+        agent = self._agent()
+        agent.update_weekly_streak(True, self._week(0))
+        assert agent.weekly_streak == 1
+        assert agent.weekly_streak_last_week == self._week(0)
+
+    def test_weekly_streak_two_consecutive_weeks(self):
+        agent = self._agent()
+        agent.update_weekly_streak(True, self._week(0))
+        agent.update_weekly_streak(True, self._week(1))
+        assert agent.weekly_streak == 2
+
+    def test_weekly_streak_three_consecutive_weeks(self):
+        agent = self._agent()
+        for i in range(3):
+            agent.update_weekly_streak(True, self._week(i))
+        assert agent.weekly_streak == 3
+
+    # ── weekly_streak – gap resets ────────────────────────────────────────────
+
+    def test_weekly_streak_gap_resets_to_one(self):
+        agent = self._agent()
+        agent.update_weekly_streak(True, self._week(0))
+        # week 1 missing
+        agent.update_weekly_streak(True, self._week(2))
+        assert agent.weekly_streak == 1
+        assert agent.weekly_streak_last_week == self._week(2)
+
+    # ── weekly_streak – idempotency ───────────────────────────────────────────
+
+    def test_weekly_streak_same_week_is_idempotent(self):
+        agent = self._agent()
+        agent.update_weekly_streak(True, self._week(0))
+        agent.update_weekly_streak(True, self._week(0))
+        assert agent.weekly_streak == 1
+
+    # ── weekly_streak – failures ──────────────────────────────────────────────
+
+    def test_weekly_streak_failure_resets_to_zero(self):
+        agent = self._agent()
+        agent.update_weekly_streak(True, self._week(0))
+        agent.update_weekly_streak(True, self._week(1))
+        agent.update_weekly_streak(False, self._week(2))
+        assert agent.weekly_streak == 0
+
+    def test_weekly_streak_failure_does_not_update_last_week(self):
+        agent = self._agent()
+        agent.update_weekly_streak(True, self._week(0))
+        agent.update_weekly_streak(False, self._week(1))
+        assert agent.weekly_streak_last_week == self._week(0)
+
+    def test_weekly_streak_after_failure_next_success_is_one(self):
+        agent = self._agent()
+        agent.update_weekly_streak(True, self._week(0))
+        agent.update_weekly_streak(False, self._week(1))
+        agent.update_weekly_streak(True, self._week(2))
+        assert agent.weekly_streak == 1
+
+    def test_weekly_streak_zero_without_any_update(self):
+        agent = self._agent()
+        assert agent.weekly_streak == 0
+        assert agent.weekly_streak_last_week is None

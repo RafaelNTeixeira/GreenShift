@@ -330,6 +330,44 @@ views:
                   📭 Sem tarefas disponíveis para hoje.
                   {% endif %}
 
+              # --- BANNER DE SEQUÊNCIAS ---
+              - type: horizontal-stack
+                cards:
+                  - type: markdown
+                    content: |
+                      {% set s = states('sensor.daily_task_streak') | int(0) %}
+                      {% if s >= 7 %}
+                      ## 🔥 {{ s }} dias
+                      *Imparável!* ⭐
+                      {% elif s >= 3 %}
+                      ## 🔥 {{ s }} dias
+                      *Continue assim!* 💪
+                      {% elif s == 1 %}
+                      ## 🔥 1 dia
+                      *Bom começo!* 🌱
+                      {% else %}
+                      ## 🔥 0 dias
+                      *Complete uma tarefa para começar!*
+                      {% endif %}
+                      <small>Sequência de tarefas diárias</small>
+                  - type: markdown
+                    content: |
+                      {% set s = states('sensor.weekly_challenge_streak') | int(0) %}
+                      {% if s >= 4 %}
+                      ## 🏆 {{ s }} semanas
+                      *Lendário!* 🌟
+                      {% elif s >= 2 %}
+                      ## 🏆 {{ s }} semanas
+                      *Em forma!* 🎯
+                      {% elif s == 1 %}
+                      ## 🏆 1 semana
+                      *Primeira vitória!* 🎉
+                      {% else %}
+                      ## 🏆 0 semanas
+                      *Ganhe esta semana para começar!*
+                      {% endif %}
+                      <small>Sequência de desafios semanais</small>
+
               # Card Tarefa 1
               - type: conditional
                 conditions:
@@ -929,7 +967,18 @@ views:
                   **📊 Tarefas Completadas (Últimos 30 Dias):** {{ tasks }}
                   <small>*O seu nível baseia-se nas tarefas completadas nos últimos 30 dias*</small>
 
-              # --- INDICADORES DE ESTATÍSTICAS RPG ---
+              # --- SEQUÊNCIAS ---
+              - type: markdown
+                content: |
+                  ### 🔥 As Suas Sequências
+                  {% set daily = states('sensor.daily_task_streak') | int(0) %}
+                  {% set weekly = states('sensor.weekly_challenge_streak') | int(0) %}
+
+                  | | Sequência | Estado |
+                  |---|---|---|
+                  | 🔥 Tarefas Diárias | **{{ daily }} dia{% if daily != 1 %}s{% endif %}** | {{ '⭐ Imparável!' if daily >= 7 else ('💪 A crescer!' if daily >= 3 else ('🌱 Bom começo!' if daily >= 1 else '▶️ Complete uma tarefa!')) }} |
+                  | 🏆 Metas Semanais | **{{ weekly }} semana{% if weekly != 1 %}s{% endif %}** | {{ '🌟 Lendário!' if weekly >= 4 else ('🎯 Em forma!' if weekly >= 2 else ('🎉 Primeira vitória!' if weekly >= 1 else '🎯 Ganhe esta semana!')) }} |
+
               - type: horizontal-stack
                 cards:
                   - type: gauge

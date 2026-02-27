@@ -201,6 +201,22 @@
       "active_notifications": {
         "name": "Active Notifications"
       },
+      "task_streak": {
+        "name": "Daily Task Streak",
+        "state_attributes": {
+          "last_credited_date": {
+            "name": "Last Credited Date"
+          }
+        }
+      },
+      "weekly_streak": {
+        "name": "Weekly Challenge Streak",
+        "state_attributes": {
+          "last_credited_week": {
+            "name": "Last Credited Week"
+          }
+        }
+      },
       "opportunity_score": {
         "name": "Opportunity Score"
       },

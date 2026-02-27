@@ -38,6 +38,7 @@ sys.modules["custom_components.green_shift.translations_runtime"] = trans_mod
 # helpers stub
 helpers_stub = types.ModuleType("custom_components.green_shift.helpers")
 helpers_stub.should_ai_be_active = MagicMock(return_value=True)
+helpers_stub.get_working_days_from_config = MagicMock(return_value=list(range(5)))  # Mon-Fri
 sys.modules["custom_components.green_shift.helpers"] = helpers_stub
 
 # Import real const module
@@ -79,6 +80,7 @@ def make_task_manager(sensors=None, phase="active", working_hours=True, config=N
 
     storage = AsyncMock()
     storage.get_today_tasks = AsyncMock(return_value=[])
+    storage.get_tasks_for_date = AsyncMock(return_value=[])  # no tasks yesterday by default
     storage.save_daily_tasks = AsyncMock()
     storage.log_task_generation = AsyncMock()
     storage.get_task_difficulty_stats = AsyncMock(return_value=None)
@@ -93,6 +95,16 @@ def make_task_manager(sensors=None, phase="active", working_hours=True, config=N
     # because task_manager already imported them
     tm_mod.should_ai_be_active = MagicMock(return_value=working_hours)
     tm_mod.get_language = AsyncMock(return_value="en")
+    # Patch working-days helper (used by new office-mode day-guard)
+    today_weekday = datetime.now().weekday()
+    if working_hours:
+        # Return a list that includes today so the day-guard passes
+        tm_mod.get_working_days_from_config = MagicMock(return_value=list(range(7)))
+    else:
+        # Return a list that excludes today so the day-guard blocks
+        tm_mod.get_working_days_from_config = MagicMock(
+            return_value=[d for d in range(7) if d != today_weekday]
+        )
 
     return TaskManager(
         hass=hass,
@@ -136,17 +148,34 @@ class TestGenerateDailyTasksPhaseGuard:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestGenerateDailyTasksWorkingHours:
+    """
+    In office mode, tasks must only be generated on working days.
+    In home mode there is no day-gate, tasks are always generated.
+    """
 
     @pytest.mark.asyncio
-    async def test_returns_empty_outside_working_hours(self):
-        tm = make_task_manager(working_hours=False)
+    async def test_returns_empty_on_non_working_day_office_mode(self):
+        """Office mode: task generation is skipped when today is not a working day."""
+        office_config = {"environment": "office"}
+        tm = make_task_manager(working_hours=False, config=office_config)
         result = await tm.generate_daily_tasks()
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_generates_tasks_inside_working_hours(self):
-        tm = make_task_manager(working_hours=True)
+    async def test_generates_tasks_on_working_day_office_mode(self):
+        """Office mode: tasks are generated when today is a working day."""
+        office_config = {"environment": "office"}
+        tm = make_task_manager(working_hours=True, config=office_config)
         result = await tm.generate_daily_tasks()
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_home_mode_generates_tasks_any_day(self):
+        """Home mode never applies the working-day gate; tasks are always generated."""
+        home_config = {"environment": "home"}
+        tm = make_task_manager(working_hours=False, config=home_config)
+        result = await tm.generate_daily_tasks()
+        # Home mode: no day gate -> should proceed to generate (list, possibly empty if no sensors)
         assert isinstance(result, list)
 
 
@@ -695,3 +724,125 @@ class TestVerificationTimeAnchor:
         assert hours_arg is not None
         # TASK_GENERATION_TIME = (6, 0, 0) -> 20:00 - 06:00 = 14 hours
         assert abs(hours_arg - 14) < 1, f"Expected ~14 hours (06:00 fallback) but got {hours_arg}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Streak integration — via TaskManager
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestTaskManagerStreak:
+    """Verify that TaskManager calls update_task_streak at the right moments."""
+
+    # ── verify_tasks ──────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_verify_tasks_credits_streak_when_at_least_one_verified(self):
+        """update_task_streak(True, today) called when at least one task is verified."""
+        tm = make_task_manager()
+
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        tasks = [
+            {"task_id": f"t{i}", "task_type": "power_reduction",
+             "target_value": 400.0, "area_name": None, "verified": True,
+             "created_at": f"{today_str}T08:01:00",
+             "peak_hour": None}
+            for i in range(3)
+        ]
+        tm.storage.get_today_tasks = AsyncMock(return_value=tasks)
+
+        await tm.verify_tasks()
+
+        tm.decision_agent.update_task_streak.assert_called_once_with(True, datetime.now().date())
+
+    @pytest.mark.asyncio
+    async def test_verify_tasks_credits_streak_when_partial_verified(self):
+        """update_task_streak(True, today) called even when only SOME tasks are verified."""
+        tm = make_task_manager()
+
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        t_verified = {
+            "task_id": "t1", "task_type": "power_reduction",
+            "target_value": 400.0, "area_name": None, "verified": True,
+            "created_at": f"{today_str}T08:01:00", "peak_hour": None
+        }
+        t_pending = {
+            "task_id": "t2", "task_type": "power_reduction",
+            "target_value": 400.0, "area_name": None, "verified": False,
+            "created_at": f"{today_str}T08:01:00", "peak_hour": None
+        }
+        tm.storage.get_today_tasks = AsyncMock(return_value=[t_verified, t_pending])
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (datetime.now() - timedelta(hours=i), 500.0) for i in range(30)
+        ])
+
+        await tm.verify_tasks()
+
+        tm.decision_agent.update_task_streak.assert_called_once_with(True, datetime.now().date())
+
+    @pytest.mark.asyncio
+    async def test_verify_tasks_no_streak_when_no_tasks(self):
+        """update_task_streak is NOT called when there are no tasks."""
+        tm = make_task_manager()
+        tm.storage.get_today_tasks = AsyncMock(return_value=[])
+
+        await tm.verify_tasks()
+
+        tm.decision_agent.update_task_streak.assert_not_called()
+
+    # ── generate_daily_tasks ──────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_generate_tasks_resets_streak_when_none_verified_yesterday(self):
+        """update_task_streak(False, yesterday) is called only if NO tasks were verified yesterday."""
+        tm = make_task_manager()
+
+        yesterday = (datetime.now().date() - timedelta(days=1))
+        yesterday_tasks = [
+            {"task_id": "y1", "task_type": "power_reduction", "verified": False},
+            {"task_id": "y2", "task_type": "power_reduction", "verified": False},
+        ]
+        tm.storage.get_tasks_for_date = AsyncMock(return_value=yesterday_tasks)
+
+        await tm.generate_daily_tasks()
+
+        tm.decision_agent.update_task_streak.assert_called_once_with(False, yesterday)
+
+    @pytest.mark.asyncio
+    async def test_generate_tasks_no_streak_reset_when_yesterday_partial_verified(self):
+        """update_task_streak is NOT called if at least one task was verified yesterday."""
+        tm = make_task_manager()
+
+        yesterday_tasks = [
+            {"task_id": "y1", "task_type": "power_reduction", "verified": False},
+            {"task_id": "y2", "task_type": "power_reduction", "verified": True},
+        ]
+        tm.storage.get_tasks_for_date = AsyncMock(return_value=yesterday_tasks)
+
+        await tm.generate_daily_tasks()
+
+        tm.decision_agent.update_task_streak.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_generate_tasks_no_streak_reset_when_yesterday_all_done(self):
+        """update_task_streak is NOT called if yesterday tasks were all verified."""
+        tm = make_task_manager()
+
+        yesterday_tasks = [
+            {"task_id": "y1", "task_type": "power_reduction", "verified": True},
+            {"task_id": "y2", "task_type": "power_reduction", "verified": True},
+        ]
+        tm.storage.get_tasks_for_date = AsyncMock(return_value=yesterday_tasks)
+
+        await tm.generate_daily_tasks()
+
+        tm.decision_agent.update_task_streak.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_generate_tasks_no_streak_reset_when_no_yesterday_tasks(self):
+        """update_task_streak is NOT called if yesterday had no tasks (e.g., weekend)."""
+        tm = make_task_manager()
+        # Already default: get_tasks_for_date returns []
+
+        await tm.generate_daily_tasks()
+
+        tm.decision_agent.update_task_streak.assert_not_called()

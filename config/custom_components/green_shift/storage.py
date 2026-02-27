@@ -991,6 +991,51 @@ class StorageManager:
 
         return await self.hass.async_add_executor_job(_query)
 
+    async def get_tasks_for_date(self, target_date) -> List[Dict]:
+        """
+        Get all tasks generated for a specific date.
+
+        Args:
+            target_date: A datetime.date object or ISO string ('YYYY-MM-DD').
+
+        Returns:
+            list: List of task dictionaries for the requested date.
+        """
+        from datetime import date as _date_cls
+        if isinstance(target_date, _date_cls):
+            date_str = target_date.isoformat()
+        else:
+            date_str = str(target_date)
+
+        def _query():
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT task_id, date, task_type, title, description,
+                       target_value, target_unit, baseline_value, area_name,
+                       difficulty_level, completed, verified, completion_value,
+                       completion_timestamp, user_feedback, peak_hour, created_at
+                FROM daily_tasks
+                WHERE date = ?
+                ORDER BY id ASC
+            """, (date_str,))
+            rows = cursor.fetchall()
+            conn.close()
+            return [
+                {
+                    'task_id': r[0], 'date': r[1], 'task_type': r[2],
+                    'title': r[3], 'description': r[4], 'target_value': r[5],
+                    'target_unit': r[6], 'baseline_value': r[7], 'area_name': r[8],
+                    'difficulty_level': r[9], 'completed': bool(r[10]),
+                    'verified': bool(r[11]), 'completion_value': r[12],
+                    'completion_timestamp': r[13], 'user_feedback': r[14],
+                    'peak_hour': r[15], 'created_at': r[16],
+                }
+                for r in rows
+            ]
+
+        return await self.hass.async_add_executor_job(_query)
+
     async def get_total_completed_tasks_count(self) -> int:
         """
         Get the total count of verified tasks in the last 30 days (rolling window).
