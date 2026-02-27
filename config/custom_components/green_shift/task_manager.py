@@ -47,7 +47,7 @@ class TaskManager:
             List[Dict]: A list of generated tasks with details such as task_id, type, title, description, target values, difficulty level and area (if applicable).
         """
         # In office mode: only generate tasks on working days.
-        if self.config_data.get("environment") == ENVIRONMENT_OFFICE:
+        if self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE:
             working_days = get_working_days_from_config(self.config_data)
             today_weekday = datetime.now().weekday()
             if today_weekday not in working_days:

@@ -3,7 +3,7 @@ Tests for storage.py
 
 Covers:
 - Database initialization (sensor_data.db, research_data.db)
-- store_sensor_snapshot: data insertion, working hours flag
+- store_sensor_snapshot: data insertion, working hours flag, UTC epoch storage
 - store_area_snapshot: area-based data insertion
 - get_history: temporal queries with filters
 - get_area_history: area-specific temporal queries
@@ -13,6 +13,8 @@ Covers:
 - save_daily_tasks / get_today_tasks: task persistence
 - Data cleanup: old temporal data removal
 - RL episode cleanup: retention policy enforcement
+- compute_daily_aggregates: avg_power_working_hours / avg_power_off_hours columns
+- get_active_phase_savings: prefers working-hours representative power
 """
 import pytest
 import sys
@@ -22,12 +24,19 @@ import importlib.util
 import sqlite3
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 from unittest.mock import MagicMock, AsyncMock
 
 # ── Minimal HA stubs ────────────────────────────────────────────────────────
-for mod_name in ["homeassistant", "homeassistant.core"]:
+for mod_name in [
+    "homeassistant", 
+    "homeassistant.core", 
+    "homeassistant.helpers", 
+    "homeassistant.helpers.area_registry",
+    "homeassistant.helpers.entity_registry",
+    "homeassistant.helpers.device_registry"]:
     if mod_name not in sys.modules:
         sys.modules[mod_name] = types.ModuleType(mod_name)
 
@@ -40,6 +49,15 @@ const_mod = importlib.util.module_from_spec(const_spec)
 const_mod.__package__ = "custom_components.green_shift"
 const_spec.loader.exec_module(const_mod)
 sys.modules["custom_components.green_shift.const"] = const_mod
+
+helpers_spec = importlib.util.spec_from_file_location(
+    "custom_components.green_shift.helpers",
+    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "helpers.py"
+)
+helpers_mod = importlib.util.module_from_spec(helpers_spec)
+helpers_mod.__package__ = "custom_components.green_shift"
+helpers_spec.loader.exec_module(helpers_mod)
+sys.modules["custom_components.green_shift.helpers"] = helpers_mod
 
 # Load storage module
 storage_spec = importlib.util.spec_from_file_location(
@@ -182,6 +200,30 @@ class TestStoreSensorSnapshot:
         temp_history = await storage.get_history("temperature", hours=1)
         assert len(temp_history) == 1
         assert temp_history[0][1] == 22.0
+
+    @pytest.mark.asyncio
+    async def test_naive_datetime_stored_as_utc_epoch(self, storage):
+        """A naive datetime passed to store_sensor_snapshot must be interpreted as
+        UTC and stored as a UTC Unix epoch — not a local-time epoch."""
+        # Build a datetime that is unambiguously UTC midnight of 2024-06-01.
+        utc_ref = datetime(2024, 6, 1, 0, 0, 0, tzinfo=timezone.utc)
+        naive_ref = datetime(2024, 6, 1, 0, 0, 0)  # same wall-clock, no tzinfo
+        expected_ts = utc_ref.timestamp()
+
+        await storage.store_sensor_snapshot(timestamp=naive_ref, power=42.0)
+
+        conn = sqlite3.connect(storage.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT timestamp FROM sensor_history WHERE power = 42.0")
+        row = cursor.fetchone()
+        conn.close()
+
+        assert row is not None, "Snapshot was not stored"
+        stored_ts = row[0]
+        assert stored_ts == pytest.approx(expected_ts, abs=1), (
+            f"Expected UTC epoch {expected_ts} but got {stored_ts}; "
+            "naive timestamps must be treated as UTC."
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -732,3 +774,108 @@ class TestActivePhraseSavings:
         result = await storage.get_active_phase_savings("2026-03-01", baseline_w=1000.0)
         assert result["days_with_data"] == 0
         assert result["total_savings_kwh"] == 0.0
+
+    def _insert_daily_aggregate_with_wh(
+        self, storage, date: str, phase: str,
+        avg_power_w: float,
+        avg_power_working_hours: Optional[float] = None,
+        avg_power_off_hours: Optional[float] = None,
+    ):
+        """Helper: insert a row with all three power columns."""
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO research_daily_aggregates
+                (date, phase, avg_power_w, avg_power_working_hours, avg_power_off_hours)
+            VALUES (?, ?, ?, ?, ?)
+        """, (date, phase, avg_power_w, avg_power_working_hours, avg_power_off_hours))
+        conn.commit()
+        conn.close()
+
+    @pytest.mark.asyncio
+    async def test_savings_uses_working_hours_power_when_available(self, storage):
+        """get_active_phase_savings must use avg_power_working_hours as the
+        representative power (not the 24-hour avg_power_w) when the column is
+        non-NULL, avoiding false savings caused by including off-hours low load."""
+
+        storage.config_data = {"environment_mode": "office"}
+
+        # 24-h average is artificially low (office empty at night).
+        # Working-hours average reflects real occupied load.
+        self._insert_daily_aggregate_with_wh(
+            storage, "2026-03-01", "active",
+            avg_power_w=400.0,              # 24-h avg (distorted by night)
+            avg_power_working_hours=900.0,  # truth: near-baseline during working hours
+            avg_power_off_hours=50.0,
+        )
+        # baseline_w=1000 W; working-hours avg=900 W -> saving = 100 W × 10 h = 1.0 kWh
+        result = await storage.get_active_phase_savings("2026-03-01", baseline_w=1000.0)
+        assert result["days_with_data"] == 1
+        # The representative power must be 900 W.
+        assert result["overall_avg_power_w"] == pytest.approx(900.0, abs=0.1)
+        # Calculate based on working hours duration (10h)
+        assert result["total_savings_kwh"] == pytest.approx(1.0, abs=0.05)
+
+    @pytest.mark.asyncio
+    async def test_savings_falls_back_to_avg_power_w_when_wh_null(self, storage):
+        """When avg_power_working_hours IS NULL the function must fall back to
+        avg_power_w so older rows (pre-migration) are still usable."""
+        self._insert_daily_aggregate_with_wh(
+            storage, "2026-03-01", "active",
+            avg_power_w=800.0,
+            avg_power_working_hours=None,  # not yet populated
+            avg_power_off_hours=None,
+        )
+        result = await storage.get_active_phase_savings("2026-03-01", baseline_w=1000.0)
+        assert result["days_with_data"] == 1
+        assert result["overall_avg_power_w"] == pytest.approx(800.0, abs=0.1)
+        assert result["total_savings_kwh"] == pytest.approx(4.8, abs=0.05)
+
+    @pytest.mark.asyncio
+    async def test_compute_daily_aggregates_populates_wh_columns(self, storage):
+        """compute_daily_aggregates must fill avg_power_working_hours and
+        avg_power_off_hours from sensor_history.within_working_hours."""
+        from datetime import timezone as _tz
+
+        # Insert sensor rows for 2026-03-01 UTC.
+        date_str = "2026-03-01"
+        utc_midnight = datetime(2026, 3, 1, 0, 0, 0, tzinfo=_tz.utc).timestamp()
+
+        def insert_sensor_row(offset_secs: float, power: float, wh_flag: int):
+            conn = sqlite3.connect(storage.db_path)
+            c = conn.cursor()
+            c.execute(
+                "INSERT INTO sensor_history (timestamp, power, within_working_hours) VALUES (?, ?, ?)",
+                (utc_midnight + offset_secs, power, wh_flag),
+            )
+            conn.commit()
+            conn.close()
+
+        # 3 working-hours readings: 1000 W, 1200 W, 800 W -> avg = 1000 W
+        insert_sensor_row(3600, 1000.0, 1)
+        insert_sensor_row(7200, 1200.0, 1)
+        insert_sensor_row(10800, 800.0, 1)
+        # 2 off-hours readings: 100 W, 150 W -> avg = 125 W
+        insert_sensor_row(50400, 100.0, 0)
+        insert_sensor_row(54000, 150.0, 0)
+
+        await storage.compute_daily_aggregates(date=date_str)
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT avg_power_working_hours, avg_power_off_hours "
+            "FROM research_daily_aggregates WHERE date = ?",
+            (date_str,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        assert row is not None, "Daily aggregate row not created"
+        avg_wh, avg_off = row
+        assert avg_wh == pytest.approx(1000.0, abs=1.0), (
+            f"Expected avg_power_working_hours≈1000 W, got {avg_wh}"
+        )
+        assert avg_off == pytest.approx(125.0, abs=1.0), (
+            f"Expected avg_power_off_hours≈125 W, got {avg_off}"
+        )

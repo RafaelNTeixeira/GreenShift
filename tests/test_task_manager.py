@@ -156,7 +156,7 @@ class TestGenerateDailyTasksWorkingHours:
     @pytest.mark.asyncio
     async def test_returns_empty_on_non_working_day_office_mode(self):
         """Office mode: task generation is skipped when today is not a working day."""
-        office_config = {"environment": "office"}
+        office_config = {"environment_mode": "office"}
         tm = make_task_manager(working_hours=False, config=office_config)
         result = await tm.generate_daily_tasks()
         assert result == []
@@ -164,7 +164,7 @@ class TestGenerateDailyTasksWorkingHours:
     @pytest.mark.asyncio
     async def test_generates_tasks_on_working_day_office_mode(self):
         """Office mode: tasks are generated when today is a working day."""
-        office_config = {"environment": "office"}
+        office_config = {"environment_mode": "office"}
         tm = make_task_manager(working_hours=True, config=office_config)
         result = await tm.generate_daily_tasks()
         assert isinstance(result, list)
@@ -172,7 +172,7 @@ class TestGenerateDailyTasksWorkingHours:
     @pytest.mark.asyncio
     async def test_home_mode_generates_tasks_any_day(self):
         """Home mode never applies the working-day gate; tasks are always generated."""
-        home_config = {"environment": "home"}
+        home_config = {"environment_mode": "home"}
         tm = make_task_manager(working_hours=False, config=home_config)
         result = await tm.generate_daily_tasks()
         # Home mode: no day gate -> should proceed to generate (list, possibly empty if no sensors)

@@ -10,13 +10,14 @@ import logging
 import sqlite3
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional, Any
+from .helpers import get_daily_working_hours
 import numpy as np
 import asyncio
 from homeassistant.core import HomeAssistant
-from .const import UPDATE_INTERVAL_SECONDS, RL_EPISODE_RETENTION_DAYS, BASE_TEMPERATURE, WEATHER_ENTITIES
+from .const import ENVIRONMENT_OFFICE, UPDATE_INTERVAL_SECONDS, RL_EPISODE_RETENTION_DAYS, BASE_TEMPERATURE, WEATHER_ENTITIES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -196,6 +197,9 @@ class StorageManager:
                     avg_power_w REAL,
                     peak_power_w REAL,
                     min_power_w REAL,
+
+                    avg_power_working_hours REAL,    -- mean W during within_working_hours=1 readings
+                    avg_power_off_hours REAL,        -- mean W during within_working_hours=0 readings
 
                     -- Occupancy metrics (for normalization)
                     avg_occupancy_count REAL,
@@ -456,7 +460,7 @@ class StorageManager:
             cursor = conn.cursor()
 
             # Calculate cutoff (14 days ago)
-            cutoff = (datetime.now() - timedelta(days=14)).timestamp()
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).timestamp()
 
             # Clean global history
             cursor.execute(
@@ -473,7 +477,7 @@ class StorageManager:
             deleted_area = cursor.rowcount
 
             # Clean old tasks (keep 30 days for historical analysis)
-            cutoff_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
             cursor.execute(
                 "DELETE FROM daily_tasks WHERE date < ?",
                 (cutoff_date,)
@@ -503,7 +507,7 @@ class StorageManager:
             cursor = conn.cursor()
 
             # Calculate cutoff (RL_EPISODE_RETENTION_DAYS ago)
-            cutoff = (datetime.now() - timedelta(days=RL_EPISODE_RETENTION_DAYS)).timestamp()
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=RL_EPISODE_RETENTION_DAYS)).timestamp()
 
             # Clean old RL episodes
             cursor.execute(
@@ -531,14 +535,21 @@ class StorageManager:
         Returns:
             dict:
                 total_savings_kwh (float): Cumulative energy saved across all active-phase days.
-                days_with_data (int): Number of days that had valid avg_power_w data.
-                overall_avg_power_w (float): Mean power across all days with data.
+                days_with_data (int): Number of days that had valid power data.
+                overall_avg_power_w (float): Mean power (working-hours if available) across days.
         """
+        is_office_mode = (self.config_data or {}).get("environment_mode") == ENVIRONMENT_OFFICE
+
+        if is_office_mode:
+            daily_working_hours = get_daily_working_hours(self.config_data)
+        else:
+            daily_working_hours = 24.0
+
         def _query():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT date, avg_power_w, total_energy_kwh
+                SELECT date, avg_power_w, total_energy_kwh, avg_power_working_hours
                 FROM research_daily_aggregates
                 WHERE phase = 'active' AND date >= ?
                 ORDER BY date ASC
@@ -553,14 +564,24 @@ class StorageManager:
         days_with_data = 0
         avg_powers = []
 
-        for _date, avg_power_w, _total_energy in rows:
-            if avg_power_w is None:
+        for _date, avg_power_w, _total_energy, avg_power_working_hours in rows:
+            # Prefer working-hours power when available
+            if is_office_mode and avg_power_working_hours is not None:
+                representative_power = avg_power_working_hours
+                hours_multiplier = daily_working_hours
+            else:
+                representative_power = avg_power_w
+                hours_multiplier = 24.0
+
+            if representative_power is None:
                 continue
+
             days_with_data += 1
-            avg_powers.append(avg_power_w)
-            saving_w = baseline_w - avg_power_w
-            # Each daily aggregate covers a full 24-hour day
-            total_savings_kwh += (saving_w / 1000.0) * 24.0
+            avg_powers.append(representative_power)
+
+            saving_w = baseline_w - representative_power
+
+            total_savings_kwh += (saving_w / 1000.0) * hours_multiplier
 
         overall_avg_power_w = sum(avg_powers) / len(avg_powers) if avg_powers else 0.0
 
@@ -602,12 +623,17 @@ class StorageManager:
                 conn = sqlite3.connect(str(self.db_path))
                 cursor = conn.cursor()
 
+                if timestamp.tzinfo is None:
+                    ts_epoch = timestamp.replace(tzinfo=timezone.utc).timestamp()
+                else:
+                    ts_epoch = timestamp.timestamp()
+
                 cursor.execute("""
                     INSERT INTO sensor_history
                     (timestamp, power, energy, temperature, humidity, illuminance, occupancy, within_working_hours)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    timestamp.timestamp(),
+                    ts_epoch,
                     power,
                     energy,
                     temperature,
@@ -661,12 +687,18 @@ class StorageManager:
                 conn = sqlite3.connect(str(self.db_path))
                 cursor = conn.cursor()
 
+                # Convert to UTC epoch.
+                if timestamp.tzinfo is None:
+                    ts_epoch = timestamp.replace(tzinfo=timezone.utc).timestamp()
+                else:
+                    ts_epoch = timestamp.timestamp()
+
                 cursor.execute("""
                     INSERT INTO area_sensor_history
                     (timestamp, area_name, power, energy, temperature, humidity, illuminance, occupancy, within_working_hours)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    timestamp.timestamp(),
+                    ts_epoch,
                     area_name,
                     power,
                     energy,
@@ -715,10 +747,10 @@ class StorageManager:
             query = f"SELECT timestamp, {metric} FROM sensor_history WHERE {metric} IS NOT NULL"
 
             if hours:
-                cutoff = (datetime.now() - timedelta(hours=hours)).timestamp()
+                cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).timestamp()
                 query += f" AND timestamp >= {cutoff}"
             elif days:
-                cutoff = (datetime.now() - timedelta(days=days)).timestamp()
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).timestamp()
                 query += f" AND timestamp >= {cutoff}"
 
             # Filter by working hours if specified
@@ -772,11 +804,11 @@ class StorageManager:
             params = [area_name]
 
             if hours:
-                cutoff = (datetime.now() - timedelta(hours=hours)).timestamp()
+                cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).timestamp()
                 query += " AND timestamp >= ?"
                 params.append(cutoff)
             elif days:
-                cutoff = (datetime.now() - timedelta(days=days)).timestamp()
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).timestamp()
                 query += " AND timestamp >= ?"
                 params.append(cutoff)
 
@@ -1047,7 +1079,7 @@ class StorageManager:
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
 
-            cutoff = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
             cursor.execute("""
                 SELECT COUNT(*)
                 FROM daily_tasks
@@ -1221,7 +1253,7 @@ class StorageManager:
             cursor = conn.cursor()
 
             # Get recent feedback (last 30 days)
-            cutoff_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
 
             cursor.execute("""
                 SELECT difficulty_level, feedback, COUNT(*) as count
@@ -1376,19 +1408,21 @@ class StorageManager:
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
 
+            now_utc_ts = datetime.now(timezone.utc).timestamp()
+
             # End current phase
             cursor.execute("""
                 UPDATE research_phase_metadata
                 SET end_timestamp = ?
                 WHERE end_timestamp IS NULL
-            """, (datetime.now().timestamp(),))
+            """, (now_utc_ts,))
 
             # Start new phase
             cursor.execute("""
                 INSERT INTO research_phase_metadata
                 (phase, start_timestamp, baseline_consumption_W, baseline_occupancy_avg, notes)
                 VALUES (?, ?, ?, ?, ?)
-            """, (phase, datetime.now().timestamp(), baseline_consumption, baseline_occupancy, notes))
+            """, (phase, now_utc_ts, baseline_consumption, baseline_occupancy, notes))
 
             conn.commit()
             conn.close()
@@ -1416,7 +1450,7 @@ class StorageManager:
                  accepted, gamma_used)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                datetime.now().timestamp(),
+                datetime.now(timezone.utc).timestamp(),
                 episode_data.get('episode'),
                 episode_data.get('phase'),
                 json.dumps(episode_data.get('state_vector', [])),
@@ -1463,7 +1497,7 @@ class StorageManager:
                  behaviour_index, fatigue_index)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                datetime.now().timestamp(),
+                datetime.now(timezone.utc).timestamp(),
                 nudge_data.get('notification_id'),
                 nudge_data.get('phase'),
                 nudge_data.get('action_type'),
@@ -1504,7 +1538,7 @@ class StorageManager:
             response_time = None
             if result:
                 sent_time = result[0]
-                response_time = datetime.now().timestamp() - sent_time
+                response_time = datetime.now(timezone.utc).timestamp() - sent_time
 
             cursor.execute("""
                 UPDATE research_nudge_log
@@ -1513,7 +1547,7 @@ class StorageManager:
                     response_timestamp = ?,
                     response_time_seconds = ?
                 WHERE notification_id = ?
-            """, (1 if accepted else 0, datetime.now().timestamp(),
+            """, (1 if accepted else 0, datetime.now(timezone.utc).timestamp(),
                   response_time, notification_id))
 
             conn.commit()
@@ -1541,7 +1575,7 @@ class StorageManager:
                  available_action_count, action_mask, state_vector, time_of_day_hour)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                datetime.now().timestamp(),
+                datetime.now(timezone.utc).timestamp(),
                 block_data.get('phase'),
                 block_data.get('block_reason'),
                 block_data.get('opportunity_score'),
@@ -1591,7 +1625,7 @@ class StorageManager:
                 task_data.get('target_value'),
                 task_data.get('baseline_value'),
                 task_data.get('area_name'),
-                datetime.now().timestamp(),
+                datetime.now(timezone.utc).timestamp(),
                 task_data.get('power_at_generation'),
                 task_data.get('occupancy_at_generation')
             ))
@@ -1713,11 +1747,13 @@ class StorageManager:
             phase (str, optional): The system phase to associate with the aggregates. If not provided, it will be determined based on the current phase in the research_phase_metadata table.
         """
         if date is None:
-            date = datetime.now().strftime("%Y-%m-%d")
+            date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        # Get all data for the day
-        start_ts = datetime.strptime(date, "%Y-%m-%d").timestamp()
-        end_ts = start_ts + 86400 # Add 24 hours in seconds
+        # Get all data for the day (UTC midnight boundaries).
+        start_ts = datetime(
+            *[int(p) for p in date.split("-")], tzinfo=timezone.utc
+        ).timestamp()
+        end_ts = start_ts + 86400  # Add 24 hours in seconds
 
         outdoor_temp = None
         hdd = None
@@ -1725,7 +1761,7 @@ class StorageManager:
         
         # Build weather entity list: user-configured first, then fallback list
         weather_entities = []
-        configured_weather = self.config_data.get("weather_entity")
+        configured_weather = (self.config_data or {}).get("weather_entity")
         if configured_weather:
             weather_entities.append(configured_weather)
         weather_entities.extend(WEATHER_ENTITIES)
@@ -1745,8 +1781,11 @@ class StorageManager:
                 
                 # 1. Extract Weather Condition (only from weather entities)
                 if weather_condition is None and is_weather_entity:
-                    weather_condition = state_obj.state
-                    _LOGGER.debug("Weather condition from %s: %s", entity_id, weather_condition)
+                    raw_state = state_obj.state
+                    # Only store if state is a real string (guards against mocks / non-str states)
+                    if isinstance(raw_state, str):
+                        weather_condition = raw_state
+                        _LOGGER.debug("Weather condition from %s: %s", entity_id, weather_condition)
 
                 # 2. Extract Outdoor Temperature
                 if outdoor_temp is None:
@@ -1800,6 +1839,18 @@ class StorageManager:
                 WHERE timestamp >= ? AND timestamp < ?
             """, (UPDATE_INTERVAL_SECONDS, start_ts, end_ts))  # UPDATE_INTERVAL_SECONDS per reading
             energy_stats = sensor_cursor.fetchone()
+
+            # Compute per-segment power averages (working hours vs off-hours)
+            sensor_cursor.execute("""
+                SELECT
+                    AVG(CASE WHEN within_working_hours = 1 THEN power END) as avg_wh,
+                    AVG(CASE WHEN within_working_hours = 0 THEN power END) as avg_off
+                FROM sensor_history
+                WHERE timestamp >= ? AND timestamp < ?
+            """, (start_ts, end_ts))
+            wh_row = sensor_cursor.fetchone()
+            avg_power_working_hours = wh_row[0] if wh_row else None
+            avg_power_off_hours = wh_row[1] if wh_row else None
 
             # Count occupancy per reading (could be multiple areas)
             sensor_cursor.execute("""
@@ -1861,18 +1912,31 @@ class StorageManager:
             if not indices_stats or indices_stats[0] is None:
                 indices_stats = (0, 0, 0)
 
+            # Resolve phase from research_phase_metadata if not explicitly provided
+            resolved_phase = phase
+            if resolved_phase is None:
+                research_cursor.execute("""
+                    SELECT phase FROM research_phase_metadata
+                    WHERE end_timestamp IS NULL
+                    ORDER BY start_timestamp DESC LIMIT 1
+                """)
+                phase_row = research_cursor.fetchone()
+                resolved_phase = phase_row[0] if phase_row else "baseline"
+
             # Insert aggregate
             research_cursor.execute("""
                 INSERT OR REPLACE INTO research_daily_aggregates
                 (date, phase, total_energy_kwh, avg_power_w, peak_power_w, min_power_w,
+                 avg_power_working_hours, avg_power_off_hours,
                  avg_temperature, avg_humidity, avg_illuminance,
                  avg_occupancy_count, total_occupied_hours,
                  tasks_generated, tasks_completed, tasks_verified,
                  nudges_sent, nudges_accepted, nudges_dismissed, nudges_ignored, nudges_blocked,
                  avg_anomaly_index, avg_behaviour_index, avg_fatigue_index,
                  outdoor_temp_celsius, hdd_base18, weather_condition)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (date, phase, energy_stats[0], energy_stats[1], energy_stats[2], energy_stats[3],
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (date, resolved_phase, energy_stats[0], energy_stats[1], energy_stats[2], energy_stats[3],
+                   avg_power_working_hours, avg_power_off_hours,
                    energy_stats[4], energy_stats[5], energy_stats[6], avg_occupancy, energy_stats[7],
                    *task_stats, *nudge_stats, blocked_count, *indices_stats,
                    outdoor_temp, hdd, weather_condition))

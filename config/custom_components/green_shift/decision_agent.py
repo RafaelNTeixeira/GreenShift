@@ -32,6 +32,7 @@ from .const import (
     GAMMA,
     MAX_NOTIFICATIONS_PER_DAY,
     MIN_COOLDOWN_MINUTES,
+    CRITICAL_MIN_COOLDOWN_MINUTES,
     HIGH_OPPORTUNITY_THRESHOLD,
     CRITICAL_OPPORTUNITY_THRESHOLD,
     SHADOW_EXPLORATION_RATE,
@@ -107,9 +108,9 @@ class DecisionAgent:
         self.active_since = None # datetime when the system transitioned to PHASE_ACTIVE
 
         # Gamification streaks
-        self.task_streak = 0              # consecutive days with all daily tasks verified
-        self.task_streak_last_date = None # date (date obj) of last successful task-streak credit
-        self.weekly_streak = 0            # consecutive weeks with weekly challenge achieved
+        self.task_streak = 0                # consecutive days with all daily tasks verified
+        self.task_streak_last_date = None   # date (date obj) of last successful task-streak credit
+        self.weekly_streak = 0              # consecutive weeks with weekly challenge achieved
         self.weekly_streak_last_week = None # week_key (ISO str) of last successful weekly-streak credit
 
     async def setup(self):
@@ -339,12 +340,12 @@ class DecisionAgent:
     # Gamification streak helpers
     # ------------------------------------------------------------------
 
-    def update_task_streak(self, all_tasks_verified: bool, check_date=None) -> None:
+    def update_task_streak(self, any_task_verified: bool, check_date=None) -> None:
         """
         Update the daily task streak.
 
         Args:
-            all_tasks_verified: Whether all tasks for the day were verified successfully.
+            any_task_verified: Whether any task for the day was verified successfully.
             check_date: Optional date to check (for testing); if None, uses today's date.
 
         Consecutive-day logic (only SUCCESS dates advance the pointer):
@@ -356,7 +357,7 @@ class DecisionAgent:
         from datetime import date as _date_cls, timedelta as _td
         today = check_date if isinstance(check_date, _date_cls) else datetime.now().date()
 
-        if all_tasks_verified:
+        if any_task_verified:
             if self.task_streak_last_date is None:
                 self.task_streak = 1
             elif (today - self.task_streak_last_date).days == 0:
@@ -1683,10 +1684,13 @@ class DecisionAgent:
         """
         Converts continuous state vector to discrete tuple for Q-table.
 
-        State Space: ~19.392 possible states (101x4x3x2x4x2)
+        State Space: ~960 possible states (5x4x3x2x4x2)
 
         State components:
-        - power_bin: Power consumption in 100W bins (adaptive, 0-100)
+        - power_level: 0=standby(<5% baseline), 1=low(5-50%), 2=medium(50-150%),
+                       3=high(150-300%), 4=peak(>300% baseline)
+          The thresholds are relative to baseline_consumption so that level 2 always
+          represents the building's *normal* operating range, regardless of size.
         - anomaly_level: 0=none(<0.25), 1=low(0.25-0.5), 2=medium(0.5-0.75), 3=high(>0.75)
         - fatigue_level: 0=low(<0.33), 1=medium(0.33-0.66), 2=high(>0.66)
         - has_area_anomaly: 0=no area anomalies, 1=area anomalies present
@@ -1699,9 +1703,20 @@ class DecisionAgent:
         if self.state_vector is None or len(self.state_vector) < 18:
             return (0, 0, 0, 0, 0, 0)
 
-        # Power in 100W bins
-        power = int(self.state_vector[0] / 100)
-        power_bin = min(power, 100) # Cap at 10000W for table size
+        # Power level: 5 categories relative to baseline_consumption.
+        power = self.state_vector[0]
+        ref = self.baseline_consumption if self.baseline_consumption and self.baseline_consumption > 0 else 1000.0
+        ratio = power / ref
+        if ratio < 0.05:       # essentially standby / everything off
+            power_bin = 0
+        elif ratio < 0.50:     # well below normal load
+            power_bin = 1
+        elif ratio < 1.50:     # normal operating range (+50% of baseline)
+            power_bin = 2
+        elif ratio < 3.00:     # significantly above baseline
+            power_bin = 3
+        else:                  # extreme peak (e.g. all appliances on simultaneously)
+            power_bin = 4
 
         # Anomaly level
         if self.anomaly_index < 0.25: anomaly_level = 0  # None
@@ -1835,11 +1850,20 @@ class DecisionAgent:
 
         # Allow bypass if opportunity is exceptional
         if opportunity_score >= CRITICAL_OPPORTUNITY_THRESHOLD:
-            # Critical opportunity - immediate notification allowed
-            _LOGGER.info("Critical opportunity (%.2f) - bypassing cooldown (%.1f min since last)",
-                opportunity_score, time_since_last
-            )
-            return True
+            # Critical opportunity - bypass adaptive cooldown, but respect absolute minimum
+            # (prevents spam when a sustained anomaly keeps the score above 0.8)
+            if time_since_last >= CRITICAL_MIN_COOLDOWN_MINUTES:
+                _LOGGER.info(
+                    "Critical opportunity (%.2f) - absolute cooldown met (%.1f/%.1f min)",
+                    opportunity_score, time_since_last, CRITICAL_MIN_COOLDOWN_MINUTES
+                )
+                return True
+            else:
+                _LOGGER.debug(
+                    "Critical opportunity but absolute min cooldown not met: %.1f/%.1f min",
+                    time_since_last, CRITICAL_MIN_COOLDOWN_MINUTES
+                )
+                return False
         elif opportunity_score >= HIGH_OPPORTUNITY_THRESHOLD:
             # High opportunity - reduced cooldown (50% of adaptive)
             required_cooldown = adaptive_cooldown * 0.5
@@ -1945,11 +1969,64 @@ class DecisionAgent:
         days_since_monday = today.weekday()  # 0 = Monday, 6 = Sunday
         current_week_monday = today - timedelta(days=days_since_monday)
 
-        # Check if we need to initialize or if we've moved to a new week
+        # In office mode, only compare working hours to baseline (which was also working hours only)
+        is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+        working_hours_filter = True if is_office_mode else None
+
+        # If we have a week start date from a previous week, check whether that week ended without being logged
+        # If so, log it now before resetting to the current Monday
+        if self.current_week_start_date is not None and self.current_week_start_date < current_week_monday:
+            days_in_old_week = (today - self.current_week_start_date).days + 1
+            if days_in_old_week >= 7:
+                old_week_key = self.current_week_start_date.isoformat()
+                if old_week_key not in self._logged_weeks and self.storage:
+                    _LOGGER.info("Detected unlogged completed week (%s). Logging now before transitioning.", old_week_key)
+                    old_week_start_dt = datetime.combine(self.current_week_start_date, datetime.min.time())
+                    old_week_end_dt = old_week_start_dt + timedelta(days=7)
+
+                    old_hours = max(1, int((datetime.now() - old_week_start_dt).total_seconds() / 3600))
+
+                    old_power_data = await self.data_collector.get_power_history(
+                        hours=old_hours,
+                        working_hours_only=working_hours_filter
+                    )
+
+                    old_power_values = [
+                        p for ts, p in old_power_data 
+                        if ts < old_week_end_dt
+                    ]
+
+                    if old_power_values:
+                        old_avg = float(np.mean(old_power_values))
+                        reduction_multiplier_old = 1.0 - (target_percentage / 100.0)
+                        old_target = self.baseline_consumption * reduction_multiplier_old
+                        old_success = old_avg < old_target
+                        old_savings_pct = (
+                            (self.baseline_consumption - old_avg) / self.baseline_consumption * 100
+                        ) if self.baseline_consumption > 0 else 0.0
+                        
+                        await self.storage.log_weekly_challenge(challenge_data={
+                            'week_start_date': self.current_week_start_date.isoformat(),
+                            'week_end_date': (self.current_week_start_date + timedelta(days=6)).isoformat(),
+                            'phase': PHASE_ACTIVE,
+                            'target_percentage': target_percentage,
+                            'baseline_W': self.baseline_consumption,
+                            'actual_W': old_avg,
+                            'savings_W': self.baseline_consumption - old_avg,
+                            'savings_percentage': old_savings_pct,
+                            'achieved': old_success,
+                        })
+                        self._logged_weeks.add(old_week_key)
+                        self.update_weekly_streak(old_success, old_week_key)
+                        _LOGGER.info(
+                            "Logged missed weekly challenge: week=%s, success=%s, savings=%.1f%%",
+                            old_week_key, old_success, old_savings_pct
+                        )
+
+        # Now initialize or advance to the current Monday
         if self.current_week_start_date is None or self.current_week_start_date != current_week_monday:
             self.current_week_start_date = current_week_monday
             _LOGGER.info("Weekly challenge start date set to: %s", self.current_week_start_date)
-            # Save immediately when week date changes
             if self.storage:
                 await self._save_persistent_state()
 
@@ -1959,11 +2036,6 @@ class DecisionAgent:
         week_start_datetime = datetime.combine(self.current_week_start_date, datetime.min.time())
         hours_since_week_start = max(1, int((now - week_start_datetime).total_seconds() / 3600))
         days_in_current_week = (today - self.current_week_start_date).days + 1  # +1 to include today
-
-        # Get power history from the start of the current week
-        # In office mode, only compare working hours to baseline (which was also working hours only)
-        is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
-        working_hours_filter = True if is_office_mode else None
 
         power_history_data = await self.data_collector.get_power_history(
             hours=hours_since_week_start,
@@ -1984,12 +2056,9 @@ class DecisionAgent:
 
         # Get current week's average (updates dynamically as the week progresses)
         current_avg = np.mean(power_values) if power_values else 0
-
         self.target_percentage = target_percentage
-
         # Convert percentage (e.g., 15) to multiplier (e.g., 0.85)
         reduction_multiplier = 1.0 - (target_percentage / 100.0)
-
         # Calculate target average based on fixed baseline
         target_avg = self.baseline_consumption * reduction_multiplier
 
@@ -2002,33 +2071,6 @@ class DecisionAgent:
         # "on_track"  = currently consuming below target (winning the challenge mid-week)
         # "off_track" = currently consuming above target
         status = "on_track" if progress < 100 else "off_track"
-
-        if today.weekday() == 6 and days_in_current_week >= 7: # Sunday and full week complete
-            # Check if we've already logged this week
-            week_key = self.current_week_start_date.isoformat()
-
-            if week_key not in self._logged_weeks and self.storage:
-                success = progress < 100
-                # savings_pct: actual percentage saved (positive = saving, negative = over-consuming)
-                savings_pct = ((self.baseline_consumption - current_avg) / self.baseline_consumption * 100) if self.baseline_consumption > 0 else 0.0
-
-                challenge_payload = {
-                    'week_start_date': self.current_week_start_date.isoformat(),
-                    'week_end_date': today.isoformat(),
-                    'phase': PHASE_ACTIVE,
-                    'target_percentage': target_percentage,
-                    'baseline_W': self.baseline_consumption,
-                    'actual_W': current_avg,
-                    'savings_W': self.baseline_consumption - current_avg,
-                    'savings_percentage': savings_pct,
-                    'achieved': success
-                }
-
-                await self.storage.log_weekly_challenge(challenge_data=challenge_payload)
-
-                self._logged_weeks.add(week_key)
-                self.update_weekly_streak(success, week_key)
-                _LOGGER.info("Logged weekly challenge: week=%s, success=%s, savings=%.1f%%", week_key, success, savings_pct)
 
         return {
             "status": status,

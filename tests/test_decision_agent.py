@@ -1,13 +1,14 @@
-"""
-Tests for decision_agent.py
+"""Tests for decision_agent.py
 
-Covers (pure logic only – no HA event loop required):
-- _discretize_state       : power bins, anomaly/fatigue/time levels, edge cases
+Covers (pure logic only - no HA event loop required):
+- _discretize_state       : baseline-relative power categories (5 levels), anomaly/fatigue/time levels, edge cases
 - _update_fatigue_index   : count-based last-10 window, rejection rate, silence_penalty,
                             frequency_factor, time decay, edge cases (no streak penalty)
 - _update_behaviour_index : EMA update, empty history guard
-- _check_cooldown_with_opportunity: first call, critical bypass, high-opp reduced cooldown, standard cooldown
-- get_weekly_challenge_status : on_track vs off_track, pending on insufficient data
+- _check_cooldown_with_opportunity: first call, critical bypass respects CRITICAL_MIN_COOLDOWN_MINUTES,
+                            high-opp reduced cooldown, standard cooldown
+- get_weekly_challenge_status : on_track vs off_track, pending on insufficient data, week closes
+                            on any day (not just Sunday)
 - Baseline phase -> active phase: phase attribute flips after 14 days (logic unit)
 - Notification count reset across days
 """
@@ -113,6 +114,15 @@ def _make_state_vector(power=500.0, time_of_day=0.3, occupancy=1):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestDiscreteState:
+    """_discretize_state: baseline-relative 5-category power bins.
+
+    Ref (baseline_consumption=0 -> fallback 1000 W):
+      0 = standby  : power < 5%  of ref  (< 50 W)
+      1 = low      : 5-50%  of ref  (50-500 W)
+      2 = medium   : 50-150% of ref (500-1500 W)  <- normal operating range
+      3 = high     : 150-300% of ref (1500-3000 W)
+      4 = peak     : > 300% of ref  (> 3000 W)
+    """
 
     def test_none_state_vector_returns_zero_tuple(self):
         agent = make_agent()
@@ -124,21 +134,62 @@ class TestDiscreteState:
         agent.state_vector = [0.0] * 5
         assert agent._discretize_state() == (0, 0, 0, 0, 0, 0)
 
-    def test_power_bin_500w(self):
+    def test_power_standby(self):
+        """10 W -> < 5% of 1000 W fallback baseline -> level 0."""
         agent = make_agent()
-        agent.state_vector = _make_state_vector(power=500)
+        agent.state_vector = _make_state_vector(power=10.0)
         agent.anomaly_index = 0.0
         agent.fatigue_index = 0.0
-        result = agent._discretize_state()
-        assert result[0] == 5  # 500 // 100 = 5
+        assert agent._discretize_state()[0] == 0
 
-    def test_power_bin_capped_at_100(self):
+    def test_power_low(self):
+        """250 W -> 25% of 1000 W -> level 1."""
         agent = make_agent()
-        agent.state_vector = _make_state_vector(power=25000)
+        agent.state_vector = _make_state_vector(power=250.0)
         agent.anomaly_index = 0.0
         agent.fatigue_index = 0.0
-        result = agent._discretize_state()
-        assert result[0] == 100
+        assert agent._discretize_state()[0] == 1
+
+    def test_power_medium_at_baseline(self):
+        """1000 W == baseline (ratio 1.0) -> level 2 (50–150%)."""
+        agent = make_agent()
+        agent.state_vector = _make_state_vector(power=1000.0)
+        agent.anomaly_index = 0.0
+        agent.fatigue_index = 0.0
+        assert agent._discretize_state()[0] == 2
+
+    def test_power_medium_uses_actual_baseline(self):
+        """When baseline_consumption is explicitly set, thresholds shift with it."""
+        agent = make_agent()
+        agent.baseline_consumption = 2000.0  # 2 kW building baseline
+        agent.state_vector = _make_state_vector(power=2000.0)  # exactly at baseline -> medium
+        agent.anomaly_index = 0.0
+        agent.fatigue_index = 0.0
+        assert agent._discretize_state()[0] == 2
+
+    def test_power_high(self):
+        """2000 W -> 200% of 1000 W fallback -> level 3."""
+        agent = make_agent()
+        agent.state_vector = _make_state_vector(power=2000.0)
+        agent.anomaly_index = 0.0
+        agent.fatigue_index = 0.0
+        assert agent._discretize_state()[0] == 3
+
+    def test_power_peak(self):
+        """5000 W -> 500% of 1000 W fallback -> level 4."""
+        agent = make_agent()
+        agent.state_vector = _make_state_vector(power=5000.0)
+        agent.anomaly_index = 0.0
+        agent.fatigue_index = 0.0
+        assert agent._discretize_state()[0] == 4
+
+    def test_power_bin_boundary_low_to_medium(self):
+        """500W is exactly at the 50% boundary -> should be level 2 (medium)."""
+        agent = make_agent()
+        agent.state_vector = _make_state_vector(power=500.0)
+        agent.anomaly_index = 0.0
+        agent.fatigue_index = 0.0
+        assert agent._discretize_state()[0] == 2
 
     @pytest.mark.parametrize("anomaly,expected_level", [
         (0.0,  0),  # none
@@ -489,11 +540,22 @@ class TestCheckCooldown:
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_critical_opportunity_bypasses_cooldown(self):
+    async def test_critical_opportunity_respects_absolute_cooldown(self):
+        """Critical score (>=0.8) still requires CRITICAL_MIN_COOLDOWN_MINUTES (5 min)."""
         agent = make_agent()
+        # Only 1 minute since last notification: still within the absolute minimum
         agent.last_notification_time = datetime.now() - timedelta(minutes=1)
         agent.fatigue_index = 0.0
-        # Critical threshold is 0.8
+        result = await agent._check_cooldown_with_opportunity(0.85)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_critical_opportunity_after_absolute_cooldown(self):
+        """Critical score passes once CRITICAL_MIN_COOLDOWN_MINUTES have elapsed."""
+        agent = make_agent()
+        # 6 minutes since last notification — past the 5-min absolute minimum
+        agent.last_notification_time = datetime.now() - timedelta(minutes=6)
+        agent.fatigue_index = 0.0
         result = await agent._check_cooldown_with_opportunity(0.85)
         assert result is True
 
@@ -616,6 +678,43 @@ class TestWeeklyChallenge:
         assert "progress" in status
         assert "current_avg" in status
         assert "target_avg" in status
+
+    @pytest.mark.asyncio
+    async def test_week_closes_on_monday_after_missed_sunday(self):
+        """
+        If HA was offline on Sunday the weekly challenge must still be logged
+        on the next call (which might be Monday or later), not silently skipped.
+        """
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.storage = AsyncMock()
+        agent.storage.log_weekly_challenge = AsyncMock()
+
+        # Force the week start to 8 days ago (Monday) so days_in_current_week >= 7 even when today is Monday (weekday == 0), simulating a missed Sunday check.
+        from datetime import date, datetime, timedelta as td
+        past_monday = date.today() - td(days=8)
+        agent.current_week_start_date = past_monday
+
+        readings_per_hour = int(3600 / 15)
+        
+        # Data belonging to the missed week (e.g., 3 days after past_monday)
+        old_week_dt = datetime.combine(past_monday + td(days=3), datetime.min.time())
+        data_old = [(old_week_dt + td(seconds=i*15), 800.0) for i in range(readings_per_hour)]
+        
+        # Data belonging to the current live week (e.g., 1 hour ago)
+        current_dt = datetime.now() - td(hours=1)
+        data_current = [(current_dt + td(seconds=i*15), 800.0) for i in range(readings_per_hour)]
+        
+        # Mock the collector to return both sets of data
+        agent.data_collector.get_power_history = AsyncMock(return_value=data_old + data_current)
+
+        status = await agent.get_weekly_challenge_status(target_percentage=15.0)
+
+        # Challenge should be logged exactly once
+        agent.storage.log_weekly_challenge.assert_called_once()
+
+        # Status must be a real result, not pending
+        assert status["status"] in ("on_track", "off_track")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -990,7 +1089,7 @@ class TestStreaks:
         agent = self._agent()
         agent.update_task_streak(True, self._day(0))   # Mon
         # Tue missing
-        agent.update_task_streak(True, self._day(2))   # Wed → gap → reset to 1
+        agent.update_task_streak(True, self._day(2))   # Wed -> gap -> reset to 1
         assert agent.task_streak == 1
         assert agent.task_streak_last_date == self._day(2)
 
@@ -1036,7 +1135,7 @@ class TestStreaks:
         assert agent.task_streak_last_date == self._day(0)  # not day 1
 
     def test_task_streak_after_failure_gap_to_next_success_resets(self):
-        """day0 success → day1 failure → day3 success: streak = 1 (gap was > 1)."""
+        """day0 success -> day1 failure -> day3 success: streak = 1 (gap was > 1)."""
         agent = self._agent()
         agent.update_task_streak(True, self._day(0))
         agent.update_task_streak(False, self._day(1))

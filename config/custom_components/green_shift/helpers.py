@@ -7,7 +7,7 @@ These helpers are used throughout the component to maintain consistency and simp
 
 
 from typing import Tuple, Optional, Dict, List
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar, entity_registry as er, device_registry as dr
 from .const import CO2_FACTOR, ENVIRONMENT_HOME, ENVIRONMENT_OFFICE
@@ -292,3 +292,30 @@ def should_ai_be_active(config_data: Dict, check_time: datetime = None) -> bool:
         bool: True if AI should be active (generate tasks/notifications). False if AI should be paused
     """
     return is_within_working_hours(config_data, check_time)
+
+def get_daily_working_hours(config_data: dict) -> float:
+    """
+    Calculate the duration of a single working day in hours based on config.
+    
+    Args:
+        config_data (dict): Configuration data containing working hours
+        
+    Returns:
+        float: Number of hours in a working day (e.g., 10.0 for 08:00-18:00)
+    """
+    start_str = config_data.get("working_start", "08:00")
+    end_str = config_data.get("working_end", "18:00")
+
+    try:
+        start_h, start_m = map(int, start_str.split(':'))
+        end_h, end_m = map(int, end_str.split(':'))
+        
+        duration = (end_h + end_m / 60.0) - (start_h + start_m / 60.0)
+        
+        # Handle cases where shift crosses midnight (negative duration)
+        if duration < 0:
+            duration += 24.0
+            
+        return duration if duration > 0 else 24.0
+    except (ValueError, AttributeError):
+        return 10.0  # Default fallback for 08:00-18:00

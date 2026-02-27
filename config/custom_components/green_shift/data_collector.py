@@ -152,6 +152,16 @@ class DataCollector:
                 value, _ = get_normalized_value(new_state, "power")
 
                 if value is None:
+                    # Sensor is unavailable/unknown: treat as zero load so we don't keep stale high readings in the cache indefinitely.
+                    # If the sensor later recovers its state will be updated.
+                    if new_state.state in ("unavailable", "unknown"):
+                        self._power_sensor_cache[entity_id] = 0.0
+                        _LOGGER.debug(
+                            "Power sensor %s is %s — zeroing cache entry and recalculating total",
+                            entity_id, new_state.state
+                        )
+                        self._recalculate_total_power()
+                        async_dispatcher_send(self.hass, GS_UPDATE_SIGNAL)
                     return
 
                 self._power_sensor_cache[entity_id] = value
