@@ -921,7 +921,15 @@ class StorageManager:
 
         Returns:
             list: List of the most recent values for the specified metric, ordered from oldest to newest.
+
+        Raises:
+            ValueError: If metric is not in the whitelist of valid column names.
         """
+        if metric not in VALID_METRICS:
+            raise ValueError(
+                f"Invalid metric: {metric!r}. Must be one of {sorted(VALID_METRICS)}"
+            )
+
         def _query():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()

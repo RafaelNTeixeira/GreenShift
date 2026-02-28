@@ -86,7 +86,6 @@ AREA_BASED_SENSORS = ["power", "energy", "temperature", "humidity", "illuminance
 
 # RL Action Spaces
 ACTIONS = {
-    "noop": 0,        # Do nothing (forced when fatigue is high or no actions available)
     "specific": 1,
     "anomaly": 2,
     "behavioural": 3,

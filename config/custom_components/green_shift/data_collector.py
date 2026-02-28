@@ -805,9 +805,9 @@ class DataCollector:
             _LOGGER.info("Office mode detected - baseline calculations will use working hours data only")
 
         # Avg Daily Usage (kWh)
-        # Energy is accumulated daily (resets at midnight), so we take the max per day
-        # and then average across days to get the true daily consumption.
-        energy_history = await self.get_energy_history(days=14, working_hours_only=working_hours_filter)
+        # Energy is accumulated daily (resets at midnight), so we take the max per day and then average across days to get the true daily consumption.
+        # Even in office mode we want to capture the full daily energy usage (non-working hours included).
+        energy_history = await self.get_energy_history(days=14, working_hours_only=None)
         if energy_history:
             daily_max = {}
             for ts, val in energy_history:

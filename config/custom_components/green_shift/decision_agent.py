@@ -49,7 +49,7 @@ class DecisionAgent:
     """
     AI Decision agent based on MDP: ⟨S, A, M, P, R, γ⟩:
     - S: State vector with area-based sensor readings and indices
-    - A: Action space (noop, specific, anomaly, behavioural, normative)
+    - A: Action space (specific, anomaly, behavioural, normative)
     - M: Action mask based on sensor availability and context
     - P: Transition probabilities (implicit in state updates)
     - R: Reward function based on energy savings and user engagement
@@ -440,7 +440,8 @@ class DecisionAgent:
         elif self.phase == PHASE_BASELINE:
             # Shadow learning: simulate decisions without executing actions
             # Runs at reduced frequency to avoid excessive Q-table noise
-            if self._process_count % SHADOW_INTERVAL_MULTIPLIER == 0:
+            # Guard: skip the very first call (process_count==0) when the state vector is unpopulated
+            if self._process_count > 0 and self._process_count % SHADOW_INTERVAL_MULTIPLIER == 0:
                 await self._shadow_decide_action()
 
         self._process_count += 1
@@ -624,7 +625,7 @@ class DecisionAgent:
         # Get current state
         state_key = self._discretize_state()
 
-        # Available actions based on mask (all non-noop actions)
+        # Available actions based on mask
         available_actions = [a for a, available in self.action_mask.items() if available]
 
         if not available_actions:
