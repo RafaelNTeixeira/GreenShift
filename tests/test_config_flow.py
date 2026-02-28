@@ -6,8 +6,7 @@ Covers:
 - Environment mode branching (home vs office)
 - Sensor discovery and sorting
 - Area assignment
-- Input validation
-"""
+- Input validation"""
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 import sys
@@ -36,6 +35,8 @@ vol_mock.Schema = lambda x: x
 vol_mock.Required = lambda key, **kwargs: key
 vol_mock.Optional = lambda key, **kwargs: key
 vol_mock.Coerce = lambda x: x
+vol_mock.All = lambda *args: args[-1]   # pass-through: returns last validator
+vol_mock.Range = lambda **kwargs: None  # no-op range in test context
 
 # Mock selector classes
 selector_mock = sys.modules["homeassistant.helpers.selector"]
@@ -212,6 +213,55 @@ class TestAsyncStepSettings:
         assert config_flow.data["currency"] == "GBP"
         assert config_flow.data["electricity_price"] == 0.28
 
+    # ---- electricity_price must be >= 0 ----
+    async def test_negative_electricity_price_returns_error(self, config_flow):
+        """A negative price must re-show the settings form with an error."""
+        user_input = {
+            "currency": "EUR",
+            "electricity_price": -0.10,
+            "environment_mode": "home",
+        }
+
+        result = await config_flow.async_step_settings(user_input)
+
+        assert result["type"] == "form", "Negative price must re-show the settings form"
+        assert result["step_id"] == "settings"
+        assert "electricity_price" in result.get("errors", {}), (
+            "Expected 'electricity_price' error for negative price"
+        )
+
+    async def test_negative_price_does_not_update_flow_data(self, config_flow):
+        """A negative price must not be persisted to flow data."""
+        config_flow.data = {}
+        await config_flow.async_step_settings({
+            "currency": "EUR",
+            "electricity_price": -1.0,
+            "environment_mode": "home",
+        })
+        assert "electricity_price" not in config_flow.data
+
+    async def test_zero_electricity_price_is_accepted(self, config_flow):
+        """Price of 0.0 is a valid edge case and must proceed normally."""
+        await config_flow.async_step_settings({
+            "currency": "EUR",
+            "electricity_price": 0.0,
+            "environment_mode": "home",
+        })
+        # If 0.0 was accepted, the flow data must have been updated.
+        # (Rejected inputs leave data untouched and re-show the form.)
+        assert config_flow.data.get("electricity_price") == 0.0, (
+            "electricity_price=0.0 should be accepted and persisted to flow data"
+        )
+
+    async def test_positive_electricity_price_is_accepted(self, config_flow):
+        """A valid positive price must proceed to the next step."""
+        result = await config_flow.async_step_settings({
+            "currency": "EUR",
+            "electricity_price": 0.25,
+            "environment_mode": "home",
+        })
+        assert result["step_id"] != "settings"
+
 
 # ============================================================================
 # Step 2.5: Working Hours (Office Mode Only)
@@ -267,6 +317,90 @@ class TestAsyncStepWorkingHours:
 
         assert result["type"] == "form"
         assert result["step_id"] == "sensor_confirmation"
+
+    # ── Bug fix #4: working hours time format validation ──────────────────
+
+    async def test_invalid_working_start_format_returns_error(self, config_flow):
+        """'8am' and other non-HH:MM strings must produce a form error, not proceed."""
+        user_input = {
+            "working_start": "8am",
+            "working_end": "18:00",
+            "working_monday": True,
+            "working_tuesday": True,
+            "working_wednesday": True,
+            "working_thursday": True,
+            "working_friday": True,
+            "working_saturday": False,
+            "working_sunday": False,
+        }
+
+        result = await config_flow.async_step_working_hours(user_input)
+
+        assert result["type"] == "form", "Invalid time format must re-show the form"
+        assert result["step_id"] == "working_hours"
+        assert "working_start" in result.get("errors", {}), (
+            "Expected 'working_start' error for non-HH:MM input '8am'"
+        )
+
+    async def test_invalid_working_end_format_returns_error(self, config_flow):
+        """'6pm' must produce a form error for working_end."""
+        user_input = {
+            "working_start": "08:00",
+            "working_end": "6pm",
+            "working_monday": True,
+            "working_tuesday": True,
+            "working_wednesday": True,
+            "working_thursday": True,
+            "working_friday": True,
+            "working_saturday": False,
+            "working_sunday": False,
+        }
+
+        result = await config_flow.async_step_working_hours(user_input)
+
+        assert result["type"] == "form"
+        assert "working_end" in result.get("errors", {})
+
+    async def test_valid_hhmm_format_is_accepted(self, config_flow):
+        """HH:MM format must be accepted without errors."""
+        for start, end in [("08:00", "18:00"), ("00:00", "23:59"), ("09:30", "17:45")]:
+            result = await config_flow.async_step_working_hours({
+                "working_start": start,
+                "working_end": end,
+                "working_monday": True,
+                "working_tuesday": False,
+                "working_wednesday": False,
+                "working_thursday": False,
+                "working_friday": False,
+                "working_saturday": False,
+                "working_sunday": False,
+            })
+            # HA async_show_form returns errors=None when none are set;
+            # a truthy errors dict means real validation errors exist.
+            assert not result.get("errors"), (
+                f"HH:MM values '{start}'/'{end}' must not produce errors, got: {result.get('errors')}"
+            )
+
+    async def test_invalid_time_does_not_update_flow_data(self, config_flow):
+        """When time format is invalid, flow data must not be updated."""
+        config_flow.data = {}
+        user_input = {
+            "working_start": "not-a-time",
+            "working_end": "18:00",
+            "working_monday": True,
+            "working_tuesday": True,
+            "working_wednesday": True,
+            "working_thursday": True,
+            "working_friday": True,
+            "working_saturday": False,
+            "working_sunday": False,
+        }
+
+        await config_flow.async_step_working_hours(user_input)
+
+        assert "working_start" not in config_flow.data, (
+            "Invalid working_start must not be persisted to flow data"
+        )
 
 
 # ============================================================================

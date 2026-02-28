@@ -21,6 +21,9 @@ from .const import ENVIRONMENT_OFFICE, UPDATE_INTERVAL_SECONDS, RL_EPISODE_RETEN
 
 _LOGGER = logging.getLogger(__name__)
 
+# Whitelist of valid metric column names used in dynamic SQL queries.
+VALID_METRICS = {"power", "energy", "temperature", "humidity", "illuminance", "occupancy"}
+
 
 class StorageManager:
     """Manages SQLite and JSON storage for Green Shift."""
@@ -534,7 +537,7 @@ class StorageManager:
 
         Returns:
             dict:
-                total_savings_kwh (float): Cumulative energy saved across all active-phase days.
+                total_savings_kwh (float): Cumulative energy saved across all active-phase days. Can be negative if consumption increased.
                 days_with_data (int): Number of days that had valid power data.
                 overall_avg_power_w (float): Mean power (working-hours if available) across days.
         """
@@ -739,7 +742,15 @@ class StorageManager:
 
         Returns:
             list: List of (timestamp, value) tuples
+
+        Raises:
+            ValueError: If metric is not in the whitelist of valid column names.
         """
+        if metric not in VALID_METRICS:
+            raise ValueError(
+                f"Invalid metric: {metric!r}. Must be one of {sorted(VALID_METRICS)}"
+            )
+
         def _query():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -790,7 +801,15 @@ class StorageManager:
 
         Returns:
             list: List of (timestamp, value) tuples
+
+        Raises:
+            ValueError: If metric is not in the whitelist of valid column names.
         """
+        if metric not in VALID_METRICS:
+            raise ValueError(
+                f"Invalid metric: {metric!r}. Must be one of {sorted(VALID_METRICS)}"
+            )
+
         def _query():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -1135,9 +1154,10 @@ class StorageManager:
 
             cursor.execute("""
                 UPDATE daily_tasks
-                SET verified = ?
+                SET verified = ?,
+                    completed = ?
                 WHERE task_id = ?
-            """, (1 if verified else 0, task_id))
+            """, (1 if verified else 0, 1 if verified else 0, task_id))
 
             success = cursor.rowcount > 0
             conn.commit()
@@ -1959,10 +1979,12 @@ class StorageManager:
             phase (str, optional): The system phase to associate with the aggregates. If not provided, it will be determined based on the current phase in the research_phase_metadata table.
         """
         if date is None:
-            date = datetime.now().strftime("%Y-%m-%d")
+            date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         # Get all data for the day
-        start_ts = datetime.strptime(date, "%Y-%m-%d").timestamp()
+        start_ts = datetime(
+            *[int(p) for p in date.split("-")], tzinfo=timezone.utc
+        ).timestamp()
         end_ts = start_ts + 86400
 
         def _compute():

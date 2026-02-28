@@ -582,8 +582,8 @@ async def async_setup_services(hass: HomeAssistant):
         # Basic stats
         total_states = len(agent.q_table)
         _LOGGER.info(f"Total states in Q-table: {total_states}")
-        _LOGGER.info(f"Theoretical max states: 101*4*3*2*4*2 = 19,392")
-        _LOGGER.info(f"State space usage: {total_states/19392*100:.2f}%")
+        _LOGGER.info(f"Theoretical max states: 5*4*3*2*4*2 = 960")
+        _LOGGER.info(f"State space usage: {total_states/960*100:.2f}%")
 
         # Current state
         current_state_key = agent._discretize_state()

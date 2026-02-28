@@ -6,6 +6,7 @@ The flow is designed to be user-friendly and flexible, allowing users to skip op
 """
 
 import logging
+import re
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
@@ -74,14 +75,23 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            self.data.update(user_input)
+            # Validate electricity price: must be non-negative.
+            try:
+                price = float(user_input.get("electricity_price", 0))
+                if price < 0:
+                    errors["electricity_price"] = "negative_price"
+            except (ValueError, TypeError):
+                errors["electricity_price"] = "invalid_price"
 
-            # If office mode selected, proceed to working hours configuration
-            if user_input.get("environment_mode") == ENVIRONMENT_OFFICE:
-                return await self.async_step_working_hours()
+            if not errors:
+                self.data.update(user_input)
 
-            # If home mode, skip working hours and proceed
-            return await self.async_step_sensor_confirmation()
+                # If office mode selected, proceed to working hours configuration
+                if user_input.get("environment_mode") == ENVIRONMENT_OFFICE:
+                    return await self.async_step_working_hours()
+
+                # If home mode, skip working hours and proceed
+                return await self.async_step_sensor_confirmation()
 
         data_schema = vol.Schema({
             # Currency selection with default and dropdown options
@@ -92,8 +102,8 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     translation_key="currency"
                 )
             ),
-            # Electricity price input with default and validation
-            vol.Required("electricity_price", default=0.25): vol.Coerce(float),
+            # Electricity price input; validated non-negative at step level.
+            vol.Required("electricity_price", default=0.25): vol.All(vol.Coerce(float), vol.Range(min=0)),
             # Environment mode selection with default and dropdown options
             vol.Required("environment_mode", default=ENVIRONMENT_HOME): SelectSelector(
                 SelectSelectorConfig(
@@ -121,8 +131,15 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            self.data.update(user_input)
-            return await self.async_step_sensor_confirmation()
+            # Validate time format: must match HH:MM (e.g. "08:00").
+            _TIME_RE = re.compile(r'^\d{2}:\d{2}$')
+            for field in ("working_start", "working_end"):
+                if not _TIME_RE.match(str(user_input.get(field, ""))):
+                    errors[field] = "invalid_time_format"
+
+            if not errors:
+                self.data.update(user_input)
+                return await self.async_step_sensor_confirmation()
 
         # Convert default working days to checkboxes format
         default_mon = 0 in DEFAULT_WORKING_DAYS

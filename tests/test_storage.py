@@ -14,8 +14,7 @@ Covers:
 - Data cleanup: old temporal data removal
 - RL episode cleanup: retention policy enforcement
 - compute_daily_aggregates: avg_power_working_hours / avg_power_off_hours columns
-- get_active_phase_savings: prefers working-hours representative power
-"""
+- get_active_phase_savings: prefers working-hours representative power"""
 import pytest
 import sys
 import types
@@ -372,6 +371,114 @@ class TestGetAreaHistory:
         )
         assert len(result) == 1
         assert result[0][1] == 100.0
+
+
+class TestMetricWhitelist:
+    """get_history and get_area_history must reject unknown metric names."""
+
+    @pytest.mark.asyncio
+    async def test_get_history_raises_for_invalid_metric(self, storage):
+        """An unknown metric name must raise ValueError before any DB query."""
+        with pytest.raises(ValueError, match="Invalid metric"):
+            await storage.get_history("nonexistent_column", hours=1)
+
+    @pytest.mark.asyncio
+    async def test_get_history_raises_for_sql_injection_attempt(self, storage):
+        """A crafted metric string that could inject SQL must be rejected."""
+        with pytest.raises(ValueError, match="Invalid metric"):
+            await storage.get_history("power; DROP TABLE sensor_history;--", hours=1)
+
+    @pytest.mark.asyncio
+    async def test_get_area_history_raises_for_invalid_metric(self, storage):
+        """get_area_history must also validate the metric whitelist."""
+        with pytest.raises(ValueError, match="Invalid metric"):
+            await storage.get_area_history("Living Room", "bad_column", hours=1)
+
+    @pytest.mark.asyncio
+    async def test_get_history_accepts_all_valid_metrics(self, storage):
+        """Each known metric must be accepted without raising."""
+        valid_metrics = ["power", "energy", "temperature", "humidity", "illuminance", "occupancy"]
+        for metric in valid_metrics:
+            # Should not raise; empty result is fine.
+            result = await storage.get_history(metric, hours=1)
+            assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_get_area_history_accepts_all_valid_metrics(self, storage):
+        """Each known metric must be accepted without raising for area queries."""
+        valid_metrics = ["power", "energy", "temperature", "humidity", "illuminance", "occupancy"]
+        for metric in valid_metrics:
+            result = await storage.get_area_history("Kitchen", metric, hours=1)
+            assert isinstance(result, list)
+
+
+class TestAreaAggregatesUTCBoundaries:
+    """compute_area_daily_aggregates must use UTC midnight as day boundaries."""
+
+    @pytest.mark.asyncio
+    async def test_reading_at_utc_midnight_is_included(self, storage):
+        """A reading timestamped at exactly UTC midnight must appear in that day's aggregate."""
+        date_str = "2026-03-01"
+        utc_midnight = datetime(2026, 3, 1, 0, 0, 0, tzinfo=timezone.utc).timestamp()
+
+        # Insert an area reading precisely at UTC midnight
+        conn = sqlite3.connect(storage.db_path)
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO area_sensor_history (timestamp, area_name, power) VALUES (?, ?, ?)",
+            (utc_midnight, "Office", 500.0),
+        )
+        conn.commit()
+        conn.close()
+
+        await storage.compute_area_daily_aggregates(date=date_str, phase="active")
+
+        res_conn = sqlite3.connect(storage.research_db_path)
+        res_cursor = res_conn.cursor()
+        res_cursor.execute(
+            "SELECT avg_power_w FROM research_area_daily_stats WHERE date = ? AND area_name = ?",
+            (date_str, "Office"),
+        )
+        row = res_cursor.fetchone()
+        res_conn.close()
+
+        assert row is not None, (
+            "Area aggregate row missing; UTC-midnight reading was not included. "
+            "This indicates compute_area_daily_aggregates uses local TZ instead of UTC."
+        )
+        assert row[0] == pytest.approx(500.0, abs=1.0)
+
+    @pytest.mark.asyncio
+    async def test_reading_one_second_before_utc_midnight_excluded(self, storage):
+        """A reading at UTC midnight minus 1 second must NOT appear in that day."""
+        date_str = "2026-03-02"
+        utc_midnight = datetime(2026, 3, 2, 0, 0, 0, tzinfo=timezone.utc).timestamp()
+        just_before = utc_midnight - 1  # belongs to 2026-03-01
+
+        conn = sqlite3.connect(storage.db_path)
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO area_sensor_history (timestamp, area_name, power) VALUES (?, ?, ?)",
+            (just_before, "Office", 999.0),
+        )
+        conn.commit()
+        conn.close()
+
+        await storage.compute_area_daily_aggregates(date=date_str, phase="active")
+
+        res_conn = sqlite3.connect(storage.research_db_path)
+        res_cursor = res_conn.cursor()
+        res_cursor.execute(
+            "SELECT avg_power_w FROM research_area_daily_stats WHERE date = ? AND area_name = ?",
+            (date_str, "Office"),
+        )
+        row = res_cursor.fetchone()
+        res_conn.close()
+
+        assert row is None, (
+            "A reading from before UTC midnight was incorrectly included in the next day. "
+            "This indicates the day boundary is off - likely local TZ used instead of UTC."
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
