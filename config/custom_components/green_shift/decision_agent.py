@@ -17,7 +17,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 import random
 
 from .storage import StorageManager
-from .helpers import get_friendly_name, get_normalized_value, should_ai_be_active
+from .helpers import get_friendly_name, get_normalized_value, should_ai_be_active, get_working_days_from_config
 from .translations_runtime import get_language, get_notification_templates, get_time_of_day_name
 from .const import (
     UPDATE_INTERVAL_SECONDS,
@@ -347,6 +347,27 @@ class DecisionAgent:
     # Gamification streak helpers
     # ------------------------------------------------------------------
 
+    def _is_only_non_working_days_in_gap(self, from_date, to_date) -> bool:
+        """Return True iff every calendar day strictly between from_date and to_date is a non-working day.
+        Only meaningful in office mode.
+
+        Args:
+            from_date: The last successful streak date (date object).
+            to_date:   The current date being credited (date object).
+        
+        Returns:
+            bool: True if the gap between from_date and to_date contains only non-working days, False otherwise.
+        """
+        if self.config_data.get("environment_mode") != ENVIRONMENT_OFFICE:
+            return False
+        working_days = get_working_days_from_config(self.config_data)
+        day = from_date + timedelta(days=1)
+        while day < to_date:
+            if day.weekday() in working_days:
+                return False
+            day += timedelta(days=1)
+        return True
+
     def update_task_streak(self, any_task_verified: bool, check_date=None) -> None:
         """
         Update the daily task streak.
@@ -370,9 +391,11 @@ class DecisionAgent:
             elif (today - self.task_streak_last_date).days == 0:
                 return  # already credited today
             elif (today - self.task_streak_last_date).days == 1:
-                self.task_streak += 1  # consecutive day
+                self.task_streak += 1  # consecutive calendar day
+            elif self._is_only_non_working_days_in_gap(self.task_streak_last_date, today):
+                self.task_streak += 1  # gap spans non-working days only (e.g. weekend in office mode)
             else:
-                self.task_streak = 1   # gap - reset
+                self.task_streak = 1   # real gap - reset
             self.task_streak_last_date = today
             _LOGGER.info("Task streak: %d consecutive day(s) (date=%s)", self.task_streak, today)
         else:
@@ -591,6 +614,9 @@ class DecisionAgent:
         """Updates the action mask M_t based on context and sensor availability."""
         mask = {action: False for action in ACTIONS.values()}
 
+        # noop: always available: the agent must be able to learn when to not intervene.
+        mask[ACTIONS["noop"]] = True
+
         # specific: requires individual power sensors
         power_sensors = self.sensors.get("power", [])
         if len(power_sensors) > 0:
@@ -680,6 +706,16 @@ class DecisionAgent:
             _LOGGER.debug("Exploitation: selected best action %d (Q=%.2f)", action, self.q_table[state_key].get(action, 0.0))
 
         # Execute action and store pending episode for delayed Q-learning
+        # Noop: no notification; reward computed immediately; Q-table updated in-place.
+        if action == ACTIONS["noop"]:
+            noop_reward = self._compute_noop_reward()
+            await self._update_q_table_with_feedback(state_key, action, noop_reward, accepted=True)
+            self.episode_number += 1
+            await self._log_rl_episode(state_key, action, noop_reward, action_source,
+                                       opportunity_score=opportunity_score, accepted=None)
+            _LOGGER.debug("Noop selected: no notification sent, immediate reward=%.4f", noop_reward)
+            return
+
         notification_id = await self._execute_action(action)
         
         if notification_id:
@@ -744,6 +780,15 @@ class DecisionAgent:
             action = best_action
             _LOGGER.debug("Shadow learning (exploit): selected best action %d (Q=%.2f)", action, self.q_table[state_key].get(action, 0.0))
 
+        # Noop in shadow mode: Q-update with an estimated noop reward.
+        if action == ACTIONS["noop"]:
+            shadow_reward = self._compute_noop_reward()
+            await self._shadow_update_q_table(state_key, action, shadow_reward)
+            self.shadow_episode_number += 1
+            await self._log_rl_episode(state_key, action, shadow_reward, action_source)
+            _LOGGER.debug("Shadow noop episode #%d: reward=%.4f", self.shadow_episode_number, shadow_reward)
+            return
+
         # Calculate shadow reward
         reward = await self._calculate_shadow_reward(action)
 
@@ -777,7 +822,12 @@ class DecisionAgent:
         Returns:
             float: The calculated shadow reward for the given action.
         """
-        power_history_data = await self.data_collector.get_power_history(hours=1)
+        # Reuse the per-cycle power cache set by process_ai_model() to avoid a duplicate DB query on every shadow episode.
+        power_history_data = (
+            self._cached_power_h1
+            if self._cached_power_h1 is not None
+            else await self.data_collector.get_power_history(hours=1)
+        )
         power_values = [power for timestamp, power in power_history_data]
 
         if len(power_values) < 10:
@@ -833,6 +883,16 @@ class DecisionAgent:
                 context_alignment = min(deviation, 1.0)
             else:
                 context_alignment = 0.2  # Still somewhat useful
+
+        elif action_name == "noop":
+            # Noop reward: high when consumption is at/below baseline (correct restraint),
+            # low when well above baseline (missed notification opportunity).
+            if self.baseline_consumption > 0:
+                deviation = (current_power - self.baseline_consumption) / self.baseline_consumption
+                # 1.0 when at baseline, approaches 0 as deviation grows positive.
+                context_alignment = max(0.0, min(1.0, 1.0 - deviation))
+            else:
+                context_alignment = 0.5  # Neutral without baseline data
 
         # Component 3: Temporal appropriateness
         now = datetime.now()
@@ -1476,14 +1536,46 @@ class DecisionAgent:
 
         await self.storage.log_rl_decision(episode_data)
 
+    def _compute_noop_reward(self) -> float:
+        """
+        Calculates an immediate reward for choosing the noop action (no notification).
+
+        Logic:
+        - Below or at baseline: noop was a good call — small positive reward.
+        - Slightly above baseline: neutral to mildly negative (could have intervened).
+        - Well above baseline: negative reward (missed clear opportunity).
+
+        Returns:
+            float: Scalar reward in the range [-0.5, +0.2].
+        """
+        if self.baseline_consumption <= 0:
+            return 0.0  # Cannot assess without a baseline
+
+        current_power = self.data_collector.get_current_state().get("power", 0)
+        deviation = (current_power - self.baseline_consumption) / self.baseline_consumption
+
+        if deviation < 0:
+            # Below baseline: noop was clearly the right choice.
+            return 0.2
+        elif deviation < 0.3:
+            # Near baseline: mild preference toward intervening.
+            return -0.1
+        else:
+            # Significantly above baseline: missed opportunity.
+            return max(-0.5, -deviation * 0.5)
+
     async def _update_anomaly_index(self):
         """Detects anomalies in consumption using z-score."""
-        # Use per-cycle cache when available; avoids a redundant DB query.
-        power_history_data = (
-            self._cached_power_h1
-            if self._cached_power_h1 is not None
-            else await self.data_collector.get_power_history(hours=1)
-        )
+        is_office = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+        if is_office:
+            power_history_data = await self.data_collector.get_power_history(hours=1, working_hours_only=True)
+        else:
+            # Use per-cycle cache when available; avoids a redundant DB query.
+            power_history_data = (
+                self._cached_power_h1
+                if self._cached_power_h1 is not None
+                else await self.data_collector.get_power_history(hours=1)
+            )
         power_values = [power for timestamp, power in power_history_data]
 
         readings_per_hour = int((3600 / UPDATE_INTERVAL_SECONDS) * 0.8)  # Require at least 80% of expected readings for reliability

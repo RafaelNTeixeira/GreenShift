@@ -52,6 +52,7 @@ helpers_stub = types.ModuleType("custom_components.green_shift.helpers")
 helpers_stub.get_friendly_name = MagicMock(return_value="Mock Sensor")
 helpers_stub.get_normalized_value = MagicMock(return_value=(100.0, "W"))
 helpers_stub.should_ai_be_active = MagicMock(return_value=True)
+helpers_stub.get_working_days_from_config = MagicMock(return_value=list(range(5)))  # Mon-Fri
 sys.modules["custom_components.green_shift.helpers"] = helpers_stub
 
 # Stub translations module
@@ -1223,6 +1224,73 @@ class TestStreaks:
         assert agent.weekly_streak == 0
         assert agent.weekly_streak_last_week is None
 
+    # ── task_streak – office mode: non-working-day gaps ───────────────────────
+
+    def test_task_streak_office_mode_weekend_does_not_break_streak(self):
+        """In office mode, a Friday success followed by a Monday success
+        must continue the streak (weekend is not a working day), not reset it."""
+        # _day(0) = 2026-02-20 Friday, _day(3) = 2026-02-23 Monday
+        office_cfg = {"environment_mode": "office", "working_days": [0, 1, 2, 3, 4]}
+        agent = make_agent(config_data=office_cfg)
+        helpers_stub.get_working_days_from_config.return_value = [0, 1, 2, 3, 4]
+
+        agent.update_task_streak(True, self._day(0))   # Friday  -> streak=1
+        agent.update_task_streak(True, self._day(3))   # Monday  -> streak must be 2
+
+        assert agent.task_streak == 2
+        assert agent.task_streak_last_date == self._day(3)
+
+    def test_task_streak_home_mode_friday_to_monday_resets(self):
+        """In home mode every calendar day counts, so Friday->Monday (3-day gap) resets."""
+        agent = make_agent(config_data={"environment_mode": "home"})
+
+        agent.update_task_streak(True, self._day(0))   # Friday  -> streak=1
+        agent.update_task_streak(True, self._day(3))   # Monday  -> reset to 1
+
+        assert agent.task_streak == 1
+
+    def test_task_streak_office_mode_long_streak_survives_weekend(self):
+        """A streak built across Wed-Thu-Fri should still be 4 on the following Monday."""
+        # _day(-2)=Wed, _day(-1)=Thu, _day(0)=Fri, _day(3)=Mon
+        office_cfg = {"environment_mode": "office", "working_days": [0, 1, 2, 3, 4]}
+        agent = make_agent(config_data=office_cfg)
+        helpers_stub.get_working_days_from_config.return_value = [0, 1, 2, 3, 4]
+
+        agent.update_task_streak(True, self._day(-2))  # Wed -> 1
+        agent.update_task_streak(True, self._day(-1))  # Thu -> 2
+        agent.update_task_streak(True, self._day(0))   # Fri -> 3
+        agent.update_task_streak(True, self._day(3))   # Mon -> 4 (weekend skipped)
+
+        assert agent.task_streak == 4
+
+    def test_task_streak_office_mode_with_working_day_gap_still_resets(self):
+        """In office mode, if a working day is skipped the streak resets to 1.
+        Friday success + Tuesday success (Monday missed) -> streak=1."""
+        office_cfg = {"environment_mode": "office", "working_days": [0, 1, 2, 3, 4]}
+        agent = make_agent(config_data=office_cfg)
+        helpers_stub.get_working_days_from_config.return_value = [0, 1, 2, 3, 4]
+
+        agent.update_task_streak(True, self._day(0))   # Friday -> 1
+        agent.update_task_streak(True, self._day(4))   # Tuesday (Mon skipped) -> reset to 1
+
+        assert agent.task_streak == 1
+
+    def test_task_streak_office_mode_two_weekends_in_a_row(self):
+        """Streak survives two consecutive weekends (Mon1 -> Mon2, gap of 7 with only
+        non-working days Sat, Sun in each week - but Mon in week 2 IS a working day
+        so the gap Mon1->Mon2 contains Tue,Wed,Thu,Fri,Sat,Sun which includes working
+        days -> should reset."""
+        # Clarification: Mon -> next Mon has Tue-Sun in the gap; Tue-Fri are working.
+        # So this should actually reset.  The test documents expected behaviour.
+        office_cfg = {"environment_mode": "office", "working_days": [0, 1, 2, 3, 4]}
+        agent = make_agent(config_data=office_cfg)
+        helpers_stub.get_working_days_from_config.return_value = [0, 1, 2, 3, 4]
+
+        agent.update_task_streak(True, self._day(3))   # Mon week-1 -> 1
+        agent.update_task_streak(True, self._day(10))  # Mon week-2 (7-day gap, includes Tue-Fri) -> 1
+
+        assert agent.task_streak == 1
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # DB query caching & area anomaly throttle
@@ -1434,3 +1502,213 @@ class TestWeeklyChallengeCaching:
         assert result["status"] == "pending"
         assert agent._weekly_challenge_cache == {}
         assert agent._weekly_challenge_cache_ts is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Noop action (action=0): agent must be able to learn when to not send notifications.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Re-use the same module loading pattern used above.
+_const_mod = sys.modules.get("custom_components.green_shift.const")
+ACTIONS = _const_mod.ACTIONS  # type: ignore[attr-defined]
+
+class TestNoopAction:
+    """Validates that the noop action (0) is always present and correctly handled."""
+
+    @pytest.mark.asyncio
+    async def test_noop_always_in_action_mask(self):
+        """_update_action_mask must always set noop=True, regardless of sensor availability."""
+        agent = make_agent()
+        # No sensors -> normative/specific would be False, but noop must still be True.
+        agent.sensors = {}
+        agent.baseline_consumption = 0.0
+        agent._cached_power_h1 = []
+        agent.area_anomalies = {}
+        agent.anomaly_index = 0.0
+
+        await agent._update_action_mask()
+
+        assert agent.action_mask is not None, "action_mask must not be None after _update_action_mask()"
+        assert ACTIONS["noop"] in agent.action_mask, "noop action must be present in action_mask"
+        assert agent.action_mask[ACTIONS["noop"]] is True, (
+            "noop must always be available so the agent can choose not to notify"
+        )
+
+    @pytest.mark.asyncio
+    async def test_noop_present_with_all_other_actions(self):
+        """noop must be True even when all notification actions are also True."""
+        agent = make_agent()
+        agent.sensors = {"power": ["sensor.device_a"], "energy": []}
+        agent.baseline_consumption = 500.0
+        agent._cached_power_h1 = [(None, 600.0)] * 200
+        agent.anomaly_index = 0.5
+        agent.area_anomalies = {}
+
+        await agent._update_action_mask()
+
+        assert agent.action_mask[ACTIONS["noop"]] is True
+
+    def test_noop_key_in_actions_constant(self):
+        """ACTIONS must contain 'noop' mapped to integer 0."""
+        assert "noop" in ACTIONS, "ACTIONS dict must include 'noop'"
+        assert ACTIONS["noop"] == 0, "noop must map to action integer 0"
+
+    def test_q_table_initialised_with_noop(self):
+        """When a new Q-table entry is created it must include the noop action."""
+        agent = make_agent()
+        agent.state_vector = _make_state_vector(power=500.0)
+        agent.anomaly_index = 0.0
+        agent.fatigue_index = 0.0
+        state_key = agent._discretize_state()
+
+        # Manually trigger initialisation (mirrors what _decide_action does internally).
+        if state_key not in agent.q_table:
+            agent.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
+
+        assert ACTIONS["noop"] in agent.q_table[state_key], (
+            "Q-table for a state must contain a noop entry"
+        )
+
+    def test_compute_noop_reward_below_baseline_positive(self):
+        """_compute_noop_reward must return a positive reward when power < baseline."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 700.0})
+
+        reward = agent._compute_noop_reward()
+        assert reward > 0, (
+            f"Expected positive noop reward when below baseline, got {reward}"
+        )
+
+    def test_compute_noop_reward_above_baseline_negative(self):
+        """_compute_noop_reward must return a negative reward when power >> baseline."""
+        agent = make_agent()
+        agent.baseline_consumption = 500.0
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 1000.0})
+
+        reward = agent._compute_noop_reward()
+        assert reward < 0, (
+            f"Expected negative noop reward when well above baseline, got {reward}"
+        )
+
+    def test_compute_noop_reward_no_baseline_returns_zero(self):
+        """Without a baseline, _compute_noop_reward must return 0 (neutral)."""
+        agent = make_agent()
+        agent.baseline_consumption = 0.0
+
+        reward = agent._compute_noop_reward()
+        assert reward == 0.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Anomaly index working-hours consistency
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAnomalyIndexWorkingHours:
+    """In office mode the anomaly index must use working-hours-filtered power
+    history so its baseline comparison is consistent with baseline_consumption
+    (which is also computed from working-hours data)."""
+
+    @pytest.mark.asyncio
+    async def test_office_mode_uses_working_hours_filter(self):
+        """_update_anomaly_index in office mode must query get_power_history with
+        working_hours_only=True instead of relying on the unfiltered _cached_power_h1."""
+        office_cfg = {
+            "environment_mode": "office",
+            "working_start": "08:00",
+            "working_end": "18:00",
+            "working_monday": True,
+            "working_tuesday": True,
+            "working_wednesday": True,
+            "working_thursday": True,
+            "working_friday": True,
+            "working_saturday": False,
+            "working_sunday": False,
+        }
+        agent = make_agent(config_data=office_cfg)
+        agent.baseline_consumption = 1000.0
+
+        # Cache contains a large off-hours reading that would trigger a false anomaly
+        # if used for the office-mode comparison (baseline was 1000 W working-hours avg).
+        agent._cached_power_h1 = [(None, v) for v in [50.0] * 200]  # night-time low values
+
+        # The working-hours query returns readings near baseline (no anomaly)
+        filtered_history = [(None, 980.0)] * 200  # working hours data near baseline
+        agent.data_collector.get_power_history = AsyncMock(return_value=filtered_history)
+
+        await agent._update_anomaly_index()
+
+        # Must have queried with working_hours_only=True
+        call_kwargs = agent.data_collector.get_power_history.call_args
+        assert call_kwargs is not None, "_update_anomaly_index did not call get_power_history"
+        kwargs = call_kwargs.kwargs if hasattr(call_kwargs, "kwargs") else (
+            call_kwargs[1] if len(call_kwargs) > 1 else {}
+        )
+        assert kwargs.get("working_hours_only") is True, (
+            "In office mode, _update_anomaly_index must request working_hours_only=True "
+            "to match the working-hours-only baseline_consumption."
+        )
+
+    @pytest.mark.asyncio
+    async def test_home_mode_uses_cache_not_filtered_query(self):
+        """In home mode, _update_anomaly_index must use _cached_power_h1 (no extra query)."""
+        agent = make_agent(config_data={"environment_mode": "home"})
+        agent.baseline_consumption = 1000.0
+        agent._cached_power_h1 = [(None, 1050.0)] * 200
+
+        call_tracker = AsyncMock(return_value=agent._cached_power_h1)
+        agent.data_collector.get_power_history = call_tracker
+
+        await agent._update_anomaly_index()
+
+        # No additional DB query should be made; cached data is reused
+        call_tracker.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shadow-reward cache reuse
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestShadowRewardCache:
+    """_calculate_shadow_reward must reuse _cached_power_h1 instead of issuing
+    a second get_power_history query on every shadow episode."""
+
+    @pytest.mark.asyncio
+    async def test_shadow_reward_uses_cached_history(self):
+        """When _cached_power_h1 is populated, _calculate_shadow_reward must NOT
+        issue an additional get_power_history query."""
+        agent = make_agent()
+        agent.baseline_consumption = 800.0
+        agent.anomaly_index = 0.3
+        agent.area_anomalies = {}
+
+        # Pre-populate the cache (as process_ai_model() does each cycle)
+        agent._cached_power_h1 = [(None, 900.0)] * 150
+
+        # Track whether any DB call snuck through
+        query_tracker = AsyncMock(return_value=agent._cached_power_h1)
+        agent.data_collector.get_power_history = query_tracker
+
+        await agent._calculate_shadow_reward(action=1)  # action=1 is "specific"
+
+        query_tracker.assert_not_called(), (
+            "_calculate_shadow_reward must reuse _cached_power_h1; "
+            "issuing a duplicate DB query negates the per-cycle caching design."
+        )
+
+    @pytest.mark.asyncio
+    async def test_shadow_reward_falls_back_when_cache_empty(self):
+        """When cache is None, _calculate_shadow_reward must fall back to a DB query."""
+        agent = make_agent()
+        agent.baseline_consumption = 800.0
+        agent.anomaly_index = 0.0
+        agent.area_anomalies = {}
+        agent._cached_power_h1 = None  # cache not yet populated
+
+        fallback_data = [(None, 900.0)] * 150
+        agent.data_collector.get_power_history = AsyncMock(return_value=fallback_data)
+
+        result = await agent._calculate_shadow_reward(action=1)
+
+        agent.data_collector.get_power_history.assert_called_once()
+        assert isinstance(result, float)

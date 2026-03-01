@@ -7,7 +7,7 @@ Additionally, it defines services for submitting task feedback, verifying tasks,
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import numpy as np
 import random
 from homeassistant.config_entries import ConfigEntry
@@ -226,7 +226,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def daily_aggregation_callback(now):
         """Compute/update daily aggregates for research analysis every hour."""
         _LOGGER.debug("Updating daily aggregates for research database...")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         try:
             await storage.compute_daily_aggregates(date=today, phase=agent.phase)

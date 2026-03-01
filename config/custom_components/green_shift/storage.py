@@ -626,10 +626,7 @@ class StorageManager:
                 conn = sqlite3.connect(str(self.db_path))
                 cursor = conn.cursor()
 
-                if timestamp.tzinfo is None:
-                    ts_epoch = timestamp.replace(tzinfo=timezone.utc).timestamp()
-                else:
-                    ts_epoch = timestamp.timestamp()
+                ts_epoch = timestamp.timestamp()
 
                 cursor.execute("""
                     INSERT INTO sensor_history
@@ -690,11 +687,8 @@ class StorageManager:
                 conn = sqlite3.connect(str(self.db_path))
                 cursor = conn.cursor()
 
-                # Convert to UTC epoch.
-                if timestamp.tzinfo is None:
-                    ts_epoch = timestamp.replace(tzinfo=timezone.utc).timestamp()
-                else:
-                    ts_epoch = timestamp.timestamp()
+
+                ts_epoch = timestamp.timestamp()
 
                 cursor.execute("""
                     INSERT INTO area_sensor_history
@@ -1689,6 +1683,7 @@ class StorageManager:
             cursor.execute("""
                 UPDATE research_task_interactions
                 SET completed = 1,
+                    verified = 1,
                     completion_timestamp = ?,
                     time_to_complete_seconds = ?,
                     completion_value = ?
@@ -1775,12 +1770,12 @@ class StorageManager:
             phase (str, optional): The system phase to associate with the aggregates. If not provided, it will be determined based on the current phase in the research_phase_metadata table.
         """
         if date is None:
-            date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            date = datetime.now().strftime("%Y-%m-%d")
 
-        # Get all data for the day (UTC midnight boundaries).
+        # Get all data for the day using local midnight boundaries
         start_ts = datetime(
-            *[int(p) for p in date.split("-")], tzinfo=timezone.utc
-        ).timestamp()
+            *[int(p) for p in date.split("-")]
+        ).timestamp()  # naive local midnight
         end_ts = start_ts + 86400  # Add 24 hours in seconds
 
         outdoor_temp = None
@@ -1987,12 +1982,12 @@ class StorageManager:
             phase (str, optional): The system phase to associate with the aggregates. If not provided, it will be determined based on the current phase in the research_phase_metadata table.
         """
         if date is None:
-            date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            date = datetime.now().strftime("%Y-%m-%d")
 
-        # Get all data for the day
+        # Use local midnight boundaries
         start_ts = datetime(
-            *[int(p) for p in date.split("-")], tzinfo=timezone.utc
-        ).timestamp()
+            *[int(p) for p in date.split("-")]
+        ).timestamp()  # naive local midnight
         end_ts = start_ts + 86400
 
         def _compute():

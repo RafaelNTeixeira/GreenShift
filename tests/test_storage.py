@@ -201,13 +201,14 @@ class TestStoreSensorSnapshot:
         assert temp_history[0][1] == 22.0
 
     @pytest.mark.asyncio
-    async def test_naive_datetime_stored_as_utc_epoch(self, storage):
-        """A naive datetime passed to store_sensor_snapshot must be interpreted as
-        UTC and stored as a UTC Unix epoch — not a local-time epoch."""
-        # Build a datetime that is unambiguously UTC midnight of 2024-06-01.
-        utc_ref = datetime(2024, 6, 1, 0, 0, 0, tzinfo=timezone.utc)
-        naive_ref = datetime(2024, 6, 1, 0, 0, 0)  # same wall-clock, no tzinfo
-        expected_ts = utc_ref.timestamp()
+    async def test_naive_datetime_stored_as_local_epoch(self, storage):
+        """A naive datetime must be treated as local time (not UTC) when converting
+        to a Unix epoch.  
+
+        We verify that the stored epoch equals naive_ref.timestamp() (which Python
+        interprets as local time), NOT datetime(..., tzinfo=UTC).timestamp()."""
+        naive_ref = datetime(2024, 6, 1, 12, 0, 0)   # noon, no tzinfo -> local time
+        expected_ts = naive_ref.timestamp()            # Python treats naive as local
 
         await storage.store_sensor_snapshot(timestamp=naive_ref, power=42.0)
 
@@ -220,8 +221,28 @@ class TestStoreSensorSnapshot:
         assert row is not None, "Snapshot was not stored"
         stored_ts = row[0]
         assert stored_ts == pytest.approx(expected_ts, abs=1), (
-            f"Expected UTC epoch {expected_ts} but got {stored_ts}; "
-            "naive timestamps must be treated as UTC."
+            f"Expected local-time epoch {expected_ts} but got {stored_ts}; "
+            "naive timestamps must be treated as local time, not UTC."
+        )
+
+    @pytest.mark.asyncio
+    async def test_aware_utc_datetime_stored_correctly(self, storage):
+        """A timezone-aware UTC datetime must be stored as the correct UTC epoch."""
+        utc_ref = datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+        expected_ts = utc_ref.timestamp()
+
+        await storage.store_sensor_snapshot(timestamp=utc_ref, power=99.0)
+
+        conn = sqlite3.connect(storage.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT timestamp FROM sensor_history WHERE power = 99.0")
+        row = cursor.fetchone()
+        conn.close()
+
+        assert row is not None, "Snapshot was not stored"
+        stored_ts = row[0]
+        assert stored_ts == pytest.approx(expected_ts, abs=1), (
+            f"Expected UTC epoch {expected_ts} but got {stored_ts}."
         )
 
 

@@ -225,6 +225,10 @@ def is_within_working_hours(config_data: Dict, check_time: datetime = None) -> b
     if check_time is None:
         check_time = datetime.now()
 
+    # If check_time is tz-aware, convert to local time and make tz-naive for comparison
+    if check_time.tzinfo is not None:
+        check_time = check_time.astimezone().replace(tzinfo=None)
+
     # Check if today is a working day
     weekday = check_time.weekday()  # Monday=0, Sunday=6
     working_days = get_working_days_from_config(config_data)

@@ -38,9 +38,9 @@ class DataCollector:
         # Current readings (latest values - global aggregates)
         self.current_total_power = 0.0  # Current total power consumption (kW)
         self.current_daily_energy = 0.0 # Current daily energy consumption (kWh)
-        self.current_temperature = 0.0  # Global temperature average
-        self.current_humidity = 0.0     # Global humidity average
-        self.current_illuminance = 0.0  # Global illuminance average
+        self.current_temperature = None  # Global temperature average (None until first real reading)
+        self.current_humidity = None     # Global humidity average (None until first real reading)
+        self.current_illuminance = None  # Global illuminance average (None until first real reading)
         self.current_occupancy = False  # Any area occupied
 
         # Instant sensor cache
