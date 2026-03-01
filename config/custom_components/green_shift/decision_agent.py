@@ -113,6 +113,13 @@ class DecisionAgent:
         self.weekly_streak = 0              # consecutive weeks with weekly challenge achieved
         self.weekly_streak_last_week = None # week_key (ISO str) of last successful weekly-streak credit
 
+        # Performance optimisation: per-cycle DB query caches
+        self._cached_power_h1 = None        # power_history(hours=1): shared within one process_ai_model() call
+        self._area_anomaly_counter = 0      # throttle _update_area_anomalies to every 4 cycles (~60 s)
+        # Weekly challenge result cache: avoids a full week DB scan every 15 s
+        self._weekly_challenge_cache: dict = {}
+        self._weekly_challenge_cache_ts = None
+
     async def setup(self):
         """Initialize agent and load persistent state."""
         if self.storage:
@@ -422,12 +429,29 @@ class DecisionAgent:
             self.last_notification_date = today
             _LOGGER.info("Daily notification counter reset (was %d/%d)", old_count, MAX_NOTIFICATIONS_PER_DAY)
 
+        # Expire pending episodes older than 24 hours to prevent unbounded dict growth
+        _expiry = timedelta(hours=24)
+        _now_expire = datetime.now()
+        expired_ids = [k for k, v in self.pending_episodes.items()
+                       if (_now_expire - v["timestamp"]) > _expiry]
+        if expired_ids:
+            for k in expired_ids:
+                del self.pending_episodes[k]
+            _LOGGER.info("Expired %d stale pending episode(s) (>24 h old)", len(expired_ids))
+
+        # Pre-fetch 1-hour power history once per cycle and cache it
+        # _update_anomaly_index() and _update_action_mask() both need the same data: sharing the result eliminates one redundant DB query per cycle.
+        self._cached_power_h1 = await self.data_collector.get_power_history(hours=1)
+
         # Build state vector from DataCollector's current readings
         await self._build_state_vector()
 
         # Calculate indices (anomaly, behaviour, fatigue)
         await self._update_anomaly_index()
-        await self._update_area_anomalies()
+        # Area anomalies are throttled to every 4 cycles (~60 s) to reduce DB I/O.
+        # (N_areas × 3 metric queries per call at 15-second frequency is excessive)
+        if self._process_count % 4 == 0:
+            await self._update_area_anomalies()
         self._update_behaviour_index()
         await self._update_fatigue_index()
 
@@ -573,7 +597,12 @@ class DecisionAgent:
             mask[ACTIONS["specific"]] = True
 
         # anomaly: requires sufficient history and detected anomalies
-        power_history = await self.data_collector.get_power_history(hours=1)
+        # Reuse the per-cycle cache when available; avoids a duplicate DB read.
+        power_history = (
+            self._cached_power_h1
+            if self._cached_power_h1 is not None
+            else await self.data_collector.get_power_history(hours=1)
+        )
         has_area_anomalies = any(any(v > 0.3 for v in area_anomalies.values())
                                 for area_anomalies in self.area_anomalies.values())
         if len(power_history) >= 100 and (self.anomaly_index > 0.3 or has_area_anomalies):
@@ -1449,7 +1478,12 @@ class DecisionAgent:
 
     async def _update_anomaly_index(self):
         """Detects anomalies in consumption using z-score."""
-        power_history_data = await self.data_collector.get_power_history(hours=1) # Last hour
+        # Use per-cycle cache when available; avoids a redundant DB query.
+        power_history_data = (
+            self._cached_power_h1
+            if self._cached_power_h1 is not None
+            else await self.data_collector.get_power_history(hours=1)
+        )
         power_values = [power for timestamp, power in power_history_data]
 
         readings_per_hour = int((3600 / UPDATE_INTERVAL_SECONDS) * 0.8)  # Require at least 80% of expected readings for reliability
@@ -1965,6 +1999,16 @@ class DecisionAgent:
             _LOGGER.warning("Baseline consumption not set. Cannot calculate weekly challenge status.")
             return {"status": "pending", "current_avg": 0, "target_avg": 0, "progress": 0}
 
+        # Return cached result if it is < 5 minutes old.
+        # WeeklyChallengeSensor subscribes to GS_AI_UPDATE_SIGNAL (every 15 s), which would otherwise trigger a full week DB scan on every cycle.
+        _cache_ttl = 300  # seconds
+        if (
+            self._weekly_challenge_cache
+            and self._weekly_challenge_cache_ts is not None
+            and (datetime.now() - self._weekly_challenge_cache_ts).total_seconds() < _cache_ttl
+        ):
+            return self._weekly_challenge_cache
+
         # Initialize or reset current_week_start_date
         today = datetime.now().date()
         days_since_monday = today.weekday()  # 0 = Monday, 6 = Sunday
@@ -2073,7 +2117,7 @@ class DecisionAgent:
         # "off_track" = currently consuming above target
         status = "on_track" if progress < 100 else "off_track"
 
-        return {
+        result = {
             "status": status,
             "current_avg": round(current_avg, 2),
             "target_avg": round(target_avg, 2),
@@ -2083,3 +2127,7 @@ class DecisionAgent:
             "week_start": self.current_week_start_date.isoformat(),
             "days_in_week": days_in_current_week
         }
+        # Cache the result to avoid a full-week DB scan on every 15-second AI signal.
+        self._weekly_challenge_cache = result
+        self._weekly_challenge_cache_ts = datetime.now()
+        return result

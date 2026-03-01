@@ -1222,3 +1222,215 @@ class TestStreaks:
         agent = self._agent()
         assert agent.weekly_streak == 0
         assert agent.weekly_streak_last_week is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DB query caching & area anomaly throttle
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestProcessAiModelQueryOptimisation:
+    """
+    process_ai_model() must:
+      1. Pre-fetch power_history(hours=1) once per cycle (shared cache).
+      2. Throttle _update_area_anomalies to every 4 cycles.
+    """
+
+    def _make_agent_for_process(self):
+        agent = make_agent()
+        agent.phase = "baseline"
+        agent._process_count = 0
+        agent.last_notification_date = None
+        agent.notification_count_today = 0
+        # Stub out all heavy coroutines so process_ai_model can run
+        agent._build_state_vector = AsyncMock()
+        agent._update_anomaly_index = AsyncMock()
+        agent._update_area_anomalies = AsyncMock()
+        agent._update_behaviour_index = MagicMock()
+        agent._update_fatigue_index = AsyncMock()
+        agent._update_action_mask = AsyncMock()
+        agent._save_persistent_state = AsyncMock()
+        # Stub action-selection coroutines so action_mask=None doesn't crash
+        agent._decide_action = AsyncMock()
+        agent._shadow_decide_action = AsyncMock()
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_power_history_queried_once_per_cycle(self):
+        """get_power_history(hours=1) must be called exactly once per cycle via the cache."""
+        agent = self._make_agent_for_process()
+        # Replace the collector's method with one we can count
+        call_count = 0
+        async def _fake_get_power(hours=None, working_hours_only=None):
+            nonlocal call_count
+            call_count += 1
+            return []
+        agent.data_collector.get_power_history = _fake_get_power
+
+        await agent.process_ai_model()
+
+        # Exactly one DB call regardless of how many internal methods need it
+        assert call_count == 1, (
+            f"Expected 1 power_history query per cycle, got {call_count}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_cached_power_h1_set_after_process_cycle(self):
+        """_cached_power_h1 must be populated (not None) after running process_ai_model."""
+        agent = self._make_agent_for_process()
+        sentinel = [("ts", 100.0)]
+        agent.data_collector.get_power_history = AsyncMock(return_value=sentinel)
+
+        await agent.process_ai_model()
+
+        assert agent._cached_power_h1 is sentinel
+
+    @pytest.mark.asyncio
+    async def test_area_anomalies_called_on_cycle_0(self):
+        """_update_area_anomalies must run on the first cycle (count=0)."""
+        agent = self._make_agent_for_process()
+        agent._process_count = 0
+        agent.data_collector.get_power_history = AsyncMock(return_value=[])
+
+        await agent.process_ai_model()
+
+        agent._update_area_anomalies.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_area_anomalies_skipped_on_cycle_1(self):
+        """_update_area_anomalies must be skipped on odd cycles (not multiples of 4)."""
+        agent = self._make_agent_for_process()
+        agent._process_count = 1           # 1 % 4 != 0 -> skip
+        agent.data_collector.get_power_history = AsyncMock(return_value=[])
+
+        await agent.process_ai_model()
+
+        agent._update_area_anomalies.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_area_anomalies_called_every_4_cycles(self):
+        """Run 8 cycles and verify _update_area_anomalies is called exactly twice (cycle 0 & 4)."""
+        agent = self._make_agent_for_process()
+        agent.data_collector.get_power_history = AsyncMock(return_value=[])
+        call_count = 0
+
+        async def _count_area(*a, **k):
+            nonlocal call_count
+            call_count += 1
+        agent._update_area_anomalies = _count_area
+
+        for _ in range(8):
+            await agent.process_ai_model()
+
+        assert call_count == 2, (
+            f"Expected _update_area_anomalies to be called 2 times in 8 cycles, got {call_count}"
+        )
+
+    def test_update_anomaly_index_uses_cache_when_available(self):
+        """_update_anomaly_index must read _cached_power_h1 rather than querying if set."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        # Plant a 150-element cache (> 192 threshold) with high values => anomaly detected
+        agent._cached_power_h1 = [(None, 2000.0)] * 200
+        agent.data_collector.get_power_history = AsyncMock(return_value=[])  # should not be called
+
+        import asyncio
+        asyncio.get_event_loop().run_until_complete(agent._update_anomaly_index())
+
+        # Cache was used -> no live query
+        agent.data_collector.get_power_history.assert_not_called()
+
+    def test_update_action_mask_uses_cache_when_available(self):
+        """_update_action_mask must reuse _cached_power_h1 when set."""
+        agent = make_agent()
+        agent.sensors = {"power": ["sensor.main"]}
+        agent.baseline_consumption = 1000.0
+        agent.area_anomalies = {}
+        # Plant cache with enough entries
+        agent._cached_power_h1 = [(None, 500.0)] * 200
+        agent.data_collector.get_power_history = AsyncMock(return_value=[])  # should not be called
+
+        import asyncio
+        asyncio.get_event_loop().run_until_complete(agent._update_action_mask())
+
+        agent.data_collector.get_power_history.assert_not_called()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WeeklyChallengeSensor / get_weekly_challenge_status cache
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestWeeklyChallengeCaching:
+    """get_weekly_challenge_status must cache its result for 5 minutes
+    to avoid a full DB scan on every 15-second AI signal."""
+
+    def _agent_with_baseline(self):
+        agent = make_agent()
+        agent.phase = "active"
+        agent.baseline_consumption = 1000.0
+        # Minimal week setup
+        from datetime import date
+        agent.current_week_start_date = date.today()
+        agent._logged_weeks = set()
+        # Provide at least 240 readings (min_readings = 86400/15/24 = 240) to
+        # guarantee the function reaches the cache-and-return path.
+        power_rows = [(datetime.now() - timedelta(seconds=i * 15), 900.0) for i in range(250)]
+        agent.data_collector.get_power_history = AsyncMock(return_value=power_rows)
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_first_call_populates_cache(self):
+        """After the first successful call the cache must be set."""
+        agent = self._agent_with_baseline()
+        result = await agent.get_weekly_challenge_status(target_percentage=15.0)
+
+        assert agent._weekly_challenge_cache is not None
+        assert agent._weekly_challenge_cache_ts is not None
+        assert agent._weekly_challenge_cache["status"] in ("on_track", "off_track")
+        assert result == agent._weekly_challenge_cache
+
+    @pytest.mark.asyncio
+    async def test_second_call_within_ttl_uses_cache(self):
+        """A second call within the TTL window must return the cache without re-querying."""
+        agent = self._agent_with_baseline()
+
+        first_result = await agent.get_weekly_challenge_status(target_percentage=15.0)
+        initial_call_count = agent.data_collector.get_power_history.call_count
+
+        # Call again immediately (within TTL)
+        second_result = await agent.get_weekly_challenge_status(target_percentage=15.0)
+
+        assert second_result is first_result, (
+            "Second call within TTL must return the exact same cached dict."
+        )
+        assert agent.data_collector.get_power_history.call_count == initial_call_count, (
+            "No additional DB queries should be made within the cache TTL."
+        )
+
+    @pytest.mark.asyncio
+    async def test_call_after_ttl_expires_recomputes(self):
+        """A call after the 300-second TTL must recompute and hit the DB again."""
+        agent = self._agent_with_baseline()
+
+        await agent.get_weekly_challenge_status(target_percentage=15.0)
+        initial_call_count = agent.data_collector.get_power_history.call_count
+
+        # Fast-forward the cache timestamp by 6 minutes
+        agent._weekly_challenge_cache_ts = datetime.now() - timedelta(minutes=6)
+
+        await agent.get_weekly_challenge_status(target_percentage=15.0)
+
+        assert agent.data_collector.get_power_history.call_count > initial_call_count, (
+            "A stale cache (>5 min old) must trigger a fresh DB query."
+        )
+
+    @pytest.mark.asyncio
+    async def test_cache_not_populated_for_zero_baseline(self):
+        """When baseline is 0, the function returns 'pending' without caching."""
+        agent = make_agent()
+        agent.baseline_consumption = 0.0
+        agent.data_collector.get_power_history = AsyncMock(return_value=[])
+
+        result = await agent.get_weekly_challenge_status()
+
+        assert result["status"] == "pending"
+        assert agent._weekly_challenge_cache == {}
+        assert agent._weekly_challenge_cache_ts is None
