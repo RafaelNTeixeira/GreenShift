@@ -256,6 +256,7 @@ $$\langle S, A, M, P, R, \gamma \rangle$$
 **A - Action Space** (4 discrete actions):
 ```python
 ACTIONS = {
+    "noop": 0,          # No intervention
     "specific": 1,      # Appliance-specific tip
     "anomaly": 2,       # Anomaly alert
     "behavioural": 3,   # Behaviour change suggestion
@@ -264,6 +265,7 @@ ACTIONS = {
 ```
 
 **M - Action Mask** (context-dependent availability):
+- `noop`: Always available in active phase
 - `specific`: Requires individual power sensors
 - `anomaly`: Requires 100+ historical samples
 - `behavioural`: Always available in active phase
