@@ -1809,3 +1809,463 @@ class TestCooldownBlockLogging:
         assert agent.storage.log_blocked_notification.call_count == 1  # logged again
         call_kwargs = agent.storage.log_blocked_notification.call_args[0][0]
         assert call_kwargs["block_reason"] == "cooldown"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# setup / _load_persistent_state / _save_persistent_state
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSetup:
+    @pytest.mark.asyncio
+    async def test_setup_calls_load_when_storage_present(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={})
+        agent.storage = storage
+        await agent.setup()
+        storage.load_state.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_setup_skips_load_when_no_storage(self):
+        agent = make_agent()
+        agent.storage = None
+        # Should not raise
+        await agent.setup()
+
+
+class TestLoadPersistentState:
+
+    @pytest.mark.asyncio
+    async def test_loads_phase_from_state(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={"phase": "active"})
+        agent.storage = storage
+        await agent._load_persistent_state()
+        assert agent.phase == "active"
+
+    @pytest.mark.asyncio
+    async def test_loads_baseline_consumption(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={"baseline_consumption": 800.0})
+        agent.storage = storage
+        await agent._load_persistent_state()
+        assert agent.baseline_consumption == pytest.approx(800.0)
+
+    @pytest.mark.asyncio
+    async def test_loads_task_streak(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={"task_streak": 7})
+        agent.storage = storage
+        await agent._load_persistent_state()
+        assert agent.task_streak == 7
+
+    @pytest.mark.asyncio
+    async def test_loads_q_table_with_tuple_key(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={
+            "q_table": {"(1, 0, 0, 0, 0, 0)": {"0": 0.5, "1": 0.3}}
+        })
+        agent.storage = storage
+        await agent._load_persistent_state()
+        assert len(agent.q_table) == 1
+        key = list(agent.q_table.keys())[0]
+        assert isinstance(key, tuple)
+
+    @pytest.mark.asyncio
+    async def test_invalid_q_table_key_is_skipped(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={
+            "q_table": {"not_a_tuple": {"0": 1.0}, "(2, 1, 0, 0, 0, 0)": {"0": 0.9}}
+        })
+        agent.storage = storage
+        await agent._load_persistent_state()
+        assert len(agent.q_table) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_storage_returns_immediately(self):
+        agent = make_agent()
+        agent.storage = None
+        await agent._load_persistent_state()
+        assert agent.phase == "baseline"  # unchanged
+
+    @pytest.mark.asyncio
+    async def test_loads_weekly_streak(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={"weekly_streak": 3})
+        agent.storage = storage
+        await agent._load_persistent_state()
+        assert agent.weekly_streak == 3
+
+    @pytest.mark.asyncio
+    async def test_loads_notification_count(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={"notification_count_today": 4})
+        agent.storage = storage
+        await agent._load_persistent_state()
+        assert agent.notification_count_today == 4
+
+
+class TestSavePersistentState:
+
+    @pytest.mark.asyncio
+    async def test_save_calls_storage_save_state(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={})
+        storage.save_state = AsyncMock()
+        agent.storage = storage
+        await agent._save_persistent_state()
+        storage.save_state.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_storage_skips_save(self):
+        agent = make_agent()
+        agent.storage = None
+        await agent._save_persistent_state()  # should not raise
+
+    @pytest.mark.asyncio
+    async def test_q_table_serialised_as_string_keys(self):
+        """Q-table tuple keys are stringified so JSON can store them."""
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={})
+        saved = {}
+
+        async def capture_save(state):
+            saved.update(state)
+
+        storage.save_state = AsyncMock(side_effect=capture_save)
+        agent.storage = storage
+        agent.q_table = {(1, 0, 0, 0, 0, 0): {0: 0.7}}
+        await agent._save_persistent_state()
+        # String key should appear in serialised q_table
+        assert str((1, 0, 0, 0, 0, 0)) in saved.get("q_table", {})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _build_state_vector
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestBuildStateVector:
+
+    @pytest.mark.asyncio
+    async def test_state_vector_has_18_elements(self):
+        agent = make_agent()
+        agent.sensors = {"power": ["sensor.p1"]}
+        agent.data_collector.get_current_state.return_value = {
+            "power": 300.0, "occupancy": True,
+            "temperature": 21.0, "humidity": 50.0, "illuminance": 200.0,
+        }
+        agent.data_collector.main_power_sensor = None
+        agent.hass.states.get.return_value = None
+        await agent._build_state_vector()
+        assert len(agent.state_vector) == 18
+
+    @pytest.mark.asyncio
+    async def test_power_value_at_index_0(self):
+        agent = make_agent()
+        agent.sensors = {}
+        agent.data_collector.get_current_state.return_value = {"power": 750.0}
+        agent.data_collector.main_power_sensor = None
+        agent.hass.states.get.return_value = None
+        await agent._build_state_vector()
+        assert agent.state_vector[0] == pytest.approx(750.0)
+
+    @pytest.mark.asyncio
+    async def test_occupancy_flag_set_correctly(self):
+        agent = make_agent()
+        agent.sensors = {"occupancy": ["binary_sensor.occ_1"]}
+        agent.data_collector.get_current_state.return_value = {
+            "power": 0.0, "occupancy": True,
+        }
+        agent.data_collector.main_power_sensor = None
+        agent.hass.states.get.return_value = None
+        await agent._build_state_vector()
+        # Index 10 = occupancy value
+        assert agent.state_vector[10] == pytest.approx(1.0)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _get_top_power_consumer
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetTopPowerConsumer:
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_no_sensors(self):
+        agent = make_agent()
+        agent.sensors = {}
+        result = await agent._get_top_power_consumer()
+        assert result == 0.0
+
+    @pytest.mark.asyncio
+    async def test_returns_max_excluding_main_sensor(self):
+        agent = make_agent()
+        agent.sensors = {"power": ["sensor.main", "sensor.p1", "sensor.p2"]}
+        agent.data_collector.main_power_sensor = "sensor.main"
+
+        def mock_state(entity_id):
+            vals = {"sensor.main": "1000", "sensor.p1": "300", "sensor.p2": "200"}
+            if entity_id in vals:
+                s = MagicMock()
+                s.state = vals[entity_id]
+                s.attributes = {"unit_of_measurement": "W"}
+                return s
+            return None
+
+        agent.hass.states.get.side_effect = mock_state
+        da_mod.get_normalized_value = MagicMock(side_effect=lambda s, t: (float(s.state), "W"))
+        result = await agent._get_top_power_consumer()
+        assert result == pytest.approx(300.0)
+
+    @pytest.mark.asyncio
+    async def test_skips_unavailable_states(self):
+        agent = make_agent()
+        agent.sensors = {"power": ["sensor.p1"]}
+        agent.data_collector.main_power_sensor = None
+
+        state = MagicMock()
+        state.state = "unavailable"
+        agent.hass.states.get.return_value = state
+        result = await agent._get_top_power_consumer()
+        assert result == 0.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _update_action_mask
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUpdateActionMask:
+
+    @pytest.mark.asyncio
+    async def test_noop_always_available(self):
+        agent = make_agent()
+        agent._cached_power_h1 = []
+        agent.sensors = {}
+        agent.baseline_consumption = 0.0
+        agent.area_anomalies = {}
+        agent.anomaly_index = 0.0
+        await agent._update_action_mask()
+        assert agent.action_mask[da_mod.ACTIONS["noop"]] is True
+
+    @pytest.mark.asyncio
+    async def test_specific_enabled_with_power_sensors(self):
+        agent = make_agent()
+        agent._cached_power_h1 = []
+        agent.sensors = {"power": ["sensor.p1"]}
+        agent.baseline_consumption = 0.0
+        agent.area_anomalies = {}
+        agent.anomaly_index = 0.0
+        await agent._update_action_mask()
+        assert agent.action_mask[da_mod.ACTIONS["specific"]] is True
+
+    @pytest.mark.asyncio
+    async def test_normative_enabled_with_baseline(self):
+        agent = make_agent()
+        agent._cached_power_h1 = []
+        agent.sensors = {}
+        agent.baseline_consumption = 600.0
+        agent.area_anomalies = {}
+        agent.anomaly_index = 0.0
+        await agent._update_action_mask()
+        assert agent.action_mask[da_mod.ACTIONS["normative"]] is True
+
+    @pytest.mark.asyncio
+    async def test_normative_disabled_without_baseline(self):
+        agent = make_agent()
+        agent._cached_power_h1 = []
+        agent.sensors = {}
+        agent.baseline_consumption = 0.0
+        agent.area_anomalies = {}
+        agent.anomaly_index = 0.0
+        await agent._update_action_mask()
+        assert agent.action_mask[da_mod.ACTIONS["normative"]] is False
+
+    @pytest.mark.asyncio
+    async def test_behavioural_always_available(self):
+        agent = make_agent()
+        agent._cached_power_h1 = []
+        agent.sensors = {}
+        agent.baseline_consumption = 0.0
+        agent.area_anomalies = {}
+        agent.anomaly_index = 0.0
+        await agent._update_action_mask()
+        assert agent.action_mask[da_mod.ACTIONS["behavioural"]] is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _update_q_table_with_feedback  /  _shadow_update_q_table
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUpdateQTableWithFeedback:
+
+    @pytest.mark.asyncio
+    async def test_accepted_increases_q_value(self):
+        agent = make_agent()
+        agent.state_vector = [0.0] * 18
+        agent.q_table = {}
+        state_key = (1, 0, 0, 0, 0, 0)
+        await agent._update_q_table_with_feedback(state_key, 0, reward=1.0, accepted=True)
+        assert agent.q_table[state_key][0] > 0.0
+
+    @pytest.mark.asyncio
+    async def test_rejected_decreases_q_value_with_zero_gamma(self):
+        agent = make_agent()
+        agent.state_vector = [0.0] * 18
+        state_key = (2, 0, 0, 0, 0, 0)
+        agent.q_table = {state_key: {a: 0.0 for a in range(5)}}
+        await agent._update_q_table_with_feedback(state_key, 0, reward=-1.0, accepted=False)
+        # With gamma=0 and negative reward, Q must decrease
+        assert agent.q_table[state_key][0] < 0.0
+
+    @pytest.mark.asyncio
+    async def test_creates_q_entry_for_new_state(self):
+        agent = make_agent()
+        agent.state_vector = [0.0] * 18
+        agent.q_table = {}
+        state_key = (3, 1, 0, 0, 0, 0)
+        await agent._update_q_table_with_feedback(state_key, 1, reward=0.5, accepted=True)
+        assert state_key in agent.q_table
+
+
+class TestShadowUpdateQTable:
+
+    @pytest.mark.asyncio
+    async def test_positive_reward_increases_q(self):
+        agent = make_agent()
+        agent.state_vector = [0.0] * 18
+        state_key = (1, 0, 0, 0, 0, 0)
+        agent.q_table = {state_key: {a: 0.0 for a in range(5)}}
+        await agent._shadow_update_q_table(state_key, 0, reward=1.0)
+        assert agent.q_table[state_key][0] > 0.0
+
+    @pytest.mark.asyncio
+    async def test_creates_new_state_entry_if_missing(self):
+        agent = make_agent()
+        agent.state_vector = [0.0] * 18
+        agent.q_table = {}
+        state_key = (4, 0, 0, 0, 0, 0)
+        await agent._shadow_update_q_table(state_key, 0, reward=0.5)
+        assert state_key in agent.q_table
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _is_only_non_working_days_in_gap
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestIsOnlyNonWorkingDaysInGap:
+
+    def _make_office_agent(self):
+        return make_agent(config_data={
+            "environment_mode": "office",
+            "working_monday": True, "working_tuesday": True,
+            "working_wednesday": True, "working_thursday": True,
+            "working_friday": True, "working_saturday": False,
+            "working_sunday": False,
+        })
+
+    def test_home_mode_always_returns_false(self):
+        agent = make_agent(config_data={"environment_mode": "home"})
+        from datetime import date
+        d1 = date(2026, 2, 20)  # Friday
+        d2 = date(2026, 2, 23)  # Monday (gap = Sat+Sun)
+        helpers_stub.get_working_days_from_config = MagicMock(return_value=list(range(5)))
+        assert agent._is_only_non_working_days_in_gap(d1, d2) is False
+
+    def test_gap_with_only_weekend_days_returns_true(self):
+        agent = self._make_office_agent()
+        helpers_stub.get_working_days_from_config = MagicMock(return_value=list(range(5)))
+        from datetime import date
+        friday = date(2026, 2, 20)
+        monday = date(2026, 2, 23)  # gap = Sat(5) + Sun(6) -> non-working
+        assert agent._is_only_non_working_days_in_gap(friday, monday) is True
+
+    def test_gap_containing_working_day_returns_false(self):
+        agent = self._make_office_agent()
+        helpers_stub.get_working_days_from_config = MagicMock(return_value=list(range(5)))
+        from datetime import date
+        monday = date(2026, 2, 16)
+        wednesday = date(2026, 2, 18)  # gap = Tuesday(1) -> working day
+        assert agent._is_only_non_working_days_in_gap(monday, wednesday) is False
+
+    def test_consecutive_days_no_gap_returns_true(self):
+        agent = self._make_office_agent()
+        helpers_stub.get_working_days_from_config = MagicMock(return_value=list(range(5)))
+        from datetime import date
+        d1 = date(2026, 2, 18)
+        d2 = date(2026, 2, 19)  # no day strictly between them -> loop never executes -> True
+        assert agent._is_only_non_working_days_in_gap(d1, d2) is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# process_ai_model: daily counter reset and process_count increment
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestProcessAiModel:
+
+    def _make_patched_agent(self, phase="baseline"):
+        agent = make_agent()
+        agent.storage = None
+        agent.phase = phase
+        agent._process_count = 0
+        agent.data_collector.get_power_history = AsyncMock(return_value=[])
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 0.0})
+        agent._build_state_vector = AsyncMock()
+        agent._update_anomaly_index = AsyncMock()
+        agent._update_area_anomalies = AsyncMock()
+        agent._update_behaviour_index = MagicMock()
+        agent._update_fatigue_index = AsyncMock()
+        agent._update_action_mask = AsyncMock()
+        agent._decide_action = AsyncMock()
+        agent._shadow_decide_action = AsyncMock()
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_resets_notification_count_on_new_day(self):
+        agent = self._make_patched_agent()
+        agent.notification_count_today = 5
+        agent.last_notification_date = datetime(2026, 1, 1).date()
+        await agent.process_ai_model()
+        assert agent.notification_count_today == 0
+        assert agent.last_notification_date == datetime.now().date()
+
+    @pytest.mark.asyncio
+    async def test_increments_process_count(self):
+        agent = self._make_patched_agent()
+        await agent.process_ai_model()
+        assert agent._process_count == 1
+
+    @pytest.mark.asyncio
+    async def test_calls_decide_action_in_active_phase(self):
+        agent = self._make_patched_agent(phase="active")
+        await agent.process_ai_model()
+        agent._decide_action.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_does_not_call_decide_action_in_baseline(self):
+        agent = self._make_patched_agent(phase="baseline")
+        agent._process_count = 0
+        await agent.process_ai_model()
+        agent._decide_action.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_expires_stale_pending_episodes(self):
+        agent = self._make_patched_agent()
+        old_ts = datetime.now() - timedelta(hours=25)
+        agent.pending_episodes = {
+            "old_ep": {
+                "state_key": (1, 0, 0, 0, 0, 0),
+                "action": 0, "initial_power": 500.0,
+                "timestamp": old_ts, "action_source": "exploit",
+                "opportunity_score": 0.5,
+            }
+        }
+        await agent.process_ai_model()
+        assert "old_ep" not in agent.pending_episodes

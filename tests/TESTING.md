@@ -4,18 +4,18 @@ Green Shift includes a comprehensive test suite covering core functionality and 
 
 ## Test Coverage
 
-**293 tests** across 8 modules:
+**569 tests** across 8 modules:
 
 | Module | Tests | Coverage |
 |--------|-------|----------|
-| `test_backup_manager.py` | 19 | Backup creation, cleanup, restoration |
-| `test_config_flow.py` | 24 | Config flow, sensor discovery, area assignment |
-| `test_data_collector.py` | 28 | Real-time monitoring, energy tracking |
-| `test_decision_agent.py` | 75 | AI model, Q-learning, fatigue tracking, engagement persistence |
-| `test_helpers.py` | 28 | Utility functions, conversions |
-| `test_storage.py` | 37 | Database operations, data persistence, task interactions |
-| `test_task_manager.py` | 28 | Task generation, difficulty adjustment, verification |
-| `test_translations_runtime.py` | 54 | Multilingual support, templates |
+| `test_backup_manager.py` | 27 | Backup creation, cleanup, restoration |
+| `test_config_flow.py` | 39 | Config flow, sensor discovery, area assignment |
+| `test_data_collector.py` | 68 | Real-time monitoring, energy tracking |
+| `test_decision_agent.py` | 177 | AI model, Q-learning, fatigue tracking, engagement persistence, state persistence, action masking |
+| `test_helpers.py` | 46 | Utility functions, conversions, entity/area resolution, working hours |
+| `test_storage.py` | 104 | Database operations, data persistence, task interactions, research data |
+| `test_task_manager.py` | 53 | Task generation, difficulty adjustment, verification, edge cases |
+| `test_translations_runtime.py` | 55 | Multilingual support, templates |
 
 ## Running Tests
 
@@ -86,18 +86,28 @@ Tests are organized by component:
 - Fatigue index calculation (rejection rate, time decay)
 - Behavior index updates (EMA)
 - Cooldown mechanisms (adaptive, opportunity-based)
-- Q-learning updates
+- Q-learning updates (feedback acceptance, rejection, shadow updates)
 - Phase transitions (baseline -> active)
 - Notification limits
 - Daily notification counter
 - Weekly challenge tracking
+- State persistence (load/save from storage, Q-table serialisation)
+- State vector construction (18-element feature vector)
+- Top power consumer detection
+- Action mask updates (noop, specific, normative, behavioural modes)
+- Non-working day gap detection
+- Full AI model cycle (`process_ai_model`): daily counter reset, episode expiry
 
 ### `test_helpers.py`
 - Unit conversions (kW->W, Wh->kWh)
 - Environmental impact calculations (CO2, metaphors)
-- Working hours validation
+- Working hours validation (including timezone-aware datetimes)
 - Configuration parsing
 - Area assignment utilities
+- Entity area resolution via entity registry, device registry and area registry
+- Sensor grouping by area (including unknown-entity fallback)
+- Friendly name resolution (attribute, registry, entity_id fallback)
+- Daily working hours calculation (standard, custom, midnight-crossing, malformed config)
 
 ### `test_storage.py`
 - Database initialization (SQLite)
@@ -114,6 +124,10 @@ Tests are organized by component:
 - Working hours enforcement
 - Difficulty multipliers
 - Idempotence (no duplicate tasks)
+- Dynamic difficulty calculation with historical stats (clamping, adjustment, fallback)
+- Task generator edge cases (no history, no daytime readings, no occupied areas)
+- Task verification logic (temperature below/above target, no history, pre-verified tasks)
+- Exception handling during verification
 
 ### `test_translations_runtime.py`
 - Language detection and selection

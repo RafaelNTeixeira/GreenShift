@@ -409,3 +409,20 @@ class TestEdgeCases:
         lower = get_notification_templates("en")
         # Should return same templates (implementation may vary)
         assert set(upper.keys()) == set(lower.keys())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_language: exception path
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetLanguageExceptionPath:
+
+    @pytest.mark.asyncio
+    async def test_exception_accessing_hass_config_defaults_to_en(self):
+        """When hass.config.language raises an exception, get_language must default to 'en'."""
+        hass = MagicMock()
+        # Make accessing .language raise an AttributeError
+        type(hass.config).language = property(fget=lambda self: (_ for _ in ()).throw(AttributeError("no language")))
+        result = await get_language(hass)
+        assert result == "en"
+

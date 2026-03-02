@@ -259,3 +259,257 @@ class TestShouldAiBeActive:
     def test_office_mode_weekday_active(self, office_cfg):
         t = datetime(2026, 2, 18, 14, 0)  # Wednesday afternoon
         assert should_ai_be_active(office_cfg, t) is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HA-registry functions  (get_entity_area, get_entity_area_id, group_sensors_by_area, get_friendly_name)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Aliases for the HA-stub modules so tests can set mock async_get on them
+_er_stub = sys.modules["homeassistant.helpers.entity_registry"]
+_ar_stub = sys.modules["homeassistant.helpers.area_registry"]
+_dr_stub = sys.modules["homeassistant.helpers.device_registry"]
+
+get_entity_area = helpers.get_entity_area
+get_entity_area_id = helpers.get_entity_area_id
+group_sensors_by_area = helpers.group_sensors_by_area
+get_friendly_name = helpers.get_friendly_name
+get_daily_working_hours = helpers.get_daily_working_hours
+
+
+class TestGetEntityArea:
+
+    def test_returns_none_when_entity_not_found(self):
+        hass = MagicMock()
+        mock_entity_reg = MagicMock()
+        mock_entity_reg.async_get.return_value = None
+        _er_stub.async_get = MagicMock(return_value=mock_entity_reg)
+        _ar_stub.async_get = MagicMock(return_value=MagicMock())
+        assert get_entity_area(hass, "sensor.unknown") is None
+
+    def test_returns_area_from_entity_area_id(self):
+        hass = MagicMock()
+        mock_entity = MagicMock()
+        mock_entity.area_id = "area_kitchen"
+        mock_entity.device_id = None
+        mock_entity_reg = MagicMock()
+        mock_entity_reg.async_get.return_value = mock_entity
+
+        mock_area = MagicMock()
+        mock_area.name = "Kitchen"
+        mock_area_reg = MagicMock()
+        mock_area_reg.async_get_area.return_value = mock_area
+
+        _er_stub.async_get = MagicMock(return_value=mock_entity_reg)
+        _ar_stub.async_get = MagicMock(return_value=mock_area_reg)
+        assert get_entity_area(hass, "sensor.kitchen_temp") == "Kitchen"
+
+    def test_returns_area_via_device_when_no_entity_area(self):
+        hass = MagicMock()
+        mock_entity = MagicMock()
+        mock_entity.area_id = None
+        mock_entity.device_id = "dev_1"
+        mock_entity_reg = MagicMock()
+        mock_entity_reg.async_get.return_value = mock_entity
+
+        mock_device = MagicMock()
+        mock_device.area_id = "area_living"
+        mock_device_reg = MagicMock()
+        mock_device_reg.async_get.return_value = mock_device
+
+        mock_area = MagicMock()
+        mock_area.name = "Living Room"
+        mock_area_reg = MagicMock()
+        mock_area_reg.async_get_area.return_value = mock_area
+
+        _er_stub.async_get = MagicMock(return_value=mock_entity_reg)
+        _ar_stub.async_get = MagicMock(return_value=mock_area_reg)
+        _dr_stub.async_get = MagicMock(return_value=mock_device_reg)
+        assert get_entity_area(hass, "sensor.living_power") == "Living Room"
+
+    def test_returns_none_when_no_area_and_no_device(self):
+        hass = MagicMock()
+        mock_entity = MagicMock()
+        mock_entity.area_id = None
+        mock_entity.device_id = None
+        mock_entity_reg = MagicMock()
+        mock_entity_reg.async_get.return_value = mock_entity
+
+        _er_stub.async_get = MagicMock(return_value=mock_entity_reg)
+        _ar_stub.async_get = MagicMock(return_value=MagicMock())
+        assert get_entity_area(hass, "sensor.orphan") is None
+
+
+class TestGetEntityAreaId:
+
+    def test_returns_none_when_entity_not_found(self):
+        hass = MagicMock()
+        mock_entity_reg = MagicMock()
+        mock_entity_reg.async_get.return_value = None
+        _er_stub.async_get = MagicMock(return_value=mock_entity_reg)
+        _ar_stub.async_get = MagicMock(return_value=MagicMock())
+        assert get_entity_area_id(hass, "sensor.unknown") is None
+
+    def test_returns_entity_area_id_directly(self):
+        hass = MagicMock()
+        mock_entity = MagicMock()
+        mock_entity.area_id = "area_xyz"
+        mock_entity.device_id = None
+        mock_entity_reg = MagicMock()
+        mock_entity_reg.async_get.return_value = mock_entity
+
+        _er_stub.async_get = MagicMock(return_value=mock_entity_reg)
+        _ar_stub.async_get = MagicMock(return_value=MagicMock())
+        assert get_entity_area_id(hass, "sensor.test") == "area_xyz"
+
+    def test_returns_device_area_id_when_entity_has_no_area(self):
+        hass = MagicMock()
+        mock_entity = MagicMock()
+        mock_entity.area_id = None
+        mock_entity.device_id = "dev_abc"
+        mock_entity_reg = MagicMock()
+        mock_entity_reg.async_get.return_value = mock_entity
+
+        mock_device = MagicMock()
+        mock_device.area_id = "area_device_zone"
+        mock_device_reg = MagicMock()
+        mock_device_reg.async_get.return_value = mock_device
+
+        _er_stub.async_get = MagicMock(return_value=mock_entity_reg)
+        _ar_stub.async_get = MagicMock(return_value=MagicMock())
+        _dr_stub.async_get = MagicMock(return_value=mock_device_reg)
+        assert get_entity_area_id(hass, "sensor.device_entity") == "area_device_zone"
+
+    def test_returns_none_when_no_area_at_all(self):
+        hass = MagicMock()
+        mock_entity = MagicMock()
+        mock_entity.area_id = None
+        mock_entity.device_id = None
+        mock_entity_reg = MagicMock()
+        mock_entity_reg.async_get.return_value = mock_entity
+
+        _er_stub.async_get = MagicMock(return_value=mock_entity_reg)
+        _ar_stub.async_get = MagicMock(return_value=MagicMock())
+        assert get_entity_area_id(hass, "sensor.orphan") is None
+
+
+class TestGroupSensorsByArea:
+
+    def test_groups_entities_by_named_areas(self):
+        hass = MagicMock()
+        mock_entity_kitchen = MagicMock()
+        mock_entity_kitchen.area_id = "kitchen"
+        mock_entity_kitchen.device_id = None
+
+        mock_entity_living = MagicMock()
+        mock_entity_living.area_id = "living"
+        mock_entity_living.device_id = None
+
+        mock_entity_reg = MagicMock()
+        mock_entity_reg.async_get.side_effect = lambda eid: {
+            "sensor.k1": mock_entity_kitchen,
+            "sensor.l1": mock_entity_living,
+        }.get(eid)
+
+        mock_area_k = MagicMock()
+        mock_area_k.name = "Kitchen"
+        mock_area_l = MagicMock()
+        mock_area_l.name = "Living Room"
+        mock_area_reg = MagicMock()
+        mock_area_reg.async_get_area.side_effect = lambda aid: {
+            "kitchen": mock_area_k,
+            "living": mock_area_l,
+        }.get(aid)
+
+        _er_stub.async_get = MagicMock(return_value=mock_entity_reg)
+        _ar_stub.async_get = MagicMock(return_value=mock_area_reg)
+
+        result = group_sensors_by_area(hass, ["sensor.k1", "sensor.l1"])
+        assert result["Kitchen"] == ["sensor.k1"]
+        assert result["Living Room"] == ["sensor.l1"]
+
+    def test_groups_unknown_entities_under_no_area(self):
+        hass = MagicMock()
+        mock_entity_reg = MagicMock()
+        mock_entity_reg.async_get.return_value = None  # not found -> no area
+        _er_stub.async_get = MagicMock(return_value=mock_entity_reg)
+        _ar_stub.async_get = MagicMock(return_value=MagicMock())
+
+        result = group_sensors_by_area(hass, ["sensor.orphan"])
+        assert "No Area" in result
+        assert "sensor.orphan" in result["No Area"]
+
+
+class TestGetFriendlyName:
+
+    def test_returns_friendly_name_from_state_attributes(self):
+        hass = MagicMock()
+        state = MagicMock()
+        state.attributes = {"friendly_name": "My Power Sensor"}
+        hass.states.get.return_value = state
+        _er_stub.async_get = MagicMock(return_value=MagicMock())
+        assert get_friendly_name(hass, "sensor.power") == "My Power Sensor"
+
+    def test_returns_original_name_from_entity_registry(self):
+        hass = MagicMock()
+        hass.states.get.return_value = None
+
+        mock_entity = MagicMock()
+        mock_entity.original_name = "Original Power"
+        mock_entity_reg = MagicMock()
+        mock_entity_reg.async_get.return_value = mock_entity
+        _er_stub.async_get = MagicMock(return_value=mock_entity_reg)
+
+        assert get_friendly_name(hass, "sensor.power") == "Original Power"
+
+    def test_falls_back_to_entity_id(self):
+        hass = MagicMock()
+        hass.states.get.return_value = None
+
+        mock_entity = MagicMock()
+        mock_entity.original_name = None
+        mock_entity_reg = MagicMock()
+        mock_entity_reg.async_get.return_value = mock_entity
+        _er_stub.async_get = MagicMock(return_value=mock_entity_reg)
+
+        assert get_friendly_name(hass, "sensor.power_meter") == "sensor.power_meter"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# is_within_working_hours: timezone-aware datetime path
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestIsWithinWorkingHoursTzAware:
+
+    def test_tz_aware_datetime_does_not_raise(self, office_cfg):
+        """Timezone-aware datetime triggers the tzinfo branch without error."""
+        from datetime import timezone as tz
+        t = datetime(2026, 2, 18, 10, 0, tzinfo=tz.utc)  # Wednesday 10:00 UTC
+        result = is_within_working_hours(office_cfg, t)
+        assert isinstance(result, bool)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_daily_working_hours
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetDailyWorkingHours:
+
+    def test_standard_10_hour_shift(self):
+        cfg = {"working_start": "08:00", "working_end": "18:00"}
+        assert get_daily_working_hours(cfg) == pytest.approx(10.0)
+
+    def test_custom_4_hour_shift(self):
+        cfg = {"working_start": "09:00", "working_end": "13:00"}
+        assert get_daily_working_hours(cfg) == pytest.approx(4.0)
+
+    def test_bad_time_format_returns_10_as_fallback(self):
+        cfg = {"working_start": "bad", "working_end": "format"}
+        assert get_daily_working_hours(cfg) == pytest.approx(10.0)
+
+    def test_midnight_crossing_shift(self):
+        """Night shift: end before start wraps around -> positive hours."""
+        cfg = {"working_start": "22:00", "working_end": "06:00"}
+        result = get_daily_working_hours(cfg)
+        assert result == pytest.approx(8.0)
+

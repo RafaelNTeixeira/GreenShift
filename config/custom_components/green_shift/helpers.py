@@ -285,8 +285,7 @@ def should_ai_be_active(config_data: Dict, check_time: datetime = None) -> bool:
     """
     Determine if AI operations (tasks, notifications) should be active.
 
-    This is a convenience wrapper around is_within_working_hours()
-    with clearer naming for AI-specific checks.
+    This is a convenience wrapper around is_within_working_hours() with clearer naming for AI-specific checks.
 
     Args:
         config_data (dict): Configuration data from config entry
