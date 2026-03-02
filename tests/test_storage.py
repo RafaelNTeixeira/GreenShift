@@ -830,7 +830,7 @@ class TestRLEpisodeCleanup:
         insert_episode(old_date)
         insert_episode(now)
 
-        await storage._cleanup_old_rl_episodes()
+        await storage._cleanup_old_research_data()
 
         def count_episodes():
             conn = sqlite3.connect(storage.research_db_path)
@@ -862,7 +862,7 @@ class TestRLEpisodeCleanup:
 
         insert(old_ts)
         insert(new_ts)
-        await storage._cleanup_old_rl_episodes()
+        await storage._cleanup_old_research_data()
 
         conn = sqlite3.connect(storage.research_db_path)
         count = conn.execute("SELECT COUNT(*) FROM research_nudge_log").fetchone()[0]
@@ -888,7 +888,7 @@ class TestRLEpisodeCleanup:
 
         insert(old_ts)
         insert(new_ts)
-        await storage._cleanup_old_rl_episodes()
+        await storage._cleanup_old_research_data()
 
         conn = sqlite3.connect(storage.research_db_path)
         count = conn.execute("SELECT COUNT(*) FROM research_blocked_notifications").fetchone()[0]
@@ -914,7 +914,7 @@ class TestRLEpisodeCleanup:
 
         insert(old_ts, "task-old-1")
         insert(new_ts, "task-new-1")
-        await storage._cleanup_old_rl_episodes()
+        await storage._cleanup_old_research_data()
 
         conn = sqlite3.connect(storage.research_db_path)
         count = conn.execute("SELECT COUNT(*) FROM research_task_interactions").fetchone()[0]
@@ -940,7 +940,7 @@ class TestRLEpisodeCleanup:
 
         insert(old_date)
         insert(new_date)
-        await storage._cleanup_old_rl_episodes()
+        await storage._cleanup_old_research_data()
 
         conn = sqlite3.connect(storage.research_db_path)
         count = conn.execute("SELECT COUNT(*) FROM research_area_daily_stats").fetchone()[0]
@@ -966,7 +966,7 @@ class TestRLEpisodeCleanup:
 
         insert(old_ts)
         insert(new_ts)
-        await storage._cleanup_old_rl_episodes()
+        await storage._cleanup_old_research_data()
 
         conn = sqlite3.connect(storage.research_db_path)
         count = conn.execute("SELECT COUNT(*) FROM research_phase_metadata").fetchone()[0]

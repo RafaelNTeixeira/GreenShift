@@ -17,7 +17,7 @@ from .helpers import get_daily_working_hours
 import numpy as np
 import asyncio
 from homeassistant.core import HomeAssistant
-from .const import ENVIRONMENT_OFFICE, UPDATE_INTERVAL_SECONDS, RL_EPISODE_RETENTION_DAYS, BASE_TEMPERATURE, WEATHER_ENTITIES
+from .const import ENVIRONMENT_OFFICE, UPDATE_INTERVAL_SECONDS, RESEARCH_RETENTION_DAYS, BASE_TEMPERATURE, WEATHER_ENTITIES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -503,15 +503,15 @@ class StorageManager:
 
         await self.hass.async_add_executor_job(_cleanup)
 
-    async def _cleanup_old_rl_episodes(self):
-        """Remove rows older than RL_EPISODE_RETENTION_DAYS from all research_data.db tables."""
+    async def _cleanup_old_research_data(self):
+        """Remove rows older than RESEARCH_RETENTION_DAYS from all research_data.db tables."""
         def _cleanup():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
 
             # Calculate cutoffs
-            ts_cutoff = (datetime.now(timezone.utc) - timedelta(days=RL_EPISODE_RETENTION_DAYS)).timestamp()
-            date_cutoff = (datetime.now() - timedelta(days=RL_EPISODE_RETENTION_DAYS)).strftime("%Y-%m-%d")
+            ts_cutoff = (datetime.now(timezone.utc) - timedelta(days=RESEARCH_RETENTION_DAYS)).timestamp()
+            date_cutoff = (datetime.now() - timedelta(days=RESEARCH_RETENTION_DAYS)).strftime("%Y-%m-%d")
 
             # Tables with a unix-epoch timestamp column
             ts_tables = [
@@ -542,7 +542,7 @@ class StorageManager:
             if deleted_any:
                 _LOGGER.info(
                     "Research DB cleanup (older than %d days): %s",
-                    RL_EPISODE_RETENTION_DAYS,
+                    RESEARCH_RETENTION_DAYS,
                     deleted_any,
                 )
 

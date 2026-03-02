@@ -276,7 +276,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Clean up old RL episodes to manage database size."""
         _LOGGER.debug("Running RL episode cleanup...")
         try:
-            await storage._cleanup_old_rl_episodes()
+            await storage._cleanup_old_research_data()
 
             # Update last cleanup timestamp in state
             current_state = await storage.load_state()
@@ -935,7 +935,7 @@ async def async_setup_services(hass: HomeAssistant):
             # Manually trigger cleanup
             _LOGGER.info(f"\n🔧 Running RL episode cleanup manually...")
 
-            await storage._cleanup_old_rl_episodes()
+            await storage._cleanup_old_research_data()
 
             # Update timestamp
             state = await storage.load_state()
