@@ -1610,9 +1610,10 @@ class TestAnomalyIndexWorkingHours:
     (which is also computed from working-hours data)."""
 
     @pytest.mark.asyncio
-    async def test_office_mode_uses_working_hours_filter(self):
-        """_update_anomaly_index in office mode must query get_power_history with
-        working_hours_only=True instead of relying on the unfiltered _cached_power_h1."""
+    async def test_office_mode_fallback_uses_working_hours_filter(self):
+        """When _cached_power_h1 is None (cold start / direct call), the fallback
+        query in _update_anomaly_index must use working_hours_only=True for office
+        mode so results are consistent with the working-hours-based baseline."""
         office_cfg = {
             "environment_mode": "office",
             "working_start": "08:00",
@@ -1627,26 +1628,43 @@ class TestAnomalyIndexWorkingHours:
         }
         agent = make_agent(config_data=office_cfg)
         agent.baseline_consumption = 1000.0
+        agent._cached_power_h1 = None  # cache unpopulated -> fallback path
 
-        # Cache contains a large off-hours reading that would trigger a false anomaly
-        # if used for the office-mode comparison (baseline was 1000 W working-hours avg).
-        agent._cached_power_h1 = [(None, v) for v in [50.0] * 200]  # night-time low values
-
-        # The working-hours query returns readings near baseline (no anomaly)
-        filtered_history = [(None, 980.0)] * 200  # working hours data near baseline
-        agent.data_collector.get_power_history = AsyncMock(return_value=filtered_history)
+        fallback_data = [(None, 980.0)] * 200
+        agent.data_collector.get_power_history = AsyncMock(return_value=fallback_data)
 
         await agent._update_anomaly_index()
 
-        # Must have queried with working_hours_only=True
+        # The fallback query must have been issued with working_hours_only=True.
+        agent.data_collector.get_power_history.assert_called_once()
         call_kwargs = agent.data_collector.get_power_history.call_args
-        assert call_kwargs is not None, "_update_anomaly_index did not call get_power_history"
         kwargs = call_kwargs.kwargs if hasattr(call_kwargs, "kwargs") else (
             call_kwargs[1] if len(call_kwargs) > 1 else {}
         )
         assert kwargs.get("working_hours_only") is True, (
-            "In office mode, _update_anomaly_index must request working_hours_only=True "
+            "In office mode the fallback query must use working_hours_only=True "
             "to match the working-hours-only baseline_consumption."
+        )
+
+    @pytest.mark.asyncio
+    async def test_office_mode_cache_hit_no_extra_query(self):
+        """When _cached_power_h1 is pre-populated (as by process_ai_model()),
+        _update_anomaly_index must NOT issue a second DB query even in office mode."""
+        office_cfg = {"environment_mode": "office"}
+        agent = make_agent(config_data=office_cfg)
+        agent.baseline_consumption = 1000.0
+
+        # Simulate cache already populated with working-hours readings by process_ai_model()
+        agent._cached_power_h1 = [(None, 980.0)] * 200
+
+        query_tracker = AsyncMock(return_value=agent._cached_power_h1)
+        agent.data_collector.get_power_history = query_tracker
+
+        await agent._update_anomaly_index()
+
+        query_tracker.assert_not_called(), (
+            "In office mode, _update_anomaly_index must use the per-cycle cache "
+            "when available and must NOT issue an additional DB query."
         )
 
     @pytest.mark.asyncio

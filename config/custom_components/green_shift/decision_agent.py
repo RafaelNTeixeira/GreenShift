@@ -463,9 +463,10 @@ class DecisionAgent:
                 del self.pending_episodes[k]
             _LOGGER.info("Expired %d stale pending episode(s) (>24 h old)", len(expired_ids))
 
-        # Pre-fetch 1-hour power history once per cycle and cache it
+        # Pre-fetch 1-hour power history once per cycle and cache it.
         # _update_anomaly_index() and _update_action_mask() both need the same data: sharing the result eliminates one redundant DB query per cycle.
-        self._cached_power_h1 = await self.data_collector.get_power_history(hours=1)
+        _wh_filter = (self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE) or None
+        self._cached_power_h1 = await self.data_collector.get_power_history(hours=1, working_hours_only=_wh_filter)
 
         # Build state vector from DataCollector's current readings
         await self._build_state_vector()
@@ -625,10 +626,11 @@ class DecisionAgent:
 
         # anomaly: requires sufficient history and detected anomalies
         # Reuse the per-cycle cache when available; avoids a duplicate DB read.
+        _wh_filter = (self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE) or None
         power_history = (
             self._cached_power_h1
             if self._cached_power_h1 is not None
-            else await self.data_collector.get_power_history(hours=1)
+            else await self.data_collector.get_power_history(hours=1, working_hours_only=_wh_filter)
         )
         has_area_anomalies = any(any(v > 0.3 for v in area_anomalies.values())
                                 for area_anomalies in self.area_anomalies.values())
@@ -842,10 +844,11 @@ class DecisionAgent:
             float: The calculated shadow reward for the given action.
         """
         # Reuse the per-cycle power cache set by process_ai_model() to avoid a duplicate DB query on every shadow episode.
+        _wh_filter = (self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE) or None
         power_history_data = (
             self._cached_power_h1
             if self._cached_power_h1 is not None
-            else await self.data_collector.get_power_history(hours=1)
+            else await self.data_collector.get_power_history(hours=1, working_hours_only=_wh_filter)
         )
         power_values = [power for timestamp, power in power_history_data]
 
@@ -1585,16 +1588,12 @@ class DecisionAgent:
 
     async def _update_anomaly_index(self):
         """Detects anomalies in consumption using z-score."""
-        is_office = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
-        if is_office:
-            power_history_data = await self.data_collector.get_power_history(hours=1, working_hours_only=True)
-        else:
-            # Use per-cycle cache when available; avoids a redundant DB query.
-            power_history_data = (
-                self._cached_power_h1
-                if self._cached_power_h1 is not None
-                else await self.data_collector.get_power_history(hours=1)
-            )
+        _wh_filter = (self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE) or None
+        power_history_data = (
+            self._cached_power_h1
+            if self._cached_power_h1 is not None
+            else await self.data_collector.get_power_history(hours=1, working_hours_only=_wh_filter)
+        )
         power_values = [power for timestamp, power in power_history_data]
 
         readings_per_hour = int((3600 / UPDATE_INTERVAL_SECONDS) * 0.8)  # Require at least 80% of expected readings for reliability
@@ -2047,8 +2046,8 @@ class DecisionAgent:
 
         # Determine if we should filter to working hours only (office mode)
         is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
-        working_hours_filter = True if is_office_mode else None
 
+        working_hours_filter = True if is_office_mode else None
         if is_office_mode:
             _LOGGER.info("Office mode detected - calculating area baselines from working hours data only")
 
