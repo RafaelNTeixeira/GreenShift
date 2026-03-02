@@ -80,6 +80,7 @@ class DecisionAgent:
         self.notification_count_today = 0
         self.last_notification_date = None
         self.last_notification_time = None
+        self._last_cooldown_block_log_time = None  # Throttle cooldown-block DB writes
 
         # Q-table for reinforcement learning
         self.q_table = {}              # {state_key: {action: q_value}}
@@ -656,11 +657,29 @@ class DecisionAgent:
             _LOGGER.info("Max notifications reached for today (%d/%d)", self.notification_count_today, MAX_NOTIFICATIONS_PER_DAY)
             return
 
-        # Calculate opportunity score BEFORE cooldown check
+        # Calculate opportunity score before cooldown check
         opportunity_score = await self._calculate_opportunity_score()
+
+        # Capture time-since-last before the cooldown check so we can log it if blocked
+        _time_since_last_min = (
+            (datetime.now() - self.last_notification_time).total_seconds() / 60
+            if self.last_notification_time is not None
+            else None
+        )
 
         # Check adaptive cooldown with opportunity-based bypass
         if not await self._check_cooldown_with_opportunity(opportunity_score):
+            # Log at most once per MIN_COOLDOWN_MINUTES to avoid flooding research_blocked_notifications with routine cooldown entries.
+            _now = datetime.now()
+            if (self._last_cooldown_block_log_time is None or 
+                (_now - self._last_cooldown_block_log_time).total_seconds() >= MIN_COOLDOWN_MINUTES * 60):
+                self._last_cooldown_block_log_time = _now
+                await self._log_blocked_notification(
+                    reason="cooldown",
+                    opportunity_score=opportunity_score,
+                    time_since_last=_time_since_last_min,
+                    available_actions=[],
+                )
             return
 
         # Check fatigue threshold - but allow bypass for critical opportunities

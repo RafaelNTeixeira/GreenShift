@@ -1712,3 +1712,82 @@ class TestShadowRewardCache:
 
         agent.data_collector.get_power_history.assert_called_once()
         assert isinstance(result, float)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cooldown-block logging throttle
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCooldownBlockLogging:
+    """_decide_action must log blocked-by-cooldown notifications to the research
+    DB, but at most once per MIN_COOLDOWN_MINUTES to avoid flooding the table."""
+
+    def _make_active_agent_with_storage(self):
+        """Return an agent in ACTIVE phase with a mock storage that tracks calls."""
+        from custom_components.green_shift.const import PHASE_ACTIVE
+        agent = make_agent()
+        agent.phase = PHASE_ACTIVE
+        agent.storage = AsyncMock()
+        agent.storage.log_blocked_notification = AsyncMock()
+        agent.storage.log_rl_decision = AsyncMock()  # may be called for noop path
+        agent.notification_count_today = 0
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_cooldown_block_is_logged_when_in_cooldown(self):
+        """First cooldown block must produce exactly one DB write."""
+        agent = self._make_active_agent_with_storage()
+
+        # Simulate: last notification sent 1 minute ago (well within MIN_COOLDOWN_MINUTES)
+        agent.last_notification_time = datetime.now() - timedelta(minutes=1)
+        agent.action_mask = {0: True, 1: True, 2: False, 3: True, 4: True}
+        agent.state_vector = [0.0] * 20
+        agent._cached_power_h1 = [(None, 500.0)] * 20
+
+        # _check_cooldown_with_opportunity will return False (too soon)
+        # _log_blocked_notification calls storage.log_blocked_notification
+        await agent._decide_action()
+
+        agent.storage.log_blocked_notification.assert_called_once()
+        call_kwargs = agent.storage.log_blocked_notification.call_args[0][0]
+        assert call_kwargs["block_reason"] == "cooldown"
+
+    @pytest.mark.asyncio
+    async def test_cooldown_block_not_logged_twice_within_throttle_window(self):
+        """A second cooldown block within MIN_COOLDOWN_MINUTES must NOT write again."""
+        agent = self._make_active_agent_with_storage()
+
+        agent.last_notification_time = datetime.now() - timedelta(minutes=1)
+        agent.action_mask = {0: True, 1: True, 2: False, 3: True, 4: True}
+        agent.state_vector = [0.0] * 20
+        agent._cached_power_h1 = [(None, 500.0)] * 20
+
+        # First call — should log
+        await agent._decide_action()
+        assert agent.storage.log_blocked_notification.call_count == 1
+
+        # Second call immediately after — still in throttle window; must NOT log again
+        await agent._decide_action()
+        assert agent.storage.log_blocked_notification.call_count == 1  # unchanged
+
+    @pytest.mark.asyncio
+    async def test_cooldown_block_logged_again_after_throttle_expires(self):
+        """After the throttle window elapses, the next block must be logged."""
+        from custom_components.green_shift.const import MIN_COOLDOWN_MINUTES
+        agent = self._make_active_agent_with_storage()
+
+        agent.last_notification_time = datetime.now() - timedelta(minutes=1)
+        agent.action_mask = {0: True, 1: True, 2: False, 3: True, 4: True}
+        agent.state_vector = [0.0] * 20
+        agent._cached_power_h1 = [(None, 500.0)] * 20
+
+        # Simulate that the last log was MIN_COOLDOWN_MINUTES + 1 seconds ago
+        agent._last_cooldown_block_log_time = (
+            datetime.now() - timedelta(minutes=MIN_COOLDOWN_MINUTES, seconds=1)
+        )
+
+        await agent._decide_action()
+
+        assert agent.storage.log_blocked_notification.call_count == 1  # logged again
+        call_kwargs = agent.storage.log_blocked_notification.call_args[0][0]
+        assert call_kwargs["block_reason"] == "cooldown"

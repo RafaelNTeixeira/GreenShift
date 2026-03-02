@@ -480,7 +480,7 @@ class StorageManager:
             deleted_area = cursor.rowcount
 
             # Clean old tasks (keep 30 days for historical analysis)
-            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+            cutoff_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
             cursor.execute(
                 "DELETE FROM daily_tasks WHERE date < ?",
                 (cutoff_date,)
@@ -1099,8 +1099,7 @@ class StorageManager:
         def _query():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
-
-            cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+            cutoff = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
             cursor.execute("""
                 SELECT COUNT(*)
                 FROM daily_tasks
@@ -1273,9 +1272,7 @@ class StorageManager:
         def _query():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
-
-            # Get recent feedback (last 30 days)
-            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+            cutoff_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
             cursor.execute("""
                 SELECT difficulty_level, feedback, COUNT(*) as count

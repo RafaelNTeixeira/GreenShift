@@ -433,21 +433,21 @@ class TestMetricWhitelist:
             assert isinstance(result, list)
 
 
-class TestAreaAggregatesUTCBoundaries:
-    """compute_area_daily_aggregates must use UTC midnight as day boundaries."""
+class TestLocalMidnightBoundaries:
+    """compute_area_daily_aggregates and compute_daily_aggregates must use local midnight as day boundaries."""
 
     @pytest.mark.asyncio
-    async def test_reading_at_utc_midnight_is_included(self, storage):
-        """A reading timestamped at exactly UTC midnight must appear in that day's aggregate."""
+    async def test_reading_at_local_midnight_is_included(self, storage):
+        """A reading at exactly local midnight must appear in that day's aggregate."""
         date_str = "2026-03-01"
-        utc_midnight = datetime(2026, 3, 1, 0, 0, 0, tzinfo=timezone.utc).timestamp()
+        # Construct the naive local midnight and convert to epoch (local time)
+        local_midnight_ts = datetime(2026, 3, 1, 0, 0, 0).timestamp()
 
-        # Insert an area reading precisely at UTC midnight
         conn = sqlite3.connect(storage.db_path)
         c = conn.cursor()
         c.execute(
             "INSERT INTO area_sensor_history (timestamp, area_name, power) VALUES (?, ?, ?)",
-            (utc_midnight, "Office", 500.0),
+            (local_midnight_ts, "Office", 500.0),
         )
         conn.commit()
         conn.close()
@@ -464,17 +464,17 @@ class TestAreaAggregatesUTCBoundaries:
         res_conn.close()
 
         assert row is not None, (
-            "Area aggregate row missing; UTC-midnight reading was not included. "
-            "This indicates compute_area_daily_aggregates uses local TZ instead of UTC."
+            "Area aggregate row missing; local-midnight reading was not included. "
+            "compute_area_daily_aggregates must use local midnight as the day start."
         )
         assert row[0] == pytest.approx(500.0, abs=1.0)
 
     @pytest.mark.asyncio
-    async def test_reading_one_second_before_utc_midnight_excluded(self, storage):
-        """A reading at UTC midnight minus 1 second must NOT appear in that day."""
+    async def test_reading_one_second_before_local_midnight_excluded(self, storage):
+        """A reading 1 second before local midnight must NOT appear in that day's aggregate."""
         date_str = "2026-03-02"
-        utc_midnight = datetime(2026, 3, 2, 0, 0, 0, tzinfo=timezone.utc).timestamp()
-        just_before = utc_midnight - 1  # belongs to 2026-03-01
+        local_midnight_ts = datetime(2026, 3, 2, 0, 0, 0).timestamp()
+        just_before = local_midnight_ts - 1  # belongs to 2026-03-01
 
         conn = sqlite3.connect(storage.db_path)
         c = conn.cursor()
@@ -497,9 +497,38 @@ class TestAreaAggregatesUTCBoundaries:
         res_conn.close()
 
         assert row is None, (
-            "A reading from before UTC midnight was incorrectly included in the next day. "
-            "This indicates the day boundary is off - likely local TZ used instead of UTC."
+            "A reading from before local midnight was incorrectly included in the next day. "
+            "compute_area_daily_aggregates must use LOCAL midnight as the day boundary."
         )
+
+    @pytest.mark.asyncio
+    async def test_reading_at_local_midnight_included_in_daily_aggregates(self, storage):
+        """compute_daily_aggregates also uses local midnight boundaries."""
+        date_str = "2026-03-01"
+        local_midnight_ts = datetime(2026, 3, 1, 0, 0, 0).timestamp()
+
+        conn = sqlite3.connect(storage.db_path)
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO sensor_history (timestamp, power, within_working_hours) VALUES (?, ?, ?)",
+            (local_midnight_ts, 800.0, 1),
+        )
+        conn.commit()
+        conn.close()
+
+        await storage.compute_daily_aggregates(date=date_str, phase="active")
+
+        res_conn = sqlite3.connect(storage.research_db_path)
+        res_cursor = res_conn.cursor()
+        res_cursor.execute(
+            "SELECT avg_power_w FROM research_daily_aggregates WHERE date = ?",
+            (date_str,),
+        )
+        row = res_cursor.fetchone()
+        res_conn.close()
+
+        assert row is not None, "Daily aggregate row missing for local-midnight reading."
+        assert row[0] == pytest.approx(800.0, abs=1.0)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

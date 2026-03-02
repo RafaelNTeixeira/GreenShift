@@ -63,10 +63,16 @@ class DataCollector:
 
         state = await self.storage.load_state()
 
-        # Load energy midnight points
+        # Load energy midnight points: only reuse them when they were saved on TODAY's date.  
         if "energy_midnight_points" in state:
-            self._energy_midnight_points = state["energy_midnight_points"]
-            _LOGGER.info("Loaded %d midnight energy points from storage", len(self._energy_midnight_points))
+            stored_date = state.get("energy_midnight_points_date")
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            if stored_date == today_str:
+                self._energy_midnight_points = state["energy_midnight_points"]
+                _LOGGER.info("Loaded %d midnight energy points from storage (date: %s)", len(self._energy_midnight_points), stored_date)
+            else:
+                _LOGGER.info("Midnight energy points from '%s' are stale (today is '%s'): discarding to avoid inflated daily energy after HA restart over midnight.",
+                    stored_date, today_str)
 
         _LOGGER.info("Persistent data loaded successfully")
 
@@ -513,8 +519,12 @@ class DataCollector:
 
         # Save to persistent storage
         if self.storage:
+            current_date = datetime.now().strftime("%Y-%m-%d")
             self.hass.async_create_task(
                 self.storage.update_state_field("energy_midnight_points", self._energy_midnight_points)
+            )
+            self.hass.async_create_task(
+                self.storage.update_state_field("energy_midnight_points_date", current_date)
             )
 
         _LOGGER.debug("Midnight snapshots updated: %s", self._energy_midnight_points)

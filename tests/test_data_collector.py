@@ -17,7 +17,7 @@ import types
 import pathlib
 import importlib.util
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from collections import deque
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -475,3 +475,88 @@ class TestMemoryManagement:
 
         assert dc._power_sensor_cache["sensor.test"] == 123.4
         assert dc._energy_sensor_cache["sensor.test"] == 56.7
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Midnight-points date guard
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestMidnightPointsDateGuard:
+    """_load_persistent_data must discard midnight energy points that were saved on
+    a different calendar day.  Keeping stale points after an HA restart that spans
+    midnight would inflate current_daily_energy for the new day."""
+
+    @pytest.mark.asyncio
+    async def test_loads_midnight_points_when_date_matches_today(self):
+        """Midnight points saved today must be loaded normally."""
+        today_str = datetime.now().strftime("%Y-%m-%d")
+
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={
+            "energy_midnight_points": {"sensor.energy_1": 50.0},
+            "energy_midnight_points_date": today_str,
+        })
+
+        dc = make_collector(storage=storage)
+        await dc._load_persistent_data()
+
+        assert dc._energy_midnight_points == {"sensor.energy_1": 50.0}
+
+    @pytest.mark.asyncio
+    async def test_discards_midnight_points_when_date_is_yesterday(self):
+        """Midnight points from yesterday must be discarded (HA restarted after midnight)."""
+        yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={
+            "energy_midnight_points": {"sensor.energy_1": 50.0},
+            "energy_midnight_points_date": yesterday_str,
+        })
+
+        dc = make_collector(storage=storage)
+        await dc._load_persistent_data()
+
+        # Must be empty — will be re-initialised from first energy change event
+        assert dc._energy_midnight_points == {}
+
+    @pytest.mark.asyncio
+    async def test_discards_midnight_points_when_date_is_missing(self):
+        """If no date key is stored (legacy state), points must be discarded."""
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={
+            "energy_midnight_points": {"sensor.energy_1": 50.0},
+            # no "energy_midnight_points_date" key
+        })
+
+        dc = make_collector(storage=storage)
+        await dc._load_persistent_data()
+
+        assert dc._energy_midnight_points == {}
+
+    def test_update_midnight_points_saves_current_date(self, mock_hass, mock_storage):
+        """update_midnight_points must persist today's local date alongside the values
+        so that _load_persistent_data can detect staleness on the next restart."""
+        dc = DataCollector(mock_hass, {"energy": ["sensor.e1"]}, None, None, mock_storage)
+        dc._energy_sensor_cache = {"sensor.e1": 20.0}
+
+        # async_create_task schedules but doesn't run coroutines; we just need to
+        # verify update_state_field was called with the correct arguments.
+        mock_hass.async_create_task = MagicMock()
+
+        dc.update_midnight_points()
+
+        # update_state_field must have been called (as coroutine object, not awaited)
+        calls = mock_storage.update_state_field.call_args_list
+        keys = [c[0][0] for c in calls]
+
+        assert "energy_midnight_points_date" in keys, (
+            "update_midnight_points must persist energy_midnight_points_date "
+            "so _load_persistent_data can detect stale points after a restart."
+        )
+
+        date_call = next(c for c in calls if c[0][0] == "energy_midnight_points_date")
+        expected_date = datetime.now().strftime("%Y-%m-%d")
+        assert date_call[0][1] == expected_date, (
+            f"Expected date '{expected_date}', got '{date_call[0][1]}'. "
+            "Must use local calendar date, not UTC."
+        )

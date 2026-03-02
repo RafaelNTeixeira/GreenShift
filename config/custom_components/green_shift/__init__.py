@@ -131,22 +131,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # days_running = 14 # TEMP: For testing purposes, simulate baseline phase completion after 14 days
 
-        # During baseline phase: continuously update baseline_consumption
+        # During baseline phase: refresh baseline_consumption at most once per hour (avoids querying a growing window of up to 80 K rows every 15 seconds).
         if agent.phase == PHASE_BASELINE:
-            # In office mode, only use working hours data for baseline calculation
-            is_office_mode = entry.data.get("environment_mode") == ENVIRONMENT_OFFICE
-            working_hours_filter = True if is_office_mode else None
+            _now_dt = datetime.now()
+            _last_ts = hass.data[DOMAIN].get("_last_baseline_compute_ts")
+            _should_compute = (_last_ts is None or (_now_dt - _last_ts).total_seconds() >= 3600) # Compute at most once per hour
+            if _should_compute:
+                # In office mode, only use working hours data for baseline calculation
+                is_office_mode = entry.data.get("environment_mode") == ENVIRONMENT_OFFICE
+                working_hours_filter = True if is_office_mode else None
 
-            power_history_data = await collector.get_power_history(
-                days=max(1, days_running),
-                working_hours_only=working_hours_filter
-            )
-            power_values = [power for timestamp, power in power_history_data]
+                power_history_data = await collector.get_power_history(
+                    days=max(1, days_running),
+                    working_hours_only=working_hours_filter
+                )
+                power_values = [power for timestamp, power in power_history_data]
 
-            if len(power_values) > 0:
-                agent.baseline_consumption = np.mean(power_values)
-                _LOGGER.debug("Baseline consumption updated: %.2f W (office mode: %s, working hours only: %s)",
-                             agent.baseline_consumption, is_office_mode, working_hours_filter is not None)
+                if len(power_values) > 0:
+                    agent.baseline_consumption = np.mean(power_values)
+                    hass.data[DOMAIN]["_last_baseline_compute_ts"] = _now_dt
+                    _LOGGER.debug(
+                        "Baseline consumption updated: %.2f W (office mode: %s, working hours only: %s)",
+                        agent.baseline_consumption, is_office_mode, working_hours_filter is not None
+                    )
 
         # Verify if the baseline phase is complete
         if days_running >= BASELINE_DAYS and agent.phase == PHASE_BASELINE:
@@ -173,6 +180,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 await agent._save_persistent_state()
 
         async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
+
+    hass.data[DOMAIN]["_last_baseline_compute_ts"] = None  # Tracks hourly baseline refresh
 
     hass.data[DOMAIN]["update_listener"] = async_track_time_interval(
         hass, update_agent_ai_model, timedelta(seconds=AI_FREQUENCY_SECONDS)
@@ -226,14 +235,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def daily_aggregation_callback(now):
         """Compute/update daily aggregates for research analysis every hour."""
         _LOGGER.debug("Updating daily aggregates for research database...")
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now().strftime("%Y-%m-%d")  # Use local calendar date
 
         try:
             await storage.compute_daily_aggregates(date=today, phase=agent.phase)
             await storage.compute_area_daily_aggregates(date=today, phase=agent.phase)
             _LOGGER.debug("Daily aggregates updated successfully for %s", today)
-        except Exception as e:
-            _LOGGER.error("Failed to update daily aggregates: %s", e)
+        except Exception as exc:
+            _LOGGER.error("Failed to update daily aggregates: %s", exc)
 
     hass.data[DOMAIN]["daily_aggregation_listener"] = async_track_time_interval(
         hass, daily_aggregation_callback, timedelta(hours=1)
