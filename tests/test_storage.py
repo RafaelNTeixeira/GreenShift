@@ -530,7 +530,6 @@ class TestLocalMidnightBoundaries:
         assert row is not None, "Daily aggregate row missing for local-midnight reading."
         assert row[0] == pytest.approx(800.0, abs=1.0)
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # get_all_areas
 # ─────────────────────────────────────────────────────────────────────────────

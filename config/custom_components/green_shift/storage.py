@@ -687,7 +687,6 @@ class StorageManager:
                 conn = sqlite3.connect(str(self.db_path))
                 cursor = conn.cursor()
 
-
                 ts_epoch = timestamp.timestamp()
 
                 cursor.execute("""
@@ -1904,8 +1903,8 @@ class StorageManager:
                     SUM(CASE WHEN responded = 1 AND accepted = 0 THEN 1 ELSE 0 END) as dismissed,
                     SUM(CASE WHEN responded = 0 THEN 1 ELSE 0 END) as ignored
                 FROM research_nudge_log
-                WHERE DATE(timestamp, 'unixepoch') = ?
-            """, (date,))
+                WHERE timestamp >= ? AND timestamp < ?
+            """, (start_ts, end_ts))
             nudge_stats = research_cursor.fetchone()
             if not nudge_stats or nudge_stats[0] is None:
                 nudge_stats = (0, 0, 0, 0)
@@ -1913,9 +1912,9 @@ class StorageManager:
             # Get blocked notification count (active phase only)
             research_cursor.execute("""
                 SELECT COUNT(*) FROM research_blocked_notifications
-                WHERE DATE(timestamp, 'unixepoch') = ?
+                WHERE timestamp >= ? AND timestamp < ?
                   AND phase = 'active'
-            """, (date,))
+            """, (start_ts, end_ts))
             blocked_result = research_cursor.fetchone()
             blocked_count = blocked_result[0] if blocked_result and blocked_result[0] else 0
 
@@ -1926,8 +1925,8 @@ class StorageManager:
                     AVG(behaviour_index) as avg_behaviour,
                     AVG(fatigue_index) as avg_fatigue
                 FROM research_rl_episodes
-                WHERE DATE(timestamp, 'unixepoch') = ?
-            """, (date,))
+                WHERE timestamp >= ? AND timestamp < ?
+            """, (start_ts, end_ts))
             indices_stats = research_cursor.fetchone()
             if not indices_stats or indices_stats[0] is None:
                 indices_stats = (0, 0, 0)
