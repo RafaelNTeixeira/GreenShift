@@ -843,6 +843,136 @@ class TestRLEpisodeCleanup:
         count = count_episodes()
         assert count == 1  # Only recent episode remains
 
+    @pytest.mark.asyncio
+    async def test_removes_old_nudge_log_rows(self, storage):
+        """research_nudge_log rows older than 120 days must be purged."""
+        now = datetime.now()
+        old_ts = (now - timedelta(days=121)).timestamp()
+        new_ts = now.timestamp()
+
+        def insert(ts):
+            conn = sqlite3.connect(storage.research_db_path)
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO research_nudge_log (timestamp) VALUES (?)",
+                (ts,),
+            )
+            conn.commit()
+            conn.close()
+
+        insert(old_ts)
+        insert(new_ts)
+        await storage._cleanup_old_rl_episodes()
+
+        conn = sqlite3.connect(storage.research_db_path)
+        count = conn.execute("SELECT COUNT(*) FROM research_nudge_log").fetchone()[0]
+        conn.close()
+        assert count == 1, "Old nudge_log row must be deleted; recent one must remain."
+
+    @pytest.mark.asyncio
+    async def test_removes_old_blocked_notifications_rows(self, storage):
+        """research_blocked_notifications rows older than 120 days must be purged."""
+        now = datetime.now()
+        old_ts = (now - timedelta(days=121)).timestamp()
+        new_ts = now.timestamp()
+
+        def insert(ts):
+            conn = sqlite3.connect(storage.research_db_path)
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO research_blocked_notifications (timestamp, block_reason) VALUES (?, ?)",
+                (ts, "cooldown"),
+            )
+            conn.commit()
+            conn.close()
+
+        insert(old_ts)
+        insert(new_ts)
+        await storage._cleanup_old_rl_episodes()
+
+        conn = sqlite3.connect(storage.research_db_path)
+        count = conn.execute("SELECT COUNT(*) FROM research_blocked_notifications").fetchone()[0]
+        conn.close()
+        assert count == 1, "Old blocked_notifications row must be deleted; recent one must remain."
+
+    @pytest.mark.asyncio
+    async def test_removes_old_task_interactions_rows(self, storage):
+        """research_task_interactions rows older than 120 days (by generation_timestamp) must be purged."""
+        now = datetime.now()
+        old_ts = (now - timedelta(days=121)).timestamp()
+        new_ts = now.timestamp()
+
+        def insert(ts, task_id):
+            conn = sqlite3.connect(storage.research_db_path)
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO research_task_interactions (task_id, date, generation_timestamp) VALUES (?, ?, ?)",
+                (task_id, now.strftime("%Y-%m-%d"), ts),
+            )
+            conn.commit()
+            conn.close()
+
+        insert(old_ts, "task-old-1")
+        insert(new_ts, "task-new-1")
+        await storage._cleanup_old_rl_episodes()
+
+        conn = sqlite3.connect(storage.research_db_path)
+        count = conn.execute("SELECT COUNT(*) FROM research_task_interactions").fetchone()[0]
+        conn.close()
+        assert count == 1, "Old task_interactions row must be deleted; recent one must remain."
+
+    @pytest.mark.asyncio
+    async def test_removes_old_area_daily_stats_rows(self, storage):
+        """research_area_daily_stats rows older than 120 days must be purged."""
+        now = datetime.now()
+        old_date = (now - timedelta(days=121)).strftime("%Y-%m-%d")
+        new_date = now.strftime("%Y-%m-%d")
+
+        def insert(d):
+            conn = sqlite3.connect(storage.research_db_path)
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO research_area_daily_stats (date, area_name) VALUES (?, ?)",
+                (d, "kitchen"),
+            )
+            conn.commit()
+            conn.close()
+
+        insert(old_date)
+        insert(new_date)
+        await storage._cleanup_old_rl_episodes()
+
+        conn = sqlite3.connect(storage.research_db_path)
+        count = conn.execute("SELECT COUNT(*) FROM research_area_daily_stats").fetchone()[0]
+        conn.close()
+        assert count == 1, "Old area_daily_stats row must be deleted; recent one must remain."
+
+    @pytest.mark.asyncio
+    async def test_phase_metadata_never_purged(self, storage):
+        """research_phase_metadata must NEVER be touched by the cleanup job."""
+        now = datetime.now()
+        old_ts = (now - timedelta(days=200)).timestamp()
+        new_ts = now.timestamp()
+
+        def insert(ts):
+            conn = sqlite3.connect(storage.research_db_path)
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO research_phase_metadata (phase, start_timestamp) VALUES (?, ?)",
+                ("baseline", ts),
+            )
+            conn.commit()
+            conn.close()
+
+        insert(old_ts)
+        insert(new_ts)
+        await storage._cleanup_old_rl_episodes()
+
+        conn = sqlite3.connect(storage.research_db_path)
+        count = conn.execute("SELECT COUNT(*) FROM research_phase_metadata").fetchone()[0]
+        conn.close()
+        assert count == 2, "research_phase_metadata rows must never be deleted by cleanup."
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # get_active_phase_savings
@@ -1384,7 +1514,7 @@ class TestGetTaskDifficultyStats:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# save_state / load_state / update_state_field
+# save_state / load_state
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestStatePersistence:
@@ -1416,23 +1546,6 @@ class TestStatePersistence:
         assert loaded["phase"] == "active"
         assert loaded["new_key"] is True
         assert "baseline" not in loaded or loaded.get("phase") == "active"
-
-    @pytest.mark.asyncio
-    async def test_update_state_field_updates_single_key(self, storage):
-        await storage.save_state({"phase": "baseline", "counter": 0})
-        await storage.update_state_field("counter", 99)
-
-        loaded = await storage.load_state()
-        assert loaded["counter"] == 99
-        assert loaded["phase"] == "baseline"  # other keys preserved
-
-    @pytest.mark.asyncio
-    async def test_update_state_field_adds_new_key(self, storage):
-        await storage.save_state({"phase": "active"})
-        await storage.update_state_field("new_field", "hello")
-
-        loaded = await storage.load_state()
-        assert loaded["new_field"] == "hello"
 
     @pytest.mark.asyncio
     async def test_save_state_serialises_datetime(self, storage):

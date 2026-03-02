@@ -533,33 +533,50 @@ class TestMidnightPointsDateGuard:
 
         assert dc._energy_midnight_points == {}
 
-    def test_update_midnight_points_saves_current_date(self, mock_hass, mock_storage):
-        """update_midnight_points must persist today's local date alongside the values
-        so that _load_persistent_data can detect staleness on the next restart."""
+    def test_update_midnight_points_schedules_single_task(self, mock_hass, mock_storage):
+        """update_midnight_points must schedule exactly ONE async_create_task (atomic save)."""
         dc = DataCollector(mock_hass, {"energy": ["sensor.e1"]}, None, None, mock_storage)
         dc._energy_sensor_cache = {"sensor.e1": 20.0}
 
-        # async_create_task schedules but doesn't run coroutines; we just need to
-        # verify update_state_field was called with the correct arguments.
         mock_hass.async_create_task = MagicMock()
 
         dc.update_midnight_points()
 
-        # update_state_field must have been called (as coroutine object, not awaited)
-        calls = mock_storage.update_state_field.call_args_list
-        keys = [c[0][0] for c in calls]
-
-        assert "energy_midnight_points_date" in keys, (
-            "update_midnight_points must persist energy_midnight_points_date "
-            "so _load_persistent_data can detect stale points after a restart."
+        assert mock_hass.async_create_task.call_count == 1, (
+            "update_midnight_points must schedule exactly one task to avoid a "
+            "read-modify-write race condition when two tasks run concurrently."
         )
 
-        date_call = next(c for c in calls if c[0][0] == "energy_midnight_points_date")
+    @pytest.mark.asyncio
+    async def test_update_midnight_points_saves_both_fields_atomically(self, mock_hass, mock_storage):
+        """The single scheduled coroutine must atomically persist both
+        energy_midnight_points and energy_midnight_points_date via save_state."""
+        dc = DataCollector(mock_hass, {"energy": ["sensor.e1"]}, None, None, mock_storage)
+        dc._energy_sensor_cache = {"sensor.e1": 20.0}
+
+        captured = []
+        mock_hass.async_create_task = MagicMock(side_effect=captured.append)
+
+        mock_storage.load_state = AsyncMock(return_value={})
+        mock_storage.save_state = AsyncMock()
+
+        dc.update_midnight_points()
+
+        assert len(captured) == 1
+        # Await the captured coroutine to exercise its body
+        await captured[0]
+
+        assert mock_storage.save_state.call_count == 1
+        saved = mock_storage.save_state.call_args[0][0]
+
         expected_date = datetime.now().strftime("%Y-%m-%d")
-        assert date_call[0][1] == expected_date, (
-            f"Expected date '{expected_date}', got '{date_call[0][1]}'. "
+        assert "energy_midnight_points" in saved, "save_state payload must contain energy_midnight_points"
+        assert "energy_midnight_points_date" in saved, "save_state payload must contain energy_midnight_points_date"
+        assert saved["energy_midnight_points_date"] == expected_date, (
+            f"Expected local date '{expected_date}', got '{saved['energy_midnight_points_date']}'. "
             "Must use local calendar date, not UTC."
         )
+        assert saved["energy_midnight_points"] == {"sensor.e1": 20.0}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers

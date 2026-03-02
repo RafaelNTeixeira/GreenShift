@@ -504,26 +504,47 @@ class StorageManager:
         await self.hass.async_add_executor_job(_cleanup)
 
     async def _cleanup_old_rl_episodes(self):
-        """Remove RL episodes older than RL_EPISODE_RETENTION_DAYS from research_data.db."""
+        """Remove rows older than RL_EPISODE_RETENTION_DAYS from all research_data.db tables."""
         def _cleanup():
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
 
-            # Calculate cutoff (RL_EPISODE_RETENTION_DAYS ago)
-            cutoff = (datetime.now(timezone.utc) - timedelta(days=RL_EPISODE_RETENTION_DAYS)).timestamp()
+            # Calculate cutoffs
+            ts_cutoff = (datetime.now(timezone.utc) - timedelta(days=RL_EPISODE_RETENTION_DAYS)).timestamp()
+            date_cutoff = (datetime.now() - timedelta(days=RL_EPISODE_RETENTION_DAYS)).strftime("%Y-%m-%d")
 
-            # Clean old RL episodes
-            cursor.execute(
-                "DELETE FROM research_rl_episodes WHERE timestamp < ?",
-                (cutoff,)
-            )
-            deleted_episodes = cursor.rowcount
+            # Tables with a unix-epoch timestamp column
+            ts_tables = [
+                ("research_rl_episodes", "timestamp"),
+                ("research_nudge_log", "timestamp"),
+                ("research_blocked_notifications", "timestamp"),
+                ("research_task_interactions", "generation_timestamp"),
+            ]
+            # Tables with a TEXT date column ("YYYY-MM-DD")
+            date_tables = [
+                ("research_area_daily_stats", "date"),
+                ("research_daily_aggregates", "date"),
+                ("research_weekly_challenges", "week_start_date"),
+            ]
+
+            totals: dict[str, int] = {}
+            for table, col in ts_tables:
+                cursor.execute(f"DELETE FROM {table} WHERE {col} < ?", (ts_cutoff,))
+                totals[table] = cursor.rowcount
+            for table, col in date_tables:
+                cursor.execute(f"DELETE FROM {table} WHERE {col} < ?", (date_cutoff,))
+                totals[table] = cursor.rowcount
 
             conn.commit()
             conn.close()
 
-            if deleted_episodes > 0:
-                _LOGGER.info("Cleaned up %d old RL episodes (older than %d days)", deleted_episodes, RL_EPISODE_RETENTION_DAYS)
+            deleted_any = {t: n for t, n in totals.items() if n > 0}
+            if deleted_any:
+                _LOGGER.info(
+                    "Research DB cleanup (older than %d days): %s",
+                    RL_EPISODE_RETENTION_DAYS,
+                    deleted_any,
+                )
 
         await self.hass.async_add_executor_job(_cleanup)
 
@@ -1397,19 +1418,6 @@ class StorageManager:
         async with self._lock:
             return await self.hass.async_add_executor_job(_read)
 
-    async def update_state_field(self, key: str, value: Any):
-        """
-        Update a single field in the state file.
-        
-        Args:
-            key: The key of the state field to update.
-            value: The new value to set for the specified key.
-        """
-        state = await self.load_state()
-        state[key] = value
-        await self.save_state(state)
-
-
     # ==================== RESEARCH DATA (Permanent SQLite) ====================
 
     async def record_phase_change(self, phase: str, baseline_consumption: float = None, baseline_occupancy: float = None, notes: str = None):
@@ -1768,11 +1776,10 @@ class StorageManager:
         if date is None:
             date = datetime.now().strftime("%Y-%m-%d")
 
-        # Get all data for the day using local midnight boundaries
-        start_ts = datetime(
-            *[int(p) for p in date.split("-")]
-        ).timestamp()  # naive local midnight
-        end_ts = start_ts + 86400  # Add 24 hours in seconds
+        # Get all data for the day using local midnight boundaries..
+        start_dt = datetime(*[int(p) for p in date.split("-")])
+        start_ts = start_dt.timestamp()
+        end_ts = (start_dt + timedelta(days=1)).timestamp()
 
         outdoor_temp = None
         hdd = None
@@ -1981,10 +1988,9 @@ class StorageManager:
             date = datetime.now().strftime("%Y-%m-%d")
 
         # Use local midnight boundaries
-        start_ts = datetime(
-            *[int(p) for p in date.split("-")]
-        ).timestamp()  # naive local midnight
-        end_ts = start_ts + 86400
+        start_dt = datetime(*[int(p) for p in date.split("-")])
+        start_ts = start_dt.timestamp()
+        end_ts = (start_dt + timedelta(days=1)).timestamp()
 
         def _compute():
             # Connect to both databases

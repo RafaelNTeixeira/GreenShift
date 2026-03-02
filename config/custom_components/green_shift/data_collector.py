@@ -517,15 +517,19 @@ class DataCollector:
             if val is not None:
                 self._energy_midnight_points[entity_id] = val
 
-        # Save to persistent storage
+        # Save to persistent storage atomically.
+        # Both fields are written in a single load->modify->save to prevent the race condition
         if self.storage:
             current_date = datetime.now().strftime("%Y-%m-%d")
-            self.hass.async_create_task(
-                self.storage.update_state_field("energy_midnight_points", self._energy_midnight_points)
-            )
-            self.hass.async_create_task(
-                self.storage.update_state_field("energy_midnight_points_date", current_date)
-            )
+            midnight_points_snapshot = dict(self._energy_midnight_points)
+
+            async def _save_midnight_data():
+                state = await self.storage.load_state()
+                state["energy_midnight_points"] = midnight_points_snapshot
+                state["energy_midnight_points_date"] = current_date
+                await self.storage.save_state(state)
+
+            self.hass.async_create_task(_save_midnight_data())
 
         _LOGGER.debug("Midnight snapshots updated: %s", self._energy_midnight_points)
 
