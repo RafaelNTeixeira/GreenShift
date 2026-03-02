@@ -2,9 +2,9 @@
 Tests for helpers.py
 
 Covers:
-- get_normalized_value   : unit conversions (power kW→W, energy Wh→kWh)
+- get_normalized_value   : unit conversions (power kW->W, energy Wh->kWh)
 - get_environmental_impact: CO2 / metaphor calculations
-- get_working_days_from_config: config dict → list of day indices
+- get_working_days_from_config: config dict -> list of day indices
 - is_within_working_hours: home always active; office respects days & times
 - should_ai_be_active    : thin wrapper check
 """
@@ -239,7 +239,7 @@ class TestIsWithinWorkingHours:
     def test_office_bad_time_format_defaults_to_true(self, office_cfg):
         bad_cfg = {**office_cfg, "working_start": "bad", "working_end": "time"}
         t = datetime(2026, 2, 18, 10, 0)
-        # Bad time strings → fallback returns True (safe default)
+        # Bad time strings -> fallback returns True (safe default)
         assert is_within_working_hours(bad_cfg, t) is True
 
 

@@ -1035,3 +1035,763 @@ class TestActivePhraseSavings:
         assert avg_off == pytest.approx(125.0, abs=1.0), (
             f"Expected avg_power_off_hours≈125 W, got {avg_off}"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_history / get_area_history with no time filter
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetHistoryNoTimeFilter:
+    """get_history must return all rows when neither hours nor days is given."""
+
+    @pytest.mark.asyncio
+    async def test_returns_all_rows_when_no_filter(self, storage):
+        now = datetime.now()
+        for offset in [60, 30, 0]:  # minutes ago
+            await storage.store_sensor_snapshot(now - timedelta(minutes=offset), power=float(offset * 10))
+
+        result = await storage.get_history("power")
+        assert len(result) == 3
+
+    @pytest.mark.asyncio
+    async def test_area_returns_all_rows_when_no_filter(self, storage):
+        now = datetime.now()
+        for offset in [60, 30, 0]:
+            await storage.store_area_snapshot(now - timedelta(minutes=offset), "Office", power=float(offset))
+
+        result = await storage.get_area_history("Office", "power")
+        assert len(result) == 3
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_recent_values: invalid metric
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetRecentValuesInvalidMetric:
+
+    @pytest.mark.asyncio
+    async def test_raises_for_invalid_metric(self, storage):
+        with pytest.raises(ValueError, match="Invalid metric"):
+            await storage.get_recent_values("not_a_column", count=10)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_tasks_for_date
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetTasksForDate:
+
+    @pytest.mark.asyncio
+    async def test_get_tasks_by_date_string(self, storage):
+        target_date = "2026-01-15"
+        tasks = [{"task_id": "t_date1", "date": target_date, "task_type": "power_reduction",
+                  "title": "Task A", "description": "Desc A"}]
+        await storage.save_daily_tasks(tasks)
+
+        result = await storage.get_tasks_for_date(target_date)
+        assert len(result) == 1
+        assert result[0]["task_id"] == "t_date1"
+
+    @pytest.mark.asyncio
+    async def test_get_tasks_by_date_object(self, storage):
+        from datetime import date as date_cls
+        target = date_cls(2026, 1, 20)
+        tasks = [{"task_id": "t_date2", "date": "2026-01-20", "task_type": "temperature",
+                  "title": "Task B", "description": "Desc B"}]
+        await storage.save_daily_tasks(tasks)
+
+        result = await storage.get_tasks_for_date(target)
+        assert len(result) == 1
+        assert result[0]["task_id"] == "t_date2"
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_for_date_with_no_tasks(self, storage):
+        result = await storage.get_tasks_for_date("2020-01-01")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_does_not_return_other_dates(self, storage):
+        await storage.save_daily_tasks([
+            {"task_id": "t_jan", "date": "2026-01-10", "task_type": "power_reduction",
+             "title": "Jan", "description": "Jan task"},
+            {"task_id": "t_feb", "date": "2026-02-10", "task_type": "power_reduction",
+             "title": "Feb", "description": "Feb task"},
+        ])
+        result = await storage.get_tasks_for_date("2026-01-10")
+        assert len(result) == 1
+        assert result[0]["task_id"] == "t_jan"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_total_completed_tasks_count (30-day rolling window)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetTotalCompletedTasksCount:
+
+    async def _insert_verified_task(self, storage, date_str: str, verified: int = 1):
+        conn = sqlite3.connect(storage.db_path)
+        conn.execute(
+            "INSERT INTO daily_tasks (task_id, date, task_type, title, description, verified) "
+            "VALUES (?, ?, 'power', 'T', 'D', ?)",
+            (f"vtask_{date_str}_{verified}", date_str, verified)
+        )
+        conn.commit()
+        conn.close()
+
+    @pytest.mark.asyncio
+    async def test_counts_verified_tasks_in_window(self, storage):
+        today = datetime.now().strftime("%Y-%m-%d")
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        await self._insert_verified_task(storage, today)
+        await self._insert_verified_task(storage, yesterday)
+
+        count = await storage.get_total_completed_tasks_count()
+        assert count == 2
+
+    @pytest.mark.asyncio
+    async def test_excludes_tasks_outside_30_day_window(self, storage):
+        old_date = (datetime.now() - timedelta(days=31)).strftime("%Y-%m-%d")
+        await self._insert_verified_task(storage, old_date)
+
+        count = await storage.get_total_completed_tasks_count()
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_excludes_unverified_tasks(self, storage):
+        today = datetime.now().strftime("%Y-%m-%d")
+        await self._insert_verified_task(storage, today, verified=0)
+
+        count = await storage.get_total_completed_tasks_count()
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_no_tasks(self, storage):
+        count = await storage.get_total_completed_tasks_count()
+        assert count == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_total_completed_tasks_count_alltime (research DB)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetTotalCompletedTasksCountAlltime:
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_no_research_tasks(self, storage):
+        count = await storage.get_total_completed_tasks_count_alltime()
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_counts_completed_research_tasks(self, storage):
+        conn = sqlite3.connect(storage.research_db_path)
+        conn.execute(
+            "INSERT INTO research_task_interactions "
+            "(task_id, date, completed) VALUES (?, ?, 1)",
+            ("rt1", "2026-01-01")
+        )
+        conn.execute(
+            "INSERT INTO research_task_interactions "
+            "(task_id, date, completed) VALUES (?, ?, 1)",
+            ("rt2", "2026-01-02")
+        )
+        conn.execute(
+            "INSERT INTO research_task_interactions "
+            "(task_id, date, completed) VALUES (?, ?, 0)",
+            ("rt3", "2026-01-03")
+        )
+        conn.commit()
+        conn.close()
+
+        count = await storage.get_total_completed_tasks_count_alltime()
+        assert count == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# mark_task_verified
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestMarkTaskVerified:
+
+    @pytest.mark.asyncio
+    async def test_marks_task_as_verified(self, storage):
+        today = datetime.now().strftime("%Y-%m-%d")
+        await storage.save_daily_tasks([{
+            "task_id": "verif_1", "date": today, "task_type": "power_reduction",
+            "title": "Task", "description": "Desc"
+        }])
+
+        success = await storage.mark_task_verified("verif_1", verified=True)
+        assert success is True
+
+        tasks = await storage.get_today_tasks()
+        assert tasks[0]["verified"] is True
+        assert tasks[0]["completed"] is True
+
+    @pytest.mark.asyncio
+    async def test_unverifies_task(self, storage):
+        today = datetime.now().strftime("%Y-%m-%d")
+        await storage.save_daily_tasks([{
+            "task_id": "verif_2", "date": today, "task_type": "power_reduction",
+            "title": "Task", "description": "Desc"
+        }])
+
+        await storage.mark_task_verified("verif_2", verified=True)
+        success = await storage.mark_task_verified("verif_2", verified=False)
+        assert success is True
+
+        tasks = await storage.get_today_tasks()
+        assert tasks[0]["verified"] is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_for_non_existent_task(self, storage):
+        success = await storage.mark_task_verified("does_not_exist", verified=True)
+        assert success is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# save_task_feedback
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSaveTaskFeedback:
+
+    @pytest.mark.asyncio
+    async def test_saves_feedback_to_task(self, storage):
+        today = datetime.now().strftime("%Y-%m-%d")
+        await storage.save_daily_tasks([{
+            "task_id": "fb_1", "date": today, "task_type": "power_reduction",
+            "title": "Task", "description": "Desc"
+        }])
+
+        success = await storage.save_task_feedback("fb_1", "too_easy")
+        assert success is True
+
+        tasks = await storage.get_today_tasks()
+        assert tasks[0]["user_feedback"] == "too_easy"
+
+    @pytest.mark.asyncio
+    async def test_saves_feedback_to_difficulty_history(self, storage):
+        today = datetime.now().strftime("%Y-%m-%d")
+        await storage.save_daily_tasks([{
+            "task_id": "fb_2", "date": today, "task_type": "temperature",
+            "title": "Task", "description": "Desc", "difficulty_level": 3
+        }])
+
+        await storage.save_task_feedback("fb_2", "just_right")
+
+        conn = sqlite3.connect(storage.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT task_type, feedback FROM task_difficulty_history WHERE task_type = 'temperature'")
+        rows = cursor.fetchall()
+        conn.close()
+
+        assert len(rows) == 1
+        assert rows[0][1] == "just_right"
+
+    @pytest.mark.asyncio
+    async def test_returns_false_for_non_existent_task(self, storage):
+        success = await storage.save_task_feedback("no_such_task", "too_hard")
+        assert success is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# delete_today_tasks
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDeleteTodayTasks:
+
+    @pytest.mark.asyncio
+    async def test_deletes_todays_tasks(self, storage):
+        today = datetime.now().strftime("%Y-%m-%d")
+        await storage.save_daily_tasks([{
+            "task_id": "del_1", "date": today, "task_type": "power_reduction",
+            "title": "Task", "description": "Desc"
+        }])
+
+        result = await storage.delete_today_tasks()
+        assert result is True
+
+        tasks = await storage.get_today_tasks()
+        assert tasks == []
+
+    @pytest.mark.asyncio
+    async def test_does_not_delete_other_days(self, storage):
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        await storage.save_daily_tasks([{
+            "task_id": "old_del", "date": yesterday, "task_type": "power_reduction",
+            "title": "Old", "description": "Old"
+        }])
+
+        await storage.delete_today_tasks()
+
+        conn = sqlite3.connect(storage.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM daily_tasks WHERE date = ?", (yesterday,))
+        count = cursor.fetchone()[0]
+        conn.close()
+        assert count == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_task_difficulty_stats
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetTaskDifficultyStats:
+
+    async def _seed_history(self, storage, task_type: str, feedbacks: list):
+        today = datetime.now().strftime("%Y-%m-%d")
+        conn = sqlite3.connect(storage.db_path)
+        for i, fb in enumerate(feedbacks):
+            conn.execute(
+                "INSERT INTO task_difficulty_history (task_type, difficulty_level, feedback, date) "
+                "VALUES (?, 3, ?, ?)",
+                (task_type, fb, today)
+            )
+        conn.commit()
+        conn.close()
+
+    @pytest.mark.asyncio
+    async def test_returns_default_stats_when_no_history(self, storage):
+        stats = await storage.get_task_difficulty_stats("unknown_type")
+        assert stats["too_easy_count"] == 0
+        assert stats["too_hard_count"] == 0
+        assert stats["suggested_adjustment"] == 0
+
+    @pytest.mark.asyncio
+    async def test_counts_feedback_correctly(self, storage):
+        await self._seed_history(storage, "power_reduction",
+                                 ["too_easy", "too_easy", "too_easy", "just_right"])
+
+        stats = await storage.get_task_difficulty_stats("power_reduction")
+        assert stats["too_easy_count"] == 3
+        assert stats["just_right_count"] == 1
+        assert stats["suggested_adjustment"] == 1  # Increase difficulty
+
+    @pytest.mark.asyncio
+    async def test_suggests_decrease_when_mostly_too_hard(self, storage):
+        await self._seed_history(storage, "temperature",
+                                 ["too_hard", "too_hard", "too_hard", "just_right"])
+
+        stats = await storage.get_task_difficulty_stats("temperature")
+        assert stats["suggested_adjustment"] == -1  # Decrease difficulty
+
+    @pytest.mark.asyncio
+    async def test_no_adjustment_when_balanced(self, storage):
+        await self._seed_history(storage, "daylight",
+                                 ["too_easy", "too_hard", "just_right"])
+
+        stats = await storage.get_task_difficulty_stats("daylight")
+        assert stats["suggested_adjustment"] == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# save_state / load_state / update_state_field
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestStatePersistence:
+
+    @pytest.mark.asyncio
+    async def test_save_and_load_state_roundtrip(self, storage):
+        state = {"phase": "active", "baseline": 500.0, "episode": 42}
+        await storage.save_state(state)
+
+        loaded = await storage.load_state()
+        assert loaded["phase"] == "active"
+        assert loaded["baseline"] == 500.0
+        assert loaded["episode"] == 42
+
+    @pytest.mark.asyncio
+    async def test_load_state_returns_empty_when_no_file(self, storage):
+        if storage.state_file.exists():
+            storage.state_file.unlink()
+
+        loaded = await storage.load_state()
+        assert loaded == {}
+
+    @pytest.mark.asyncio
+    async def test_save_state_overwrites_existing(self, storage):
+        await storage.save_state({"phase": "baseline"})
+        await storage.save_state({"phase": "active", "new_key": True})
+
+        loaded = await storage.load_state()
+        assert loaded["phase"] == "active"
+        assert loaded["new_key"] is True
+        assert "baseline" not in loaded or loaded.get("phase") == "active"
+
+    @pytest.mark.asyncio
+    async def test_update_state_field_updates_single_key(self, storage):
+        await storage.save_state({"phase": "baseline", "counter": 0})
+        await storage.update_state_field("counter", 99)
+
+        loaded = await storage.load_state()
+        assert loaded["counter"] == 99
+        assert loaded["phase"] == "baseline"  # other keys preserved
+
+    @pytest.mark.asyncio
+    async def test_update_state_field_adds_new_key(self, storage):
+        await storage.save_state({"phase": "active"})
+        await storage.update_state_field("new_field", "hello")
+
+        loaded = await storage.load_state()
+        assert loaded["new_field"] == "hello"
+
+    @pytest.mark.asyncio
+    async def test_save_state_serialises_datetime(self, storage):
+        dt = datetime(2026, 3, 1, 12, 0, 0)
+        await storage.save_state({"last_update": dt})
+
+        loaded = await storage.load_state()
+        # Datetime becomes ISO string
+        assert "2026-03-01" in loaded["last_update"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Research data: log_* and record_phase_change
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestResearchData:
+
+    @pytest.mark.asyncio
+    async def test_record_phase_change_inserts_row(self, storage):
+        await storage.record_phase_change("active", baseline_consumption=800.0)
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT phase, baseline_consumption_W FROM research_phase_metadata")
+        rows = cursor.fetchall()
+        conn.close()
+
+        phases = [r[0] for r in rows]
+        assert "active" in phases
+        baseline_row = next(r for r in rows if r[0] == "active")
+        assert baseline_row[1] == pytest.approx(800.0)
+
+    @pytest.mark.asyncio
+    async def test_record_phase_change_closes_previous_phase(self, storage):
+        await storage.record_phase_change("baseline")
+        await storage.record_phase_change("active")
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT end_timestamp FROM research_phase_metadata WHERE phase = 'baseline'"
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        assert row is not None
+        assert row[0] is not None  # end_timestamp set
+
+    @pytest.mark.asyncio
+    async def test_log_rl_decision_inserts_row(self, storage):
+        episode = {
+            "episode": 1, "phase": "active", "state_vector": [0.1, 0.2],
+            "action": 1, "action_name": "specific", "reward": 0.5,
+            "q_values": {0: 0.0, 1: 0.5}, "epsilon": 0.1,
+            "power": 600.0, "anomaly_index": 0.3,
+        }
+        await storage.log_rl_decision(episode)
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT action, reward FROM research_rl_episodes")
+        rows = cursor.fetchall()
+        conn.close()
+
+        assert len(rows) == 1
+        assert rows[0][0] == 1
+        assert rows[0][1] == pytest.approx(0.5)
+
+    @pytest.mark.asyncio
+    async def test_log_nudge_sent_inserts_row(self, storage):
+        nudge = {
+            "notification_id": "nid_001", "phase": "active",
+            "action_type": "specific", "title": "Save energy",
+            "message": "Turn off lights", "current_power": 700.0,
+        }
+        await storage.log_nudge_sent(nudge)
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT notification_id, action_type FROM research_nudge_log WHERE notification_id = 'nid_001'"
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        assert row is not None
+        assert row[1] == "specific"
+
+    @pytest.mark.asyncio
+    async def test_log_nudge_response_updates_row(self, storage):
+        nudge = {"notification_id": "nid_resp", "phase": "active",
+                 "action_type": "anomaly", "title": "T", "message": "M"}
+        await storage.log_nudge_sent(nudge)
+        await storage.log_nudge_response("nid_resp", accepted=True)
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT responded, accepted FROM research_nudge_log WHERE notification_id = 'nid_resp'"
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        assert row[0] == 1  # responded
+        assert row[1] == 1  # accepted
+
+    @pytest.mark.asyncio
+    async def test_log_nudge_response_rejected(self, storage):
+        nudge = {"notification_id": "nid_rej", "phase": "active",
+                 "action_type": "anomaly", "title": "T", "message": "M"}
+        await storage.log_nudge_sent(nudge)
+        await storage.log_nudge_response("nid_rej", accepted=False)
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT accepted FROM research_nudge_log WHERE notification_id = 'nid_rej'"
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        assert row[0] == 0
+
+    @pytest.mark.asyncio
+    async def test_log_blocked_notification_inserts_row(self, storage):
+        block = {
+            "phase": "active", "block_reason": "cooldown",
+            "opportunity_score": 0.4, "current_power": 300.0,
+            "fatigue_index": 0.8, "notification_count_today": 5,
+        }
+        await storage.log_blocked_notification(block)
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT block_reason, notification_count_today FROM research_blocked_notifications"
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        assert len(rows) == 1
+        assert rows[0][0] == "cooldown"
+        assert rows[0][1] == 5
+
+    @pytest.mark.asyncio
+    async def test_log_task_generation_inserts_row(self, storage):
+        task = {
+            "task_id": "gen_t1", "date": "2026-03-01", "phase": "active",
+            "task_type": "power_reduction", "difficulty_level": 2,
+            "target_value": 0.5, "baseline_value": 1.0,
+        }
+        await storage.log_task_generation(task)
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT task_type, difficulty_level FROM research_task_interactions WHERE task_id = 'gen_t1'"
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        assert row is not None
+        assert row[0] == "power_reduction"
+        assert row[1] == 2
+
+    @pytest.mark.asyncio
+    async def test_log_task_generation_replace_on_duplicate(self, storage):
+        """Re-generating logs must overwrite the previous row (INSERT OR REPLACE)."""
+        task = {"task_id": "gen_dup", "date": "2026-03-01", "phase": "active",
+                "task_type": "temperature", "difficulty_level": 1}
+        await storage.log_task_generation(task)
+        await storage.log_task_generation({**task, "difficulty_level": 5})
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT difficulty_level FROM research_task_interactions WHERE task_id = 'gen_dup'"
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        assert len(rows) == 1  # only one row (replaced)
+        assert rows[0][0] == 5
+
+    @pytest.mark.asyncio
+    async def test_log_task_completion_updates_row(self, storage):
+        task = {"task_id": "comp_t1", "date": "2026-03-01", "phase": "active",
+                "task_type": "power_reduction", "difficulty_level": 2}
+        await storage.log_task_generation(task)
+        await storage.log_task_completion("comp_t1", completion_value=0.8)
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT completed, completion_value FROM research_task_interactions WHERE task_id = 'comp_t1'"
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        assert row[0] == 1
+        assert row[1] == pytest.approx(0.8)
+
+    @pytest.mark.asyncio
+    async def test_log_task_feedback_updates_row(self, storage):
+        task = {"task_id": "fb_t1", "date": "2026-03-01", "phase": "active",
+                "task_type": "power_reduction", "difficulty_level": 2}
+        await storage.log_task_generation(task)
+        await storage.log_task_feedback("fb_t1", "too_easy")
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT user_feedback FROM research_task_interactions WHERE task_id = 'fb_t1'"
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        assert row[0] == "too_easy"
+
+    @pytest.mark.asyncio
+    async def test_log_weekly_challenge_inserts_row(self, storage):
+        challenge = {
+            "week_start_date": "2026-02-23", "week_end_date": "2026-03-01",
+            "phase": "active", "target_percentage": 10.0,
+            "baseline_W": 1000.0, "actual_W": 900.0,
+            "savings_W": 100.0, "savings_percentage": 10.0,
+            "achieved": True,
+        }
+        await storage.log_weekly_challenge(challenge)
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT achieved, savings_W FROM research_weekly_challenges WHERE week_start_date = '2026-02-23'"
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        assert row is not None
+        assert row[0] == 1
+        assert row[1] == pytest.approx(100.0)
+
+    @pytest.mark.asyncio
+    async def test_log_rl_decision_with_accepted_flag(self, storage):
+        """accepted=True must be stored as 1, accepted=False as 0."""
+        await storage.log_rl_decision({
+            "episode": 5, "action": 2, "reward": 1.0, "accepted": True, "gamma_used": 0.95
+        })
+        await storage.log_rl_decision({
+            "episode": 6, "action": 0, "reward": 0.0, "accepted": False, "gamma_used": 0.0
+        })
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT episode_number, accepted, gamma_used FROM research_rl_episodes ORDER BY episode_number")
+        rows = cursor.fetchall()
+        conn.close()
+
+        assert rows[0][1] == 1   # accepted=True -> 1
+        assert rows[0][2] == pytest.approx(0.95)
+        assert rows[1][1] == 0   # accepted=False -> 0
+        assert rows[1][2] == pytest.approx(0.0)
+
+    @pytest.mark.asyncio
+    async def test_log_nudge_response_calculates_response_time(self, storage):
+        """response_time_seconds should be set (positive) after logging nudge response."""
+        nudge = {"notification_id": "nid_time", "phase": "active",
+                 "action_type": "specific", "title": "T", "message": "M"}
+        await storage.log_nudge_sent(nudge)
+        await storage.log_nudge_response("nid_time", accepted=True)
+
+        conn = sqlite3.connect(storage.research_db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT response_time_seconds FROM research_nudge_log WHERE notification_id = 'nid_time'"
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        assert row is not None
+        assert row[0] is not None
+        assert row[0] >= 0.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# compute_daily_aggregates: weather entity processing
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestComputeAggregatesWeather:
+    """compute_daily_aggregates must extract outdoor temp / condition from hass.states."""
+
+    def _make_weather_state(self, hass, entity_id: str, condition: str, temp: float):
+        state_obj = MagicMock()
+        state_obj.state = condition
+        state_obj.attributes = {"temperature": temp}
+        hass.states.get = MagicMock(side_effect=lambda eid: state_obj if eid == entity_id else None)
+
+    @pytest.mark.asyncio
+    async def test_weather_entity_populates_outdoor_temp(self, mock_hass, tmp_path):
+        """outdoor_temp_celsius must be populated from a weather.* entity attribute."""
+        sm = StorageManager(mock_hass)
+        await sm.setup()
+
+        self._make_weather_state(mock_hass, "weather.home", "sunny", 18.5)
+        sm.config_data = {"weather_entity": "weather.home"}
+
+        date_str = "2026-03-01"
+        ts = datetime(2026, 3, 1, 12, 0, 0).timestamp()
+        conn = sqlite3.connect(sm.db_path)
+        conn.execute(
+            "INSERT INTO sensor_history (timestamp, power, within_working_hours) VALUES (?, ?, 1)",
+            (ts, 500.0)
+        )
+        conn.commit()
+        conn.close()
+
+        await sm.compute_daily_aggregates(date=date_str, phase="active")
+
+        res_conn = sqlite3.connect(sm.research_db_path)
+        cursor = res_conn.cursor()
+        cursor.execute(
+            "SELECT outdoor_temp_celsius, weather_condition FROM research_daily_aggregates WHERE date = ?",
+            (date_str,)
+        )
+        row = cursor.fetchone()
+        res_conn.close()
+
+        assert row is not None
+        assert row[0] == pytest.approx(18.5)
+        assert row[1] == "sunny"
+
+    @pytest.mark.asyncio
+    async def test_no_weather_entity_still_computes(self, mock_hass, tmp_path):
+        """compute_daily_aggregates must not crash when no weather entity is available."""
+        sm = StorageManager(mock_hass)
+        await sm.setup()
+
+        mock_hass.states.get = MagicMock(return_value=None)
+
+        date_str = "2026-03-02"
+        ts = datetime(2026, 3, 2, 12, 0, 0).timestamp()
+        conn = sqlite3.connect(sm.db_path)
+        conn.execute(
+            "INSERT INTO sensor_history (timestamp, power, within_working_hours) VALUES (?, ?, 1)",
+            (ts, 400.0)
+        )
+        conn.commit()
+        conn.close()
+
+        # Should not raise
+        await sm.compute_daily_aggregates(date=date_str, phase="active")
+
+        res_conn = sqlite3.connect(sm.research_db_path)
+        cursor = res_conn.cursor()
+        cursor.execute(
+            "SELECT avg_power_w FROM research_daily_aggregates WHERE date = ?",
+            (date_str,)
+        )
+        row = cursor.fetchone()
+        res_conn.close()
+
+        assert row is not None

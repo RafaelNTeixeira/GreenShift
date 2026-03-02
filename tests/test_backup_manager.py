@@ -232,3 +232,97 @@ class TestRestoreFromBackup:
 
         result = await bm.restore_from_backup("20260218_090000")
         assert result is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Error / edge-case paths
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestErrorPaths:
+
+    @pytest.mark.asyncio
+    async def test_create_backup_returns_false_on_file_backup_failure(self, bm, data_dir):
+        """If _backup_file raises, the gathered results contain an Exception -> False."""
+        (data_dir / "state.json").write_text("{}")
+
+        original = bm._backup_file
+
+        async def failing_backup_file(src, dst):
+            raise OSError("disk full")
+
+        bm._backup_file = failing_backup_file
+
+        result = await bm.create_backup("auto")
+        assert result is False
+
+        bm._backup_file = original  # restore
+
+    @pytest.mark.asyncio
+    async def test_create_backup_returns_false_on_top_level_exception(self, bm):
+        """If mkdir itself raises, the outer except block must return False."""
+        original_mkdir = bm.auto_dir.mkdir
+
+        def exploding_mkdir(*a, **kw):
+            raise PermissionError("no write access")
+
+        with patch.object(type(bm.auto_dir), "__truediv__",
+                          side_effect=PermissionError("boom")):
+            result = await bm.create_backup("auto")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_restore_returns_false_for_full_path_not_found(self, bm):
+        """Full path (with /) that doesn't exist on disk must return False."""
+        result = await bm.restore_from_backup("auto/20991231_999999")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_restore_returns_false_when_timestamp_not_in_any_dir(self, bm):
+        """Timestamp-only form not found in any type dir must return False."""
+        result = await bm.restore_from_backup("20991231_999999")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_restore_with_backslash_path_not_found(self, bm):
+        """restore_from_backup treats backslash paths the same as forward-slash (full path)."""
+        result = await bm.restore_from_backup("auto\\20991231_000000")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_restore_restores_both_databases(self, bm, data_dir):
+        """Both sensor_data.db and research_data.db are restored from backup."""
+        backup_path = bm.manual_dir / "20260218_150000"
+        backup_path.mkdir()
+        _create_dummy_db(backup_path / "sensor_data.db")
+        _create_dummy_db(backup_path / "research_data.db")
+        (backup_path / "state.json").write_text('{"phase":"active"}')
+
+        result = await bm.restore_from_backup("manual/20260218_150000")
+        assert result is True
+        assert (data_dir / "sensor_data.db").exists()
+        assert (data_dir / "research_data.db").exists()
+        assert (data_dir / "state.json").read_text() == '{"phase":"active"}'
+
+    @pytest.mark.asyncio
+    async def test_cleanup_exception_is_handled(self, bm):
+        """cleanup_old_backups must not raise even if an internal error occurs."""
+        from unittest.mock import patch as _patch
+        with _patch("shutil.rmtree", side_effect=OSError("locked")):
+            # Create excess backups so rmtree is called
+            for i in range(3):
+                _make_backup_dir(bm, "auto", f"2026021{i}_100000")
+            # Should not raise
+            await bm.cleanup_old_backups(keep_auto=1, keep_startup=10, keep_shutdown=10)
+
+    def test_list_backups_returns_empty_on_exception(self, bm):
+        """list_backups must return [] rather than raising when iterdir fails."""
+        from unittest.mock import patch as _patch
+
+        def bad_iterdir(self_dir):
+            raise OSError("permission denied")
+
+        with _patch.object(type(bm.auto_dir), "iterdir", bad_iterdir):
+            result = bm.list_backups()
+
+        assert result == []

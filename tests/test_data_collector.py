@@ -560,3 +560,553 @@ class TestMidnightPointsDateGuard:
             f"Expected date '{expected_date}', got '{date_call[0][1]}'. "
             "Must use local calendar date, not UTC."
         )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _make_state_event(entity_id: str, state_value: str, attributes=None):
+    """Build a minimal HA state-change event dict."""
+    new_state = MagicMock()
+    new_state.state = state_value
+    new_state.attributes = attributes or {}
+    event = MagicMock()
+    # Using a plain dict so .data.get() works normally
+    event.data = {"entity_id": entity_id, "new_state": new_state}
+    return event
+
+def _grab_callback(call_args_list, nth_from_end: int = 0):
+    """Extract the callback (3rd positional arg) from an async_track_state_change_event call."""
+    call = call_args_list[-(1 + nth_from_end)]
+    return call[0][2]  # (hass, entity_list, callback)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Power monitoring callbacks
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPowerMonitoringCallback:
+
+    @pytest.mark.asyncio
+    async def test_callback_updates_power_cache(self):
+        dc = make_collector(sensors={"power": ["sensor.power_1"]})
+        dc_mod.get_normalized_value = MagicMock(return_value=(250.0, "W"))
+        helpers_stub.get_entity_area = MagicMock(return_value="No Area")
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_power_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list)
+        event = _make_state_event("sensor.power_1", "250")
+        callback(event)
+
+        assert dc._power_sensor_cache["sensor.power_1"] == 250.0
+        assert dc.current_total_power == 250.0
+
+    @pytest.mark.asyncio
+    async def test_callback_ignores_unavailable_state(self):
+        dc = make_collector(sensors={"power": ["sensor.power_1"]})
+        dc_mod.get_normalized_value = MagicMock(return_value=(None, None))
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_power_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list)
+        event = _make_state_event("sensor.power_1", "unavailable")
+        callback(event)
+
+        # Unavailable zeros out the cache and triggers recalculation
+        assert dc._power_sensor_cache.get("sensor.power_1", 0.0) == 0.0
+
+    @pytest.mark.asyncio
+    async def test_callback_ignores_unknown_entity(self):
+        dc = make_collector(sensors={"power": ["sensor.power_1"]})
+        dc_mod.get_normalized_value = MagicMock(return_value=(100.0, "W"))
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_power_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list)
+        # Fire event for an entity NOT in the registered list
+        event = _make_state_event("sensor.unknown", "300")
+        callback(event)
+
+        # Cache should be untouched
+        assert "sensor.unknown" not in dc._power_sensor_cache
+
+    @pytest.mark.asyncio
+    async def test_callback_none_new_state_is_ignored(self):
+        dc = make_collector(sensors={"power": ["sensor.power_1"]})
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_power_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list)
+        event = MagicMock()
+        event.data = {"entity_id": "sensor.power_1", "new_state": None}
+        callback(event)
+
+        assert "sensor.power_1" not in dc._power_sensor_cache
+
+    @pytest.mark.asyncio
+    async def test_no_power_sensors_skips_setup(self):
+        dc = make_collector(sensors={})
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_power_monitoring()
+        # Nothing registered
+        assert dc_mod.async_track_state_change_event.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_recalculate_uses_main_power_sensor(self):
+        dc = make_collector(sensors={"power": ["sensor.main", "sensor.sub"]}, main_power="sensor.main")
+        dc._power_sensor_cache["sensor.main"] = 500.0
+        dc._power_sensor_cache["sensor.sub"] = 200.0
+
+        dc._recalculate_total_power()
+        # Should use main sensor, not sum
+        assert dc.current_total_power == 500.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Energy monitoring callbacks
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestEnergyMonitoringCallback:
+
+    @pytest.mark.asyncio
+    async def test_callback_updates_energy_cache(self):
+        dc = make_collector(sensors={"energy": ["sensor.energy_1"]})
+        dc_mod.get_normalized_value = MagicMock(return_value=(15.0, "kWh"))
+        helpers_stub.get_entity_area = MagicMock(return_value="No Area")
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_energy_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list)
+        event = _make_state_event("sensor.energy_1", "15.0")
+        callback(event)
+
+        assert dc._energy_sensor_cache["sensor.energy_1"] == 15.0
+
+    @pytest.mark.asyncio
+    async def test_callback_initialises_midnight_point_if_missing(self):
+        dc = make_collector(sensors={"energy": ["sensor.energy_1"]})
+        dc_mod.get_normalized_value = MagicMock(return_value=(10.0, "kWh"))
+        helpers_stub.get_entity_area = MagicMock(return_value="No Area")
+
+        dc._energy_midnight_points = {}
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_energy_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list)
+        callback(_make_state_event("sensor.energy_1", "10.0"))
+
+        # Midnight point must be initialized on first event
+        assert dc._energy_midnight_points["sensor.energy_1"] == 10.0
+
+    @pytest.mark.asyncio
+    async def test_no_energy_sensors_skips_setup(self):
+        dc = make_collector(sensors={})
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_energy_monitoring()
+        assert dc_mod.async_track_state_change_event.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_callback_ignores_none_value(self):
+        dc = make_collector(sensors={"energy": ["sensor.energy_1"]})
+        dc_mod.get_normalized_value = MagicMock(return_value=(None, None))
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_energy_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list)
+        callback(_make_state_event("sensor.energy_1", "unavailable"))
+
+        assert "sensor.energy_1" not in dc._energy_sensor_cache
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_daily_kwh fallback (Case 2: non-main sensors summed)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetDailyKwhFallback:
+
+    def test_fallback_sums_non_main_sensors(self):
+        """When main energy sensor misses midnight point, Case 2 sums other sensors."""
+        dc = make_collector(sensors={"energy": ["sensor.main", "sensor.sub"]})
+        dc.main_energy_sensor = "sensor.main"
+
+        # Main sensor has no midnight point -> falls to Case 2
+        dc._energy_sensor_cache = {
+            "sensor.main": 100.0,  # skipped (it IS main, but midnight_val is None)
+            "sensor.sub": 5.0,
+        }
+        dc._energy_midnight_points = {"sensor.sub": 3.0}  # no entry for sensor.main
+
+        dc.get_daily_kwh()
+        # sensor.main is skipped; sensor.sub contributes 5.0 - 3.0 = 2.0
+        assert dc.current_daily_energy == pytest.approx(2.0)
+
+    def test_fallback_handles_sensor_reset(self):
+        """When current < midnight for a sub-sensor, use current value (reset)."""
+        dc = make_collector(sensors={"energy": ["sensor.sub"]})
+        dc.main_energy_sensor = None
+
+        dc._energy_sensor_cache = {"sensor.sub": 2.0}
+        dc._energy_midnight_points = {"sensor.sub": 100.0}  # current < midnight = reset
+
+        dc.get_daily_kwh()
+        assert dc.current_daily_energy == pytest.approx(2.0)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Environment monitoring callbacks
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestEnvironmentMonitoringCallbacks:
+
+    @pytest.mark.asyncio
+    async def test_temperature_callback_updates_current_temperature(self):
+        sensors = {"temperature": ["sensor.temp_1"]}
+        dc = make_collector(sensors=sensors)
+        helpers_stub.get_entity_area = MagicMock(return_value="No Area")
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        # Only temperature sensors -> single registration call
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("sensor.temp_1", "22.5"))
+
+        assert dc.current_temperature == pytest.approx(22.5)
+
+    @pytest.mark.asyncio
+    async def test_temperature_callback_ignores_unavailable(self):
+        sensors = {"temperature": ["sensor.temp_1"]}
+        dc = make_collector(sensors=sensors)
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        original_temp = dc.current_temperature
+        callback(_make_state_event("sensor.temp_1", "unavailable"))
+        assert dc.current_temperature == original_temp
+
+    @pytest.mark.asyncio
+    async def test_humidity_callback_updates_current_humidity(self):
+        sensors = {"humidity": ["sensor.hum_1"]}
+        dc = make_collector(sensors=sensors)
+        helpers_stub.get_entity_area = MagicMock(return_value="No Area")
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("sensor.hum_1", "55.0"))
+
+        assert dc.current_humidity == pytest.approx(55.0)
+
+    @pytest.mark.asyncio
+    async def test_illuminance_callback_updates_current_illuminance(self):
+        sensors = {"illuminance": ["sensor.lux_1"]}
+        dc = make_collector(sensors=sensors)
+        helpers_stub.get_entity_area = MagicMock(return_value="No Area")
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("sensor.lux_1", "300"))
+
+        assert dc.current_illuminance == pytest.approx(300.0)
+
+    @pytest.mark.asyncio
+    async def test_occupancy_callback_updates_current_occupancy_true(self):
+        sensors = {"occupancy": ["binary_sensor.occ_1"]}
+        dc = make_collector(sensors=sensors)
+        helpers_stub.get_entity_area = MagicMock(return_value="No Area")
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("binary_sensor.occ_1", "on"))
+
+        assert dc.current_occupancy is True
+
+    @pytest.mark.asyncio
+    async def test_occupancy_callback_updates_current_occupancy_false(self):
+        sensors = {"occupancy": ["binary_sensor.occ_1"]}
+        dc = make_collector(sensors=sensors)
+        helpers_stub.get_entity_area = MagicMock(return_value="No Area")
+
+        # Pre-set cache so the sensor is currently True
+        dc._occupancy_sensor_cache["binary_sensor.occ_1"] = True
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("binary_sensor.occ_1", "off"))
+
+        assert dc.current_occupancy is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _record_periodic_snapshot
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestRecordPeriodicSnapshot:
+
+    def test_creates_task_for_global_snapshot(self):
+        storage = AsyncMock()
+        storage.store_sensor_snapshot = AsyncMock()
+        storage.store_area_snapshot = AsyncMock()
+
+        dc = make_collector(storage=storage)
+        dc.current_total_power = 400.0
+        dc.current_daily_energy = 1.5
+        dc.hass.async_create_task = MagicMock()
+        helpers_stub.is_within_working_hours = MagicMock(return_value=True)
+
+        dc._record_periodic_snapshot(datetime.now())
+
+        assert dc.hass.async_create_task.called
+
+    def test_creates_task_for_each_area(self):
+        storage = AsyncMock()
+        dc = make_collector(storage=storage)
+        dc.area_data = {
+            "Kitchen": {"power": 100.0, "energy": None, "temperature": None,
+                        "humidity": None, "illuminance": None, "occupancy": False},
+            "Living Room": {"power": 200.0, "energy": None, "temperature": None,
+                            "humidity": None, "illuminance": None, "occupancy": True},
+        }
+        dc.hass.async_create_task = MagicMock()
+        helpers_stub.is_within_working_hours = MagicMock(return_value=True)
+
+        dc._record_periodic_snapshot(datetime.now())
+
+        # Three tasks: 1 global + 2 areas
+        assert dc.hass.async_create_task.call_count == 3
+
+    def test_no_storage_skips_snapshot(self):
+        dc = make_collector()
+        dc.storage = None
+        dc.hass.async_create_task = MagicMock()
+
+        dc._record_periodic_snapshot(datetime.now())
+
+        dc.hass.async_create_task.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# update_midnight_points: state machine fallback
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUpdateMidnightPointsStateMachine:
+
+    def test_falls_back_to_state_machine_when_cache_empty(self):
+        """If energy cache has no entry for a sensor, fall back to hass.states.get."""
+        hass = MagicMock()
+        storage = AsyncMock()
+        hass.async_create_task = MagicMock()
+
+        state_mock = MagicMock()
+        state_mock.state = "25.0"
+        state_mock.attributes = {"unit_of_measurement": "kWh"}
+        hass.states.get = MagicMock(return_value=state_mock)
+
+        dc_mod.get_normalized_value = MagicMock(return_value=(25.0, "kWh"))
+
+        dc = DataCollector(hass, {"energy": ["sensor.e1"]}, None, None, storage)
+        dc._energy_sensor_cache = {}  # no cache entry
+
+        dc.update_midnight_points()
+
+        assert dc._energy_midnight_points["sensor.e1"] == 25.0
+
+    def test_skips_unavailable_state_in_state_machine(self):
+        """An 'unavailable' state during midnight reset must be skipped."""
+        hass = MagicMock()
+        storage = AsyncMock()
+        hass.async_create_task = MagicMock()
+
+        state_mock = MagicMock()
+        state_mock.state = "unavailable"
+        hass.states.get = MagicMock(return_value=state_mock)
+        dc_mod.get_normalized_value = MagicMock(return_value=(None, None))
+
+        dc = DataCollector(hass, {"energy": ["sensor.e1"]}, None, None, storage)
+        dc._energy_sensor_cache = {}
+
+        dc.update_midnight_points()
+
+        assert "sensor.e1" not in dc._energy_midnight_points
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_all_history: no storage
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetAllHistoryNoStorage:
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_dicts_when_no_storage(self):
+        dc = make_collector()
+        dc.storage = None
+
+        result = await dc.get_all_history(hours=1)
+
+        assert result["power"] == []
+        assert result["energy"] == []
+        assert result["temperature"] == []
+        assert result["humidity"] == []
+        assert result["illuminance"] == []
+        assert result["occupancy"] == []
+
+    @pytest.mark.asyncio
+    async def test_delegates_to_storage_when_available(self):
+        storage = AsyncMock()
+        storage.get_history = AsyncMock(return_value=[(datetime.now(), 100.0)])
+        dc = make_collector(storage=storage)
+
+        result = await dc.get_all_history(hours=1)
+
+        assert len(result["power"]) == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# calculate_baseline_summary
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCalculateBaselineSummary:
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_storage(self):
+        dc = make_collector()
+        dc.storage = None
+
+        result = await dc.calculate_baseline_summary()
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_returns_summary_with_data(self):
+        now = datetime.now()
+        storage = AsyncMock()
+
+        # energy history returns values so avg_daily > 0
+        storage.get_history = AsyncMock(return_value=[
+            (now - timedelta(hours=2), 1.0),
+            (now - timedelta(hours=1), 2.0),
+            (now, 3.0),
+        ])
+        storage.get_all_areas = AsyncMock(return_value=["Kitchen"])
+        storage.get_area_stats = AsyncMock(return_value={"mean": 200.0, "min": 100.0, "max": 300.0, "std": 0.0})
+
+        dc = make_collector(storage=storage)
+        helpers_stub.get_environmental_impact = MagicMock(return_value={"co2": 0.5})
+
+        result = await dc.calculate_baseline_summary()
+
+        assert "avg_daily_kwh" in result
+        assert "peak_time" in result
+        assert "top_area" in result
+        assert result["top_area"] == "Kitchen"
+        assert result["target"] == 15
+
+    @pytest.mark.asyncio
+    async def test_returns_summary_with_no_history(self):
+        storage = AsyncMock()
+        storage.get_history = AsyncMock(return_value=[])
+        storage.get_all_areas = AsyncMock(return_value=[])
+
+        dc = make_collector(storage=storage)
+        helpers_stub.get_environmental_impact = MagicMock(return_value={})
+
+        result = await dc.calculate_baseline_summary()
+
+        assert result["avg_daily_kwh"] == 0.0
+        assert result["peak_time"] == "Unknown"
+        assert result["top_area"] is None
+
+    @pytest.mark.asyncio
+    async def test_office_mode_uses_working_hours_filter(self):
+        storage = AsyncMock()
+        storage.get_history = AsyncMock(return_value=[])
+        storage.get_all_areas = AsyncMock(return_value=[])
+
+        dc = make_collector(storage=storage, config={"environment_mode": "office"})
+        helpers_stub.get_environmental_impact = MagicMock(return_value={})
+        helpers_stub.is_within_working_hours = MagicMock(return_value=True)
+
+        result = await dc.calculate_baseline_summary()
+        # Should not raise, and should return a summary
+        assert "avg_daily_kwh" in result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# History delegation methods (energy, temperature, humidity, illuminance, occupancy, area)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestHistoryDelegation:
+
+    @pytest.mark.asyncio
+    async def test_get_energy_history_delegates(self):
+        storage = AsyncMock()
+        storage.get_history = AsyncMock(return_value=[(datetime.now(), 2.5)])
+        dc = make_collector(storage=storage)
+        result = await dc.get_energy_history(hours=1)
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_temperature_history_delegates(self):
+        storage = AsyncMock()
+        storage.get_history = AsyncMock(return_value=[(datetime.now(), 21.0)])
+        dc = make_collector(storage=storage)
+        result = await dc.get_temperature_history(hours=1)
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_humidity_history_delegates(self):
+        storage = AsyncMock()
+        storage.get_history = AsyncMock(return_value=[(datetime.now(), 50.0)])
+        dc = make_collector(storage=storage)
+        result = await dc.get_humidity_history(hours=1)
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_illuminance_history_delegates(self):
+        storage = AsyncMock()
+        storage.get_history = AsyncMock(return_value=[(datetime.now(), 300.0)])
+        dc = make_collector(storage=storage)
+        result = await dc.get_illuminance_history(hours=1)
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_occupancy_history_delegates(self):
+        storage = AsyncMock()
+        storage.get_history = AsyncMock(return_value=[(datetime.now(), 1.0)])
+        dc = make_collector(storage=storage)
+        result = await dc.get_occupancy_history(hours=1)
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_history_passes_working_hours_filter(self):
+        storage = AsyncMock()
+        storage.get_history = AsyncMock(return_value=[])
+        dc = make_collector(storage=storage)
+
+        await dc.get_temperature_history(hours=1, working_hours_only=True)
+        call_kwargs = storage.get_history.call_args[1]
+        assert call_kwargs.get("working_hours_only") is True
+
+    @pytest.mark.asyncio
+    async def test_get_area_history_passes_all_params(self):
+        storage = AsyncMock()
+        storage.get_area_history = AsyncMock(return_value=[])
+        dc = make_collector(storage=storage)
+
+        await dc.get_area_history("Kitchen", "temperature", days=7, working_hours_only=False)
+
+        call_kwargs = storage.get_area_history.call_args[1]
+        assert call_kwargs.get("working_hours_only") is False

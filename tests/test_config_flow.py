@@ -781,3 +781,137 @@ class TestConfigFlowIntegration:
         assert flow.data["environment_mode"] == "office"
         assert flow.data["working_start"] == "09:00"
         assert flow.data["working_friday"] is True
+
+
+# ============================================================================
+# Additional edge-case tests for uncovered lines
+# ============================================================================
+
+class TestElectricityPriceValidation:
+    """Test non-numeric electricity price (TypeError/ValueError branch)."""
+
+    async def test_non_numeric_electricity_price_returns_error(self, config_flow):
+        """A non-numeric string must be rejected with a validation error."""
+        user_input = {
+            "currency": "EUR",
+            "electricity_price": "free",   # cannot be coerced to float
+            "environment_mode": "home",
+        }
+
+        result = await config_flow.async_step_settings(user_input)
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "settings"
+        assert "electricity_price" in result.get("errors", {}), (
+            "Expected an 'electricity_price' error for non-numeric input"
+        )
+
+    async def test_none_electricity_price_returns_error(self, config_flow):
+        """None value must also be rejected."""
+        user_input = {
+            "currency": "EUR",
+            "electricity_price": None,
+            "environment_mode": "home",
+        }
+
+        result = await config_flow.async_step_settings(user_input)
+
+        assert result["type"] == "form"
+        assert "electricity_price" in result.get("errors", {})
+
+
+class TestGetWeatherEntities:
+    """Test _get_weather_entities helper."""
+
+    def test_returns_list_of_weather_entity_ids(self, config_flow, mock_hass):
+        """Should iterate hass.states.async_all('weather') and collect entity IDs."""
+        mock_state_1 = MagicMock()
+        mock_state_1.entity_id = "weather.home"
+        mock_state_2 = MagicMock()
+        mock_state_2.entity_id = "weather.office"
+
+        mock_hass.states.async_all = MagicMock(return_value=[mock_state_1, mock_state_2])
+        config_flow.hass = mock_hass
+
+        result = config_flow._get_weather_entities()
+
+        assert "weather.home" in result
+        assert "weather.office" in result
+        assert len(result) == 2
+
+    def test_returns_empty_list_when_no_weather_entities(self, config_flow, mock_hass):
+        """When there are no weather entities, must return an empty list."""
+        mock_hass.states.async_all = MagicMock(return_value=[])
+        config_flow.hass = mock_hass
+
+        result = config_flow._get_weather_entities()
+
+        assert result == []
+
+
+class TestAreaAssignmentEdgeCases:
+    """Edge cases for area assignment step."""
+
+    async def test_area_assignment_proceeds_despite_update_entity_exception(self, config_flow, mock_entity_registry):
+        """If async_update_entity raises, the exception is logged but flow still proceeds."""
+        config_flow.data = {
+            "discovered_sensors": {
+                "power": ["sensor.power_room"],
+                "energy": [], "temperature": [], "humidity": [],
+                "illuminance": [], "occupancy": [],
+            }
+        }
+
+        # Make update_entity raise on every call
+        mock_entity_registry.async_update_entity = MagicMock(side_effect=Exception("registry error"))
+
+        user_input = {"sensor.power_room": "area_bedroom"}
+
+        with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get",
+                          return_value=mock_entity_registry):
+            with patch.object(helpers_mod, "get_entity_area_id", return_value=None):
+                result = await config_flow.async_step_area_assignment(user_input)
+
+        # Despite the error, flow proceeds to the next step
+        assert result["type"] == "form"
+        assert result["step_id"] == "intervention_info"
+
+    async def test_area_assignment_shows_existing_area_as_default(self, config_flow, mock_entity_registry):
+        """Sensors that already have an area should show it as default in the schema."""
+        config_flow.data = {
+            "discovered_sensors": {
+                "power": ["sensor.power_room"],
+                "energy": [], "temperature": [], "humidity": [],
+                "illuminance": [], "occupancy": [],
+            }
+        }
+
+        with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get",
+                          return_value=mock_entity_registry):
+            # Sensor already assigned to "area_living_room"
+            with patch.object(helpers_mod, "get_entity_area_id", return_value="area_living_room"):
+                result = await config_flow.async_step_area_assignment()
+
+        # Form is shown without error
+        assert result["type"] == "form"
+        assert result["step_id"] == "area_assignment"
+
+    async def test_area_assignment_skips_entity_with_schema_exception(self, config_flow, mock_entity_registry):
+        """If building a sensor's schema entry raises, it logs and skips that entity."""
+        config_flow.data = {
+            "discovered_sensors": {
+                "power": ["sensor.bad_entity"],
+                "energy": [], "temperature": [], "humidity": [],
+                "illuminance": [], "occupancy": [],
+            }
+        }
+
+        with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get",
+                          return_value=mock_entity_registry):
+            with patch.object(helpers_mod, "get_entity_area_id",
+                               side_effect=Exception("registry crash")):
+                # Should not raise; bad entity is skipped
+                result = await config_flow.async_step_area_assignment()
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "area_assignment"
