@@ -95,23 +95,28 @@ ACTIONS = {
 
 # Rewards function weights
 REWARD_WEIGHTS = {
-    "alpha": 1.0,  # Energy Savings
-    "beta": 0.5,   # User Engagement
-    "delta": 0.3,  # Penalization for excessive notifications
+    "alpha": 1.0, # Energy Savings
+    "beta": 0.5,  # User Engagement
+    "delta": 0.3, # Penalization for excessive notifications
 }
 
 # Notification settings
 MAX_NOTIFICATIONS_PER_DAY = 10       # Maximum notifications per day to prevent fatigue
 FATIGUE_THRESHOLD = 0.7              # User fatigue threshold (0 to 1) where 1 means fully fatigued
-MIN_COOLDOWN_MINUTES = 30              # Base cooldown between notifications
-CRITICAL_MIN_COOLDOWN_MINUTES = 5      # Absolute non-bypassable minimum even for critical opportunities
-HIGH_OPPORTUNITY_THRESHOLD = 0.6       # Score needed to bypass cooldown
-CRITICAL_OPPORTUNITY_THRESHOLD = 0.8   # Score for immediate notification
+MIN_COOLDOWN_MINUTES = 30            # Base cooldown between notifications
+CRITICAL_MIN_COOLDOWN_MINUTES = 5    # Absolute non-bypassable minimum even for critical opportunities
+HIGH_OPPORTUNITY_THRESHOLD = 0.6     # Score needed to bypass cooldown
+CRITICAL_OPPORTUNITY_THRESHOLD = 0.8 # Score for immediate notification
 
 # Shadow learning (offline RL during baseline phase)
 SHADOW_EXPLORATION_RATE = 0.5  # Higher exploration during baseline (no cost to bad exploration)
 SHADOW_LEARNING_RATE = 0.05    # Lower learning rate for shadow episodes (noisier signal)
 SHADOW_INTERVAL_MULTIPLIER = 4 # Shadow episode every N AI cycles (e.g., if AI_FREQUENCY_SECONDS=15s, happens every 4 * 15s = 60s)
+
+# Epsilon-greedy exploration decay (active phase)
+INITIAL_EPSILON = 0.2     # Starting exploration rate
+MIN_EPSILON = 0.05        # Minimum exploration rate; floor after decay
+EPSILON_DECAY_RATE = 0.99 # Multiplicative decay applied after each completed RL episode
 
 # Discount factor for RL
 GAMMA = 0.95

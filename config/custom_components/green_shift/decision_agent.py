@@ -39,7 +39,10 @@ from .const import (
     SHADOW_LEARNING_RATE,
     SHADOW_INTERVAL_MULTIPLIER,
     ENVIRONMENT_OFFICE,
-    NOTIFICATION_HISTORY_LIMIT
+    NOTIFICATION_HISTORY_LIMIT,
+    INITIAL_EPSILON,
+    MIN_EPSILON,
+    EPSILON_DECAY_RATE,
 )
 
 _LOGGER = logging.getLogger(f"{__name__}.ai_model")
@@ -85,7 +88,7 @@ class DecisionAgent:
         # Q-table for reinforcement learning
         self.q_table = {}              # {state_key: {action: q_value}}
         self.learning_rate = 0.1       # Learning rate for Q-learning updates
-        self.epsilon = 0.2             # Exploration rate
+        self.epsilon = INITIAL_EPSILON  # Exploration rate (decays with episodes)
         self.episode_number = 0        # Track RL episodes for research logging
         self.shadow_episode_number = 0 # Track shadow RL episodes (baseline phase)
 
@@ -708,6 +711,9 @@ class DecisionAgent:
             _LOGGER.debug("No notification actions available based on current context")
             return
 
+        # Decay epsilon as the agent accumulates real episodes (more episodes -> less exploration)
+        self.epsilon = max(MIN_EPSILON, INITIAL_EPSILON * (EPSILON_DECAY_RATE ** self.episode_number))
+
        # Epsilon-greedy action selection
         action_source = "explore"
         if random.random() < self.epsilon:
@@ -732,6 +738,8 @@ class DecisionAgent:
             noop_reward = self._compute_noop_reward()
             await self._update_q_table_with_feedback(state_key, action, noop_reward, accepted=True)
             self.episode_number += 1
+            # Decay epsilon after completing a noop episode
+            self.epsilon = max(MIN_EPSILON, INITIAL_EPSILON * (EPSILON_DECAY_RATE ** self.episode_number))
             await self._log_rl_episode(state_key, action, noop_reward, action_source,
                                        opportunity_score=opportunity_score, accepted=None)
             _LOGGER.debug("Noop selected: no notification sent, immediate reward=%.4f", noop_reward)
@@ -906,15 +914,6 @@ class DecisionAgent:
             else:
                 context_alignment = 0.2  # Still somewhat useful
 
-        elif action_name == "noop":
-            # Noop reward: high when consumption is at/below baseline (correct restraint),
-            # low when well above baseline (missed notification opportunity).
-            if self.baseline_consumption > 0:
-                deviation = (current_power - self.baseline_consumption) / self.baseline_consumption
-                # 1.0 when at baseline, approaches 0 as deviation grows positive.
-                context_alignment = max(0.0, min(1.0, 1.0 - deviation))
-            else:
-                context_alignment = 0.5  # Neutral without baseline data
 
         # Component 3: Temporal appropriateness
         now = datetime.now()
@@ -1077,14 +1076,15 @@ class DecisionAgent:
                 notify_services = self.hass.services.async_services().get("notify", {})
                 mobile_services = [svc for svc in notify_services if svc.startswith("mobile_app_")]
                 if mobile_services:
-                    await self.hass.services.async_call(
-                        "notify", mobile_services[0],
-                        {
-                            "title": notification["title"],
-                            "message": notification["message"],
-                        }
-                    )
-                    _LOGGER.info("Push notification sent to mobile app '%s': %s", mobile_services[0], notification["title"])
+                    for mobile_svc in mobile_services:
+                        await self.hass.services.async_call(
+                            "notify", mobile_svc,
+                            {
+                                "title": notification["title"],
+                                "message": notification["message"],
+                            }
+                        )
+                    _LOGGER.info("Push notification sent to %d mobile app(s) %s: %s", len(mobile_services), mobile_services, notification["title"])
                 else:
                     _LOGGER.debug("No mobile_app notify service found; notification only visible in dashboard")
             except Exception as notify_err:
@@ -1356,6 +1356,8 @@ class DecisionAgent:
             
             # Log RL episode for research analysis
             self.episode_number += 1
+            # Decay epsilon after completing a real episode
+            self.epsilon = max(MIN_EPSILON, INITIAL_EPSILON * (EPSILON_DECAY_RATE ** self.episode_number))
             await self._log_rl_episode(
                 state_key=episode["state_key"],
                 action=episode["action"],
@@ -2147,8 +2149,8 @@ class DecisionAgent:
                     )
 
                     old_power_values = [
-                        p for ts, p in old_power_data 
-                        if ts < old_week_end_dt
+                        p for ts, p in old_power_data
+                        if old_week_start_dt <= ts < old_week_end_dt
                     ]
 
                     if old_power_values:

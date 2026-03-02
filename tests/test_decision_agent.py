@@ -717,6 +717,42 @@ class TestWeeklyChallenge:
         # Status must be a real result, not pending
         assert status["status"] in ("on_track", "off_track")
 
+    @pytest.mark.asyncio
+    async def test_retroactive_logging_excludes_data_before_old_week_start(self):
+        """Data older than the old week's start must be excluded."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.storage = AsyncMock()
+        agent.storage.log_weekly_challenge = AsyncMock()
+
+        from datetime import date, datetime as dt, timedelta as td
+        past_monday = date.today() - td(days=8)
+        agent.current_week_start_date = past_monday
+
+        readings_per_hour = int(3600 / 15)
+        old_week_start_dt = dt.combine(past_monday, dt.min.time())
+
+        # Data BEFORE the old week (must be excluded by lower bound)
+        before_week_dt = old_week_start_dt - td(hours=12)
+        data_too_old = [(before_week_dt + td(seconds=i * 15), 9999.0) for i in range(readings_per_hour)]
+
+        # Data WITHIN the old week (must be included)
+        inside_old_week_dt = old_week_start_dt + td(days=2)
+        data_in_week = [(inside_old_week_dt + td(seconds=i * 15), 800.0) for i in range(readings_per_hour)]
+
+        agent.data_collector.get_power_history = AsyncMock(return_value=data_too_old + data_in_week)
+
+        await agent.get_weekly_challenge_status(target_percentage=15.0)
+
+        agent.storage.log_weekly_challenge.assert_called_once()
+        call_kwargs = agent.storage.log_weekly_challenge.call_args
+        logged_data = (call_kwargs.kwargs.get("challenge_data")
+                       or (call_kwargs.args[0] if call_kwargs.args else {}))
+        # actual_W must reflect only in-week data (800 W), not data_too_old (9999 W)
+        assert abs(logged_data.get("actual_W", 0) - 800.0) < 1.0, (
+            f"actual_W should be ~800 (in-week data only), got {logged_data.get('actual_W')}"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Notification daily counter reset
@@ -1037,6 +1073,24 @@ class TestExecuteActionMobileNotify:
         # Should not raise
         notification_id = await agent._execute_action(1)
         assert notification_id is not None
+
+    @pytest.mark.asyncio
+    async def test_all_mobile_services_are_notified(self):
+        """When multiple mobile_app_ services exist, ALL must receive the push notification."""
+        agent = self._make_agent_with_services({
+            "mobile_app_phone": MagicMock(),
+            "mobile_app_tablet": MagicMock(),
+        })
+        self._patch_generate_notification(agent)
+
+        await agent._execute_action(1)
+
+        calls = agent.hass.services.async_call.call_args_list
+        notify_calls = [c for c in calls if c.args[0] == "notify"]
+        notified_services = {c.args[1] for c in notify_calls}
+        assert "mobile_app_phone" in notified_services, "phone must be notified"
+        assert "mobile_app_tablet" in notified_services, "tablet must be notified"
+        assert len(notify_calls) == 2, "Exactly 2 notify calls expected, one per device"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2269,3 +2323,86 @@ class TestProcessAiModel:
         }
         await agent.process_ai_model()
         assert "old_ep" not in agent.pending_episodes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Epsilon decay
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestEpsilonDecay:
+    """Verify that epsilon decays towards MIN_EPSILON as real episodes accumulate."""
+
+    def test_epsilon_decreases_after_episodes(self):
+        """Computed epsilon must be strictly below INITIAL_EPSILON after several episodes."""
+        from custom_components.green_shift.const import INITIAL_EPSILON, MIN_EPSILON, EPSILON_DECAY_RATE
+        episodes = 100
+        computed = max(MIN_EPSILON, INITIAL_EPSILON * (EPSILON_DECAY_RATE ** episodes))
+        assert computed < INITIAL_EPSILON, "Epsilon must drop below initial value"
+        assert computed >= MIN_EPSILON, "Epsilon must not go below MIN_EPSILON floor"
+
+    def test_epsilon_floor_is_min_epsilon(self):
+        """After many episodes epsilon saturates at exactly MIN_EPSILON."""
+        from custom_components.green_shift.const import INITIAL_EPSILON, MIN_EPSILON, EPSILON_DECAY_RATE
+        computed = max(MIN_EPSILON, INITIAL_EPSILON * (EPSILON_DECAY_RATE ** 10_000))
+        assert computed == MIN_EPSILON
+
+    @pytest.mark.asyncio
+    async def test_noop_episode_decays_epsilon(self):
+        """After a noop episode completes inside _decide_action, epsilon must be lower than INITIAL_EPSILON."""
+        from custom_components.green_shift.const import INITIAL_EPSILON, MIN_EPSILON
+        agent = make_agent()
+        agent.phase = "active"
+        agent.episode_number = 0
+        agent.epsilon = INITIAL_EPSILON
+        agent.notification_count_today = 0
+        agent.last_notification_time = None
+        # Only noop available so epsilon-greedy always picks noop
+        agent.action_mask = {0: True, 1: False, 2: False, 3: False, 4: False}
+        agent.state_vector = [0.0] * 14
+        agent.storage = None
+        agent._compute_noop_reward = MagicMock(return_value=0.0)
+        agent._update_q_table_with_feedback = AsyncMock()
+        agent._log_rl_episode = AsyncMock()
+        agent._calculate_opportunity_score = AsyncMock(return_value=0.1)
+        agent._check_cooldown_with_opportunity = AsyncMock(return_value=True)
+        agent._discretize_state = MagicMock(return_value=(0, 0, 0, 0, 0, 0))
+
+        await agent._decide_action()
+
+        # After 1 noop episode: epsilon = max(MIN_EPSILON, 0.2 * 0.99^1) < 0.2
+        assert agent.epsilon < INITIAL_EPSILON, "Epsilon must have decayed after a noop episode"
+        assert agent.epsilon >= MIN_EPSILON, "Epsilon must not drop below MIN_EPSILON"
+
+    @pytest.mark.asyncio
+    async def test_user_feedback_decays_epsilon(self):
+        """After user responds to a notification, epsilon must have decayed."""
+        from custom_components.green_shift.const import INITIAL_EPSILON, MIN_EPSILON
+        agent = make_agent()
+        agent.phase = "active"
+        agent.episode_number = 5
+        agent.epsilon = INITIAL_EPSILON
+        agent.storage = None
+
+        notif_id = "test-notif-001"
+        agent.notification_history.append({
+            "notification_id": notif_id,
+            "responded": False,
+            "accepted": None,
+        })
+        agent.pending_episodes[notif_id] = {
+            "state_key": (0, 0, 0, 0, 0, 0),
+            "action": 1,
+            "initial_power": 500.0,
+            "timestamp": datetime.now(),
+            "action_source": "exploit",
+            "opportunity_score": 0.5,
+        }
+        agent._calculate_reward_with_feedback = AsyncMock(return_value=1.0)
+        agent._update_q_table_with_feedback = AsyncMock()
+        agent._log_rl_episode = AsyncMock()
+        agent._update_behaviour_index = MagicMock()
+
+        await agent._handle_notification_feedback(notif_id, accepted=True)
+
+        assert agent.epsilon < INITIAL_EPSILON, "Epsilon must have decayed after user feedback"
+        assert agent.epsilon >= MIN_EPSILON
