@@ -116,7 +116,7 @@ SHADOW_INTERVAL_MULTIPLIER = 4 # Shadow episode every N AI cycles (e.g., if AI_F
 # Epsilon-greedy exploration decay (active phase)
 INITIAL_EPSILON = 0.2     # Starting exploration rate
 MIN_EPSILON = 0.05        # Minimum exploration rate; floor after decay
-EPSILON_DECAY_RATE = 0.99 # Multiplicative decay applied after each completed RL episode
+EPSILON_DECAY_RATE = 0.95 # Multiplicative decay applied after each completed RL episode
 
 # Discount factor for RL
 GAMMA = 0.95

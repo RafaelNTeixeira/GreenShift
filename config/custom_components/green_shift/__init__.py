@@ -175,6 +175,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Trigger the new notification function
             await trigger_phase_transition_notification(hass, agent, collector)
 
+            # Immediately generate tasks for the first active day (the 06:00 callback only fires tomorrow; without this the user sees the gamification UI but zero tasks).
+            _today_tasks = await storage.get_today_tasks()
+            if not _today_tasks:
+                _LOGGER.info("Phase transition: no tasks for today yet. Generating now")
+                await task_manager.generate_daily_tasks()
+
             # Save phase transition to persistent storage
             if agent.storage:
                 await agent._save_persistent_state()

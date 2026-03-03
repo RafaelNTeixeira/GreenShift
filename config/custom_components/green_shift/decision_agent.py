@@ -86,11 +86,12 @@ class DecisionAgent:
         self._last_cooldown_block_log_time = None  # Throttle cooldown-block DB writes
 
         # Q-table for reinforcement learning
-        self.q_table = {}              # {state_key: {action: q_value}}
-        self.learning_rate = 0.1       # Learning rate for Q-learning updates
-        self.epsilon = INITIAL_EPSILON  # Exploration rate (decays with episodes)
-        self.episode_number = 0        # Track RL episodes for research logging
-        self.shadow_episode_number = 0 # Track shadow RL episodes (baseline phase)
+        self.q_table = {}                # {state_key: {action: q_value}}
+        self.learning_rate = 0.1         # Learning rate for Q-learning updates
+        self.epsilon = INITIAL_EPSILON   # Exploration rate (decays with real-feedback episodes)
+        self.episode_number = 0          # Track RL episodes for research logging (includes noops)
+        self.feedback_episode_number = 0 # Track only real-user-feedback episodes (used for epsilon decay)
+        self.shadow_episode_number = 0   # Track shadow RL episodes (baseline phase)
 
         # Behaviour indices
         self.anomaly_index = 0.0
@@ -228,7 +229,12 @@ class DecisionAgent:
             self.shadow_episode_number = state["shadow_episode_number"]
             _LOGGER.info("Loaded shadow episode number: %d", self.shadow_episode_number)
 
-        # Load episode number (active phase RL episodes)
+        # Load real-feedback episode counter (used for epsilon decay)
+        if "feedback_episode_number" in state:
+            self.feedback_episode_number = state["feedback_episode_number"]
+            _LOGGER.info("Loaded feedback episode number: %d", self.feedback_episode_number)
+
+        # Load episode number (active phase RL episodes, includes noops)
         if "episode_number" in state:
             self.episode_number = state["episode_number"]
             _LOGGER.info("Loaded episode number: %d", self.episode_number)
@@ -322,6 +328,7 @@ class DecisionAgent:
             "notification_history": trimmed_notification_history,
             "q_table": serializable_q_table,
             "shadow_episode_number": self.shadow_episode_number,
+            "feedback_episode_number": self.feedback_episode_number,
             "episode_number": self.episode_number,
             "logged_weeks": list(self._logged_weeks),
             "active_since": self.active_since.isoformat() if self.active_since else None,
@@ -621,9 +628,11 @@ class DecisionAgent:
         # noop: always available: the agent must be able to learn when to not intervene.
         mask[ACTIONS["noop"]] = True
 
-        # specific: requires individual power sensors
+        # specific: requires individual power sensors (excluding the main aggregator)
         power_sensors = self.sensors.get("power", [])
-        if len(power_sensors) > 0:
+        _main_power = getattr(self.data_collector, "main_power_sensor", None)
+        _individual_power = [s for s in power_sensors if s != _main_power]
+        if len(_individual_power) > 0:
             mask[ACTIONS["specific"]] = True
 
         # anomaly: requires sufficient history and detected anomalies
@@ -726,10 +735,11 @@ class DecisionAgent:
             if state_key not in self.q_table:
                 self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
 
-            # Choose best available action
-            best_action = max(available_actions, key=lambda a: self.q_table[state_key].get(a, 0.0))
-            action = best_action
-            _LOGGER.debug("Exploitation: selected best action %d (Q=%.2f)", action, self.q_table[state_key].get(action, 0.0))
+            # Tie-breaking: random choice among all actions sharing the highest Q-value
+            max_q = max(self.q_table[state_key].get(a, 0.0) for a in available_actions)
+            best_actions = [a for a in available_actions if self.q_table[state_key].get(a, 0.0) == max_q]
+            action = random.choice(best_actions)
+            _LOGGER.debug("Exploitation: selected action %d (Q=%.2f, tied=%d)", action, max_q, len(best_actions))
 
         # Execute action and store pending episode for delayed Q-learning
         # Noop: no notification; reward computed immediately; Q-table updated in-place.
@@ -742,8 +752,6 @@ class DecisionAgent:
             current_q = self.q_table[state_key].get(action, 0.0)
             self.q_table[state_key][action] = current_q + self.learning_rate * (noop_reward - current_q)
             self.episode_number += 1
-            # Decay epsilon after completing a noop episode
-            self.epsilon = max(MIN_EPSILON, INITIAL_EPSILON * (EPSILON_DECAY_RATE ** self.episode_number))
             await self._log_rl_episode(state_key, action, noop_reward, action_source,
                                        opportunity_score=opportunity_score)
             _LOGGER.debug("Noop selected: no notification sent, immediate reward=%.4f, γ=0", noop_reward)
@@ -809,9 +817,11 @@ class DecisionAgent:
             if state_key not in self.q_table:
                 self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
 
-            best_action = max(available_actions, key=lambda a: self.q_table[state_key].get(a, 0.0))
-            action = best_action
-            _LOGGER.debug("Shadow learning (exploit): selected best action %d (Q=%.2f)", action, self.q_table[state_key].get(action, 0.0))
+            # Tie-breaking: random choice among all actions sharing the highest Q-value
+            max_q = max(self.q_table[state_key].get(a, 0.0) for a in available_actions)
+            best_actions_s = [a for a in available_actions if self.q_table[state_key].get(a, 0.0) == max_q]
+            action = random.choice(best_actions_s)
+            _LOGGER.debug("Shadow learning (exploit): selected action %d (Q=%.2f, tied=%d)", action, max_q, len(best_actions_s))
 
         # Noop in shadow mode: Q-update with an estimated noop reward.
         if action == ACTIONS["noop"]:
@@ -1356,8 +1366,9 @@ class DecisionAgent:
             
             # Log RL episode for research analysis
             self.episode_number += 1
-            # Decay epsilon after completing a real episode
-            self.epsilon = max(MIN_EPSILON, INITIAL_EPSILON * (EPSILON_DECAY_RATE ** self.episode_number))
+            self.feedback_episode_number += 1
+            # Epsilon decays only on real user-feedback episodes (not noops)
+            self.epsilon = max(MIN_EPSILON, INITIAL_EPSILON * (EPSILON_DECAY_RATE ** self.feedback_episode_number))
             await self._log_rl_episode(
                 state_key=episode["state_key"],
                 action=episode["action"],

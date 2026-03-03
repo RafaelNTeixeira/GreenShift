@@ -68,7 +68,7 @@ async def async_setup_entry(
         WeeklyChallengeSensor(agent),
         BehaviourIndexSensor(agent),
         FatigueIndexSensor(agent),
-        DailyTasksSensor(storage),
+        DailyTasksSensor(storage, hass.data[DOMAIN].get("task_manager")),
         ActiveNotificationsSensor(agent),
         TaskStreakSensor(agent),
         WeeklyStreakSensor(agent),
@@ -629,8 +629,9 @@ class DailyTasksSensor(GreenShiftAISensor):
 
     _attr_should_poll = False
 
-    def __init__(self, storage):
+    def __init__(self, storage, task_manager=None):
         self._storage = storage
+        self._task_manager = task_manager
         self._attr_translation_key = "daily_tasks"
         self._attr_unique_id = f"{DOMAIN}_daily_tasks"
         self._attr_icon = "mdi:clipboard-check-outline"
@@ -711,6 +712,31 @@ class DailyTasksSensor(GreenShiftAISensor):
             # Add completion value if available
             if task['completion_value']:
                 task_info['completion_value'] = task['completion_value']
+
+            # Add verification status from task_manager's in-memory cache
+            task_id = task['task_id']
+            vr = {}
+            if self._task_manager:
+                vr = self._task_manager._last_verification_results.get(task_id, {})
+            if vr:
+                checked_at = vr.get('checked_at')
+                minutes_ago = None
+                if checked_at:
+                    # checked_at is always a naive datetime (datetime.now()), avoid tz arithmetic
+                    delta = datetime.now() - checked_at
+                    minutes_ago = max(0, int(delta.total_seconds() / 60))
+                task_info['last_check_minutes_ago'] = minutes_ago
+                task_info['check_result'] = (
+                    'verified' if vr.get('verified') else
+                    'pending' if vr.get('pending') else
+                    'failed' if vr.get('failed') else
+                    'unknown'
+                )
+                task_info['check_reason'] = vr.get('reason', '')
+            else:
+                task_info['last_check_minutes_ago'] = None
+                task_info['check_result'] = 'not_checked'
+                task_info['check_reason'] = ''
 
             # Add status indicator
             if task['verified']:

@@ -421,8 +421,14 @@ views:
 
                             {% if t.verified %}
                             ✅ **VERIFIED!** You achieved the target!
-                            {% else %}
+                            {% elif t.check_result == 'pending' %}
+                            ⏳ **Waiting** - {{ t.check_reason }}{% if t.last_check_minutes_ago is not none %} *(updated {{ t.last_check_minutes_ago }} min ago)*{% endif %}
+                            {% elif t.check_result == 'failed' %}
+                            ❌ **Target missed** - {{ t.check_reason }}{% if t.last_check_minutes_ago is not none %} *(checked {{ t.last_check_minutes_ago }} min ago)*{% endif %}
+                            {% elif t.check_result == 'not_checked' or t.check_result is none %}
                             🎯 **Active** - Complete this today!
+                            {% else %}
+                            🎯 **Active** - Complete this today!{% if t.last_check_minutes_ago is not none %} *(last checked {{ t.last_check_minutes_ago }} min ago)*{% endif %}
                             {% endif %}
                             {% endif %}
 
@@ -497,8 +503,14 @@ views:
 
                             {% if t.verified %}
                             ✅ **VERIFIED!** You achieved the target!
-                            {% else %}
+                            {% elif t.check_result == 'pending' %}
+                            ⏳ **Waiting** – {{ t.check_reason }}{% if t.last_check_minutes_ago is not none %} *(updated {{ t.last_check_minutes_ago }} min ago)*{% endif %}
+                            {% elif t.check_result == 'failed' %}
+                            ❌ **Target missed** – {{ t.check_reason }}{% if t.last_check_minutes_ago is not none %} *(checked {{ t.last_check_minutes_ago }} min ago)*{% endif %}
+                            {% elif t.check_result == 'not_checked' or t.check_result is none %}
                             🎯 **Active** - Complete this today!
+                            {% else %}
+                            🎯 **Active** - Complete this today!{% if t.last_check_minutes_ago is not none %} *(last checked {{ t.last_check_minutes_ago }} min ago)*{% endif %}
                             {% endif %}
                             {% endif %}
 
@@ -573,8 +585,14 @@ views:
 
                             {% if t.verified %}
                             ✅ **VERIFIED!** You achieved the target!
-                            {% else %}
+                            {% elif t.check_result == 'pending' %}
+                            ⏳ **Waiting** – {{ t.check_reason }}{% if t.last_check_minutes_ago is not none %} *(updated {{ t.last_check_minutes_ago }} min ago)*{% endif %}
+                            {% elif t.check_result == 'failed' %}
+                            ❌ **Target missed** – {{ t.check_reason }}{% if t.last_check_minutes_ago is not none %} *(checked {{ t.last_check_minutes_ago }} min ago)*{% endif %}
+                            {% elif t.check_result == 'not_checked' or t.check_result is none %}
                             🎯 **Active** - Complete this today!
+                            {% else %}
+                            🎯 **Active** - Complete this today!{% if t.last_check_minutes_ago is not none %} *(last checked {{ t.last_check_minutes_ago }} min ago)*{% endif %}
                             {% endif %}
                             {% endif %}
 
