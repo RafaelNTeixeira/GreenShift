@@ -63,6 +63,12 @@
         "title": "Setup Complete",
         "description": "Green Shift is now configured! \n\n**Note:** For the first 14 days, you will only see data consumption displays while the system learns your habits. \n\nOnce the baseline phase is complete, **AI insights and Gamification** features will automatically unlock."
       }
+    },
+    "error": {
+      "negative_price": "Electricity price cannot be negative.",
+      "invalid_price": "Electricity price is invalid.",
+      "invalid_time_format": "Time must be in HH:MM format (e.g. 09:00).",
+      "no_working_days": "Please select at least one working day."
     }
   },
   "selector": {

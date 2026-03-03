@@ -137,6 +137,14 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if not _TIME_RE.match(str(user_input.get(field, ""))):
                     errors[field] = "invalid_time_format"
 
+            # Validate working days: at least one must be selected.
+            _day_keys = [
+                "working_monday", "working_tuesday", "working_wednesday",
+                "working_thursday", "working_friday", "working_saturday", "working_sunday",
+            ]
+            if not any(user_input.get(k, False) for k in _day_keys):
+                errors["working_days"] = "no_working_days"
+
             if not errors:
                 self.data.update(user_input)
                 return await self.async_step_sensor_confirmation()

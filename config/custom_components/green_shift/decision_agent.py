@@ -679,7 +679,8 @@ class DecisionAgent:
             return
 
         # Check adaptive cooldown with opportunity-based bypass
-        if not await self._check_cooldown_with_opportunity(opportunity_score):
+        _can_send, _req_cooldown, _adap_cooldown = await self._check_cooldown_with_opportunity(opportunity_score)
+        if not _can_send:
             # Log at most once per MIN_COOLDOWN_MINUTES to avoid flooding research_blocked_notifications with routine cooldown entries.
             _now = datetime.now()
             if (self._last_cooldown_block_log_time is None or 
@@ -689,6 +690,8 @@ class DecisionAgent:
                     reason="cooldown",
                     opportunity_score=opportunity_score,
                     time_since_last=_time_since_last_min,
+                    required_cooldown=_req_cooldown,
+                    adaptive_cooldown=_adap_cooldown,
                     available_actions=available_actions,
                 )
             return
@@ -700,9 +703,9 @@ class DecisionAgent:
             await self._log_blocked_notification(
                 reason="fatigue_threshold",
                 opportunity_score=opportunity_score,
-                time_since_last=None,
-                required_cooldown=None,
-                adaptive_cooldown=None,
+                time_since_last=_time_since_last_min,  # cooldown passed, but time is still useful research context
+                required_cooldown=None,                 # not a cooldown block; cooldown was already satisfied
+                adaptive_cooldown=_adap_cooldown,       # adaptive cooldown state at time of block
                 available_actions=available_actions,
             )
             return
@@ -1635,6 +1638,8 @@ class DecisionAgent:
         """Detects anomalies in each area for spatial awareness."""
         areas = self.data_collector.get_all_areas()
         self.area_anomalies = {}
+        # In office mode apply working-hours filter so off-hours (nights/weekends) readings do not dilute the z-score baseline used for anomaly detection.
+        _wh_filter = (self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE) or None
 
         for area in areas:
             if area == "No Area":
@@ -1643,7 +1648,7 @@ class DecisionAgent:
             area_anomalies = {}
 
             # Check temperature anomalies
-            temp_history = await self.data_collector.get_area_history(area, "temperature", hours=2)
+            temp_history = await self.data_collector.get_area_history(area, "temperature", hours=2, working_hours_only=_wh_filter)
             if temp_history:
                 temp_values = [val for ts, val in temp_history if val is not None]
                 if len(temp_values) >= 10:
@@ -1668,7 +1673,7 @@ class DecisionAgent:
                         area_anomalies["temperature"] = max(area_anomalies.get("temperature", 0), 0.8)
 
             # Check power anomalies per area
-            power_history = await self.data_collector.get_area_history(area, "power", hours=2)
+            power_history = await self.data_collector.get_area_history(area, "power", hours=2, working_hours_only=_wh_filter)
             if power_history:
                 power_values = [val for ts, val in power_history if val is not None]
                 if len(power_values) >= 10:
@@ -1688,7 +1693,7 @@ class DecisionAgent:
                             area_anomalies["power"] = max(area_anomalies.get("power", 0), min(baseline_deviation, 1.0))
 
             # Check humidity anomalies
-            hum_history = await self.data_collector.get_area_history(area, "humidity", hours=2)
+            hum_history = await self.data_collector.get_area_history(area, "humidity", hours=2, working_hours_only=_wh_filter)
             if hum_history:
                 hum_values = [val for ts, val in hum_history if val is not None]
                 if len(hum_values) >= 10:
@@ -1962,7 +1967,7 @@ class DecisionAgent:
 
         return opportunity_score
 
-    async def _check_cooldown_with_opportunity(self, opportunity_score: float) -> bool:
+    async def _check_cooldown_with_opportunity(self, opportunity_score: float) -> tuple:
         """
         Checks if notification can be sent based on adaptive cooldown.
         Allows bypassing cooldown for high-opportunity situations.
@@ -1971,10 +1976,12 @@ class DecisionAgent:
             opportunity_score (float): The calculated opportunity score for sending a notification.
 
         Returns:
-            bool: True if notification can be sent, False if still in cooldown.
+            tuple: (can_send: bool, required_cooldown: float|None, adaptive_cooldown: float|None)
+                   required_cooldown is the threshold that was checked; 
+                   adaptive_cooldown is the fatigue/time-adjusted base cooldown. Both are None when no time check was needed.
         """
         if self.last_notification_time is None:
-            return True  # First notification always allowed
+            return True, None, None  # First notification always allowed
 
         time_since_last = (datetime.now() - self.last_notification_time).total_seconds() / 60 # minutes
 
@@ -2005,13 +2012,13 @@ class DecisionAgent:
                     "Critical opportunity (%.2f) - absolute cooldown met (%.1f/%.1f min)",
                     opportunity_score, time_since_last, CRITICAL_MIN_COOLDOWN_MINUTES
                 )
-                return True
+                return True, CRITICAL_MIN_COOLDOWN_MINUTES, adaptive_cooldown
             else:
                 _LOGGER.debug(
                     "Critical opportunity but absolute min cooldown not met: %.1f/%.1f min",
                     time_since_last, CRITICAL_MIN_COOLDOWN_MINUTES
                 )
-                return False
+                return False, CRITICAL_MIN_COOLDOWN_MINUTES, adaptive_cooldown
         elif opportunity_score >= HIGH_OPPORTUNITY_THRESHOLD:
             # High opportunity - reduced cooldown (50% of adaptive)
             required_cooldown = adaptive_cooldown * 0.5
@@ -2019,24 +2026,24 @@ class DecisionAgent:
                 _LOGGER.info("High opportunity (%.2f) - reduced cooldown met (%.1f/%.1f min)",
                     opportunity_score, time_since_last, required_cooldown
                 )
-                return True
+                return True, required_cooldown, adaptive_cooldown
             else:
                 _LOGGER.debug("High opportunity but cooldown not met: %.1f/%.1f min (opportunity=%.2f)",
                     time_since_last, required_cooldown, opportunity_score
                 )
-                return False
+                return False, required_cooldown, adaptive_cooldown
         else:
             # Normal opportunity - full adaptive cooldown required
             if time_since_last >= adaptive_cooldown:
                 _LOGGER.debug("Standard cooldown met: %.1f/%.1f min (opportunity=%.2f)",
                     time_since_last, adaptive_cooldown, opportunity_score
                 )
-                return True
+                return True, adaptive_cooldown, adaptive_cooldown
             else:
                 _LOGGER.debug("In cooldown: %.1f/%.1f min (opportunity=%.2f, fatigue=%.2f)",
                     time_since_last, adaptive_cooldown, opportunity_score, self.fatigue_index
                 )
-                return False
+                return False, adaptive_cooldown, adaptive_cooldown
 
     async def calculate_area_baselines(self):
         """

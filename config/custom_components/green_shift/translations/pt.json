@@ -63,6 +63,12 @@
         "title": "Configuração Completa",
         "description": "O Green Shift está agora configurado!\n\n**Nota:** Durante os primeiros 14 dias, apenas verá visualizações de consumo de dados enquanto o sistema aprende os seus hábitos.\n\nAssim que a fase de baseline estiver completa, as funcionalidades de **Insights da IA e Gamificação** serão desbloqueadas automaticamente."
       }
+    },
+    "error": {
+      "negative_price": "O preço da eletricidade não pode ser negativo.",
+      "invalid_price": "O preço da eletricidade é inválido.",
+      "invalid_time_format": "O horário deve estar no formato HH:MM (ex. 09:00).",
+      "no_working_days": "Por favor selecione pelo menos um dia de trabalho."
     }
   },
   "selector": {

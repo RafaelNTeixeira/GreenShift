@@ -537,8 +537,10 @@ class TestCheckCooldown:
     async def test_first_notification_always_allowed(self):
         agent = make_agent()
         agent.last_notification_time = None
-        result = await agent._check_cooldown_with_opportunity(0.0)
-        assert result is True
+        can_send, req_cooldown, adap_cooldown = await agent._check_cooldown_with_opportunity(0.0)
+        assert can_send is True
+        assert req_cooldown is None
+        assert adap_cooldown is None
 
     @pytest.mark.asyncio
     async def test_critical_opportunity_respects_absolute_cooldown(self):
@@ -547,8 +549,12 @@ class TestCheckCooldown:
         # Only 1 minute since last notification: still within the absolute minimum
         agent.last_notification_time = datetime.now() - timedelta(minutes=1)
         agent.fatigue_index = 0.0
-        result = await agent._check_cooldown_with_opportunity(0.85)
-        assert result is False
+        can_send, req_cooldown, adap_cooldown = await agent._check_cooldown_with_opportunity(0.85)
+        assert can_send is False
+        # Required cooldown for the critical path is CRITICAL_MIN_COOLDOWN_MINUTES
+        from custom_components.green_shift.const import CRITICAL_MIN_COOLDOWN_MINUTES
+        assert req_cooldown == CRITICAL_MIN_COOLDOWN_MINUTES
+        assert adap_cooldown is not None
 
     @pytest.mark.asyncio
     async def test_critical_opportunity_after_absolute_cooldown(self):
@@ -557,8 +563,8 @@ class TestCheckCooldown:
         # 6 minutes since last notification — past the 5-min absolute minimum
         agent.last_notification_time = datetime.now() - timedelta(minutes=6)
         agent.fatigue_index = 0.0
-        result = await agent._check_cooldown_with_opportunity(0.85)
-        assert result is True
+        can_send, _, _ = await agent._check_cooldown_with_opportunity(0.85)
+        assert can_send is True
 
     @pytest.mark.asyncio
     async def test_high_opportunity_with_reduced_cooldown_met(self):
@@ -566,16 +572,20 @@ class TestCheckCooldown:
         agent.fatigue_index = 0.0
         # Adaptive cooldown with fatigue=0: 30 * 1.0 * 1.0 = 30 min -> 50% = 15 min
         agent.last_notification_time = datetime.now() - timedelta(minutes=16)
-        result = await agent._check_cooldown_with_opportunity(0.65)
-        assert result is True
+        can_send, req_cooldown, adap_cooldown = await agent._check_cooldown_with_opportunity(0.65)
+        assert can_send is True
+        # For high opportunity, required = 50% of adaptive
+        assert req_cooldown == pytest.approx(adap_cooldown * 0.5)
 
     @pytest.mark.asyncio
     async def test_high_opportunity_insufficient_cooldown(self):
         agent = make_agent()
         agent.fatigue_index = 0.0
         agent.last_notification_time = datetime.now() - timedelta(minutes=5)
-        result = await agent._check_cooldown_with_opportunity(0.65)
-        assert result is False
+        can_send, req_cooldown, adap_cooldown = await agent._check_cooldown_with_opportunity(0.65)
+        assert can_send is False
+        assert req_cooldown is not None
+        assert adap_cooldown is not None
 
     @pytest.mark.asyncio
     async def test_normal_opportunity_requires_full_cooldown(self):
@@ -587,16 +597,16 @@ class TestCheckCooldown:
             now = datetime(2026, 2, 19, 14, 0, 0)  # 2 PM (no peak time multiplier)
             mock_dt.now.return_value = now
             agent.last_notification_time = now - timedelta(minutes=29)
-            result = await agent._check_cooldown_with_opportunity(0.3)
-            assert result is False
+            can_send, _, _ = await agent._check_cooldown_with_opportunity(0.3)
+            assert can_send is False
 
     @pytest.mark.asyncio
     async def test_normal_opportunity_cooldown_satisfied(self):
         agent = make_agent()
         agent.fatigue_index = 0.0
         agent.last_notification_time = datetime.now() - timedelta(minutes=31)
-        result = await agent._check_cooldown_with_opportunity(0.3)
-        assert result is True
+        can_send, _, _ = await agent._check_cooldown_with_opportunity(0.3)
+        assert can_send is True
 
     @pytest.mark.asyncio
     async def test_high_fatigue_extends_cooldown(self):
@@ -604,8 +614,53 @@ class TestCheckCooldown:
         agent.fatigue_index = 1.0  # Max fatigue -> 3x cooldown = 90 min
         # 45 minutes would normally satisfy 30 min, but not 90 min
         agent.last_notification_time = datetime.now() - timedelta(minutes=45)
-        result = await agent._check_cooldown_with_opportunity(0.3)
-        assert result is False
+        can_send, _, _ = await agent._check_cooldown_with_opportunity(0.3)
+        assert can_send is False
+
+    @pytest.mark.asyncio
+    async def test_normal_returns_adaptive_as_both_cooldown_fields(self):
+        """For normal opportunity both req and adap_cooldown must equal the adaptive value."""
+        agent = make_agent()
+        agent.fatigue_index = 0.0
+        with patch.object(da_mod, 'datetime') as mock_dt:
+            now = datetime(2026, 2, 19, 14, 0, 0)  # midday, no peak multiplier
+            mock_dt.now.return_value = now
+            agent.last_notification_time = now - timedelta(minutes=5)
+            can_send, req_cooldown, adap_cooldown = await agent._check_cooldown_with_opportunity(0.3)
+            assert can_send is False
+            assert req_cooldown == adap_cooldown, (
+                "For normal opportunity, required_cooldown must equal adaptive_cooldown"
+            )
+            # With fatigue=0 and midday: 30 * 1.0 * 1.0 = 30.0
+            assert adap_cooldown == pytest.approx(30.0)
+
+    @pytest.mark.asyncio
+    async def test_cooldown_block_passes_values_to_log(self):
+        """When _decide_action blocks on cooldown, _log_blocked_notification must receive
+        non-None required_cooldown and adaptive_cooldown values from the returned tuple."""
+        agent = make_agent()
+        agent.phase = "active"
+        agent.baseline_consumption = 500.0
+        agent.storage = AsyncMock()
+        agent.storage.log_blocked_notification = AsyncMock()
+        agent.storage.log_rl_decision = AsyncMock()
+        agent.notification_count_today = 0
+        agent.last_notification_time = datetime.now() - timedelta(minutes=1)
+        agent.action_mask = {0: True, 1: True, 2: False, 3: True, 4: True}
+        agent.state_vector = [0.0] * 20
+        agent._cached_power_h1 = [(None, 500.0)] * 20
+
+        await agent._decide_action()
+
+        agent.storage.log_blocked_notification.assert_called_once()
+        call_data = agent.storage.log_blocked_notification.call_args[0][0]
+        assert call_data["block_reason"] == "cooldown"
+        assert call_data["required_cooldown_minutes"] is not None, (
+            "required_cooldown_minutes must be populated from _check_cooldown_with_opportunity tuple"
+        )
+        assert call_data["adaptive_cooldown_minutes"] is not None, (
+            "adaptive_cooldown_minutes must be populated from _check_cooldown_with_opportunity tuple"
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1515,6 +1570,56 @@ class TestProcessAiModelQueryOptimisation:
         agent.data_collector.get_power_history.assert_not_called()
 
 # ─────────────────────────────────────────────────────────────────────────────
+# _update_area_anomalies: working_hours_only filter
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUpdateAreaAnomaliesWorkingHours:
+    """_update_area_anomalies must pass working_hours_only=True in office mode and None in home mode."""
+
+    def _make_agent_with_area(self, env_mode):
+        agent = make_agent(config_data={"environment_mode": env_mode})
+        agent.area_baselines = {}
+        calls = []
+
+        async def _fake_get_area_history(area, metric, hours=None, days=None, working_hours_only=None):
+            calls.append((metric, working_hours_only))
+            return []
+
+        agent.data_collector.get_all_areas = MagicMock(return_value=["Living Room"])
+        agent.data_collector.get_area_history = _fake_get_area_history
+        return agent, calls
+
+    @pytest.mark.asyncio
+    async def test_office_mode_passes_working_hours_filter(self):
+        """In office mode every get_area_history call must use working_hours_only=True."""
+        agent, calls = self._make_agent_with_area("office")
+        await agent._update_area_anomalies()
+        assert len(calls) == 3, f"Expected 3 get_area_history calls, got {len(calls)}"
+        for metric, wh in calls:
+            assert wh is True, (
+                f"'{metric}' history must use working_hours_only=True in office mode, got {wh}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_home_mode_passes_no_filter(self):
+        """In home mode working_hours_only must be None for all area history calls."""
+        agent, calls = self._make_agent_with_area("home")
+        await agent._update_area_anomalies()
+        assert len(calls) == 3, f"Expected 3 get_area_history calls, got {len(calls)}"
+        for metric, wh in calls:
+            assert wh is None, (
+                f"'{metric}' history must use working_hours_only=None in home mode, got {wh}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_no_area_mode_skips_no_area(self):
+        """Areas named 'No Area' must be skipped: no get_area_history calls for them."""
+        agent, calls = self._make_agent_with_area("home")
+        agent.data_collector.get_all_areas = MagicMock(return_value=["No Area"])
+        await agent._update_area_anomalies()
+        assert calls == [], "get_area_history must not be called for 'No Area' areas"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # WeeklyChallengeSensor / get_weekly_challenge_status cache
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1919,6 +2024,47 @@ class TestCooldownBlockLogging:
         logged = agent.storage.log_blocked_notification.call_args[0][0]
         assert logged["available_action_count"] == 4, (
             f"Cooldown block should report 4 available actions, got {logged['available_action_count']}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_fatigue_block_logs_time_since_last_and_adaptive_cooldown(self):
+        """When a notification is blocked by fatigue_threshold, time_since_last and
+        adaptive_cooldown must be non-None in the research DB entry.
+        required_cooldown must stay None (cooldown was already satisfied)."""
+        from custom_components.green_shift.const import FATIGUE_THRESHOLD, CRITICAL_OPPORTUNITY_THRESHOLD
+        agent = self._make_active_agent_with_storage()
+
+        # Fatigue is over threshold; opportunity is below critical so fatigue guard fires.
+        agent.last_notification_time = datetime.now() - timedelta(minutes=35)
+        agent.fatigue_index = FATIGUE_THRESHOLD + 0.1
+        agent.action_mask = {0: True, 1: True, 2: False, 3: True, 4: True}
+        agent.state_vector = [0.0] * 20
+        agent._cached_power_h1 = [(None, 500.0)] * 20
+
+        # Force the cooldown check to PASS and return known cooldown values,
+        # so _decide_action proceeds to the fatigue guard rather than stopping at cooldown.
+        known_req_cooldown = 25.0
+        known_adap_cooldown = 50.0
+        agent._check_cooldown_with_opportunity = AsyncMock(
+            return_value=(True, known_req_cooldown, known_adap_cooldown)
+        )
+        # Opportunity score below critical threshold so fatigue guard activates
+        agent._calculate_opportunity_score = AsyncMock(return_value=CRITICAL_OPPORTUNITY_THRESHOLD - 0.1)
+
+        await agent._decide_action()
+
+        agent.storage.log_blocked_notification.assert_called_once()
+        logged = agent.storage.log_blocked_notification.call_args[0][0]
+        assert logged["block_reason"] == "fatigue_threshold"
+        assert logged["time_since_last_notification_minutes"] is not None, (
+            "time_since_last must be populated for fatigue blocks "
+            "(cooldown already passed, time is research context)"
+        )
+        assert logged["adaptive_cooldown_minutes"] == known_adap_cooldown, (
+            "adaptive_cooldown must be forwarded from the cooldown check tuple"
+        )
+        assert logged["required_cooldown_minutes"] is None, (
+            "required_cooldown must be None for fatigue blocks — cooldown was already satisfied"
         )
 
 
@@ -2443,7 +2589,7 @@ class TestEpsilonDecay:
         agent._update_q_table_with_feedback = AsyncMock()
         agent._log_rl_episode = AsyncMock()
         agent._calculate_opportunity_score = AsyncMock(return_value=0.1)
-        agent._check_cooldown_with_opportunity = AsyncMock(return_value=True)
+        agent._check_cooldown_with_opportunity = AsyncMock(return_value=(True, None, None))
         agent._discretize_state = MagicMock(return_value=(0, 0, 0, 0, 0, 0))
 
         await agent._decide_action()

@@ -402,6 +402,49 @@ class TestAsyncStepWorkingHours:
             "Invalid working_start must not be persisted to flow data"
         )
 
+    async def test_no_working_days_selected_returns_error(self, config_flow):
+        """Submitting with all days unchecked must re-show the form with a no_working_days error."""
+        user_input = {
+            "working_start": "09:00",
+            "working_end": "17:00",
+            "working_monday": False,
+            "working_tuesday": False,
+            "working_wednesday": False,
+            "working_thursday": False,
+            "working_friday": False,
+            "working_saturday": False,
+            "working_sunday": False,
+        }
+
+        result = await config_flow.async_step_working_hours(user_input)
+
+        assert result["type"] == "form", "No working days must re-show the form"
+        assert result["step_id"] == "working_hours"
+        assert "working_days" in result.get("errors", {}), (
+            "Expected 'working_days' error when all day checkboxes are False"
+        )
+        assert result["errors"]["working_days"] == "no_working_days"
+
+    async def test_single_working_day_is_accepted(self, config_flow):
+        """A single working day selected must pass validation and proceed."""
+        user_input = {
+            "working_start": "09:00",
+            "working_end": "17:00",
+            "working_monday": True,
+            "working_tuesday": False,
+            "working_wednesday": False,
+            "working_thursday": False,
+            "working_friday": False,
+            "working_saturday": False,
+            "working_sunday": False,
+        }
+
+        result = await config_flow.async_step_working_hours(user_input)
+
+        assert "working_days" not in (result.get("errors") or {}), (
+            "A single selected day must not trigger the no_working_days error"
+        )
+
 
 # ============================================================================
 # Step 3: Sensor Confirmation
