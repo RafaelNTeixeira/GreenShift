@@ -753,6 +753,44 @@ class TestWeeklyChallenge:
             f"actual_W should be ~800 (in-week data only), got {logged_data.get('actual_W')}"
         )
 
+    @pytest.mark.asyncio
+    async def test_multiple_missed_weeks_are_all_logged(self):
+        """Tests that multiple missed weeks are all logged correctly."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.storage = AsyncMock()
+        agent.storage.log_weekly_challenge = AsyncMock()
+
+        from datetime import date, datetime as dt, timedelta as td
+
+        # Place week-start 15 days ago so there are two full 7-day periods before the current week regardless of which day of the week today is.
+        two_weeks_ago_monday = date.today() - td(days=15)
+        agent.current_week_start_date = two_weeks_ago_monday
+
+        readings_per_hour = int(3600 / 15)
+
+        # Provide data in week-1 (days 0-6 from two_weeks_ago_monday)
+        week1_start_dt = dt.combine(two_weeks_ago_monday, dt.min.time())
+        data_week1 = [(week1_start_dt + td(days=2, seconds=i * 15), 800.0)
+                      for i in range(readings_per_hour)]
+
+        # Provide data in week-2 (days 7-13)
+        week2_start_dt = week1_start_dt + td(days=7)
+        data_week2 = [(week2_start_dt + td(days=2, seconds=i * 15), 850.0)
+                      for i in range(readings_per_hour)]
+
+        agent.data_collector.get_power_history = AsyncMock(
+            return_value=data_week1 + data_week2
+        )
+
+        await agent.get_weekly_challenge_status(target_percentage=15.0)
+
+        # Both missed weeks must be logged — not just the most recent one.
+        assert agent.storage.log_weekly_challenge.call_count == 2, (
+            f"Expected 2 log_weekly_challenge calls (one per missed week), "
+            f"got {agent.storage.log_weekly_challenge.call_count}"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Notification daily counter reset
@@ -1864,6 +1902,25 @@ class TestCooldownBlockLogging:
         call_kwargs = agent.storage.log_blocked_notification.call_args[0][0]
         assert call_kwargs["block_reason"] == "cooldown"
 
+    @pytest.mark.asyncio
+    async def test_cooldown_block_reports_correct_available_action_count(self):
+        """The logged blocked notification must include the count of available actions at the time of the block."""
+        agent = self._make_active_agent_with_storage()
+
+        agent.last_notification_time = datetime.now() - timedelta(minutes=1)
+        # 4 actions available (noop=0, specific=1, behavioural=3, normative=4)
+        agent.action_mask = {0: True, 1: True, 2: False, 3: True, 4: True}
+        agent.state_vector = [0.0] * 20
+        agent._cached_power_h1 = [(None, 500.0)] * 20
+
+        await agent._decide_action()
+
+        assert agent.storage.log_blocked_notification.call_count == 1
+        logged = agent.storage.log_blocked_notification.call_args[0][0]
+        assert logged["available_action_count"] == 4, (
+            f"Cooldown block should report 4 available actions, got {logged['available_action_count']}"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # setup / _load_persistent_state / _save_persistent_state
@@ -2208,6 +2265,28 @@ class TestShadowUpdateQTable:
         state_key = (4, 0, 0, 0, 0, 0)
         await agent._shadow_update_q_table(state_key, 0, reward=0.5)
         assert state_key in agent.q_table
+
+    @pytest.mark.asyncio
+    async def test_shadow_uses_gamma_zero_no_future_bias(self):
+        """With gamma=0, the shadow update must not consider any future state and should update Q based solely on the immediate reward."""
+        agent = make_agent()
+        agent.state_vector = [0.0] * 18
+        state_key = (2, 1, 0, 0, 0, 0)
+        initial_q = 0.0
+        agent.q_table = {state_key: {a: initial_q for a in range(5)}}
+
+        reward = 0.8
+        from custom_components.green_shift.const import SHADOW_LEARNING_RATE
+        await agent._shadow_update_q_table(state_key, 0, reward=reward)
+
+        expected_q = initial_q + SHADOW_LEARNING_RATE * (reward - initial_q)
+        assert abs(agent.q_table[state_key][0] - expected_q) < 1e-9, (
+            f"Expected Q={expected_q:.6f} (gamma=0 formula), got {agent.q_table[state_key][0]:.6f}"
+        )
+        # Only the original state key should exist — no phantom next-state entry
+        assert len(agent.q_table) == 1, (
+            "Shadow update must not create a second state entry (no next-state lookup with gamma=0)"
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

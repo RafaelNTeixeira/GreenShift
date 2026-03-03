@@ -119,7 +119,6 @@ class DecisionAgent:
 
         # Performance optimisation: per-cycle DB query caches
         self._cached_power_h1 = None        # power_history(hours=1): shared within one process_ai_model() call
-        self._area_anomaly_counter = 0      # throttle _update_area_anomalies to every 4 cycles (~60 s)
         # Weekly challenge result cache: avoids a full week DB scan every 15 s
         self._weekly_challenge_cache: dict = {}
         self._weekly_challenge_cache_ts = None
@@ -493,7 +492,7 @@ class DecisionAgent:
             # Shadow learning: simulate decisions without executing actions
             # Runs at reduced frequency to avoid excessive Q-table noise
             # Guard: skip the very first call (process_count==0) when the state vector is unpopulated
-            if self._process_count > 0 and self._process_count % SHADOW_INTERVAL_MULTIPLIER == 0:
+            if self._process_count > 0 and self._process_count % SHADOW_INTERVAL_MULTIPLIER == 0: # Runs every N cycles (e.g., every 60 s if AI_FREQUENCY_SECONDS=15s)
                 await self._shadow_decide_action()
 
         self._process_count += 1
@@ -672,6 +671,13 @@ class DecisionAgent:
             else None
         )
 
+        # Compute available actions
+        available_actions = [a for a, available in self.action_mask.items() if available]
+
+        if not available_actions:
+            _LOGGER.debug("No notification actions available based on current context")
+            return
+
         # Check adaptive cooldown with opportunity-based bypass
         if not await self._check_cooldown_with_opportunity(opportunity_score):
             # Log at most once per MIN_COOLDOWN_MINUTES to avoid flooding research_blocked_notifications with routine cooldown entries.
@@ -683,7 +689,7 @@ class DecisionAgent:
                     reason="cooldown",
                     opportunity_score=opportunity_score,
                     time_since_last=_time_since_last_min,
-                    available_actions=[],
+                    available_actions=available_actions,
                 )
             return
 
@@ -697,24 +703,14 @@ class DecisionAgent:
                 time_since_last=None,
                 required_cooldown=None,
                 adaptive_cooldown=None,
-                available_actions=[]
+                available_actions=available_actions,
             )
             return
 
         # Get current state
         state_key = self._discretize_state()
 
-        # Available actions based on mask
-        available_actions = [a for a, available in self.action_mask.items() if available]
-
-        if not available_actions:
-            _LOGGER.debug("No notification actions available based on current context")
-            return
-
-        # Decay epsilon as the agent accumulates real episodes (more episodes -> less exploration)
-        self.epsilon = max(MIN_EPSILON, INITIAL_EPSILON * (EPSILON_DECAY_RATE ** self.episode_number))
-
-       # Epsilon-greedy action selection
+        # Epsilon-greedy action selection
         action_source = "explore"
         if random.random() < self.epsilon:
             # Exploration: random action
@@ -963,15 +959,11 @@ class DecisionAgent:
 
         current_q = self.q_table[state_key].get(action, 0.0)
 
-        # Next state is the same since no real action was executed
-        next_state_key = self._discretize_state()
-        if next_state_key not in self.q_table:
-            self.q_table[next_state_key] = {a: 0.0 for a in ACTIONS.values()}
-
-        max_next_q = max(self.q_table[next_state_key].values())
-
-        # Q-learning update with shadow learning rate
-        new_q = current_q + SHADOW_LEARNING_RATE * (reward + GAMMA * max_next_q - current_q)
+        # Shadow learning uses γ=0: no future-value estimation.
+        # During baseline no real action is taken, so the "next state" is identical to the current state.
+        # Using the standard γ·max Q(s,a) term would artificially inflate Q-values for the best action over thousands of shadow iterations, distorting the Q-table before the active phase even begins.
+        # γ=0 treats each shadow update as a purely immediate-reward signal and avoids this bias.
+        new_q = current_q + SHADOW_LEARNING_RATE * (reward - current_q)
         self.q_table[state_key][action] = new_q
 
         _LOGGER.debug("Shadow Q-table updated: state=%s, action=%d, reward=%.2f, Q: %.2f -> %.2f", state_key[:3], action, reward, current_q, new_q)
@@ -1533,6 +1525,8 @@ class DecisionAgent:
         gamma_used = None
         if accepted is not None:
             gamma_used = GAMMA if accepted else 0.0
+        elif action_source.startswith("shadow"):
+            gamma_used = 0.0  # Shadow learning uses γ=0 (no future-value component)
 
         episode_data = {
             "episode": self.shadow_episode_number if action_source.startswith("shadow") else self.episode_number,
@@ -1565,7 +1559,7 @@ class DecisionAgent:
         Calculates an immediate reward for choosing the noop action (no notification).
 
         Logic:
-        - Below or at baseline: noop was a good call — small positive reward.
+        - Below or at baseline: noop was a good call -> small positive reward.
         - Slightly above baseline: neutral to mildly negative (could have intervened).
         - Well above baseline: negative reward (missed clear opportunity).
 
@@ -2130,55 +2124,58 @@ class DecisionAgent:
         is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
         working_hours_filter = True if is_office_mode else None
 
-        # If we have a week start date from a previous week, check whether that week ended without being logged
-        # If so, log it now before resetting to the current Monday
+        # Backfill any completed weeks that were not logged while HA was offline
+        # A while loop is used so that 2+ consecutive missed weeks are all recovered
         if self.current_week_start_date is not None and self.current_week_start_date < current_week_monday:
-            days_in_old_week = (today - self.current_week_start_date).days + 1
-            if days_in_old_week >= 7:
-                old_week_key = self.current_week_start_date.isoformat()
-                if old_week_key not in self._logged_weeks and self.storage:
-                    _LOGGER.info("Detected unlogged completed week (%s). Logging now before transitioning.", old_week_key)
-                    old_week_start_dt = datetime.combine(self.current_week_start_date, datetime.min.time())
-                    old_week_end_dt = old_week_start_dt + timedelta(days=7)
+            week_ptr = self.current_week_start_date
+            while week_ptr < current_week_monday:
+                days_elapsed = (today - week_ptr).days + 1
+                if days_elapsed >= 7:
+                    week_key = week_ptr.isoformat()
+                    if week_key not in self._logged_weeks and self.storage:
+                        _LOGGER.info("Detected unlogged completed week (%s). Logging now before transitioning.", week_key)
+                        week_start_dt = datetime.combine(week_ptr, datetime.min.time())
+                        week_end_dt = week_start_dt + timedelta(days=7)
 
-                    old_hours = max(1, int((datetime.now() - old_week_start_dt).total_seconds() / 3600))
+                        old_hours = max(1, int((datetime.now() - week_start_dt).total_seconds() / 3600))
 
-                    old_power_data = await self.data_collector.get_power_history(
-                        hours=old_hours,
-                        working_hours_only=working_hours_filter
-                    )
-
-                    old_power_values = [
-                        p for ts, p in old_power_data
-                        if old_week_start_dt <= ts < old_week_end_dt
-                    ]
-
-                    if old_power_values:
-                        old_avg = float(np.mean(old_power_values))
-                        reduction_multiplier_old = 1.0 - (target_percentage / 100.0)
-                        old_target = self.baseline_consumption * reduction_multiplier_old
-                        old_success = old_avg < old_target
-                        old_savings_pct = (
-                            (self.baseline_consumption - old_avg) / self.baseline_consumption * 100
-                        ) if self.baseline_consumption > 0 else 0.0
-                        
-                        await self.storage.log_weekly_challenge(challenge_data={
-                            'week_start_date': self.current_week_start_date.isoformat(),
-                            'week_end_date': (self.current_week_start_date + timedelta(days=6)).isoformat(),
-                            'phase': PHASE_ACTIVE,
-                            'target_percentage': target_percentage,
-                            'baseline_W': self.baseline_consumption,
-                            'actual_W': old_avg,
-                            'savings_W': self.baseline_consumption - old_avg,
-                            'savings_percentage': old_savings_pct,
-                            'achieved': old_success,
-                        })
-                        self._logged_weeks.add(old_week_key)
-                        self.update_weekly_streak(old_success, old_week_key)
-                        _LOGGER.info(
-                            "Logged missed weekly challenge: week=%s, success=%s, savings=%.1f%%",
-                            old_week_key, old_success, old_savings_pct
+                        old_power_data = await self.data_collector.get_power_history(
+                            hours=old_hours,
+                            working_hours_only=working_hours_filter
                         )
+
+                        old_power_values = [
+                            p for ts, p in old_power_data
+                            if week_start_dt <= ts < week_end_dt
+                        ]
+
+                        if old_power_values:
+                            old_avg = float(np.mean(old_power_values))
+                            reduction_multiplier_old = 1.0 - (target_percentage / 100.0)
+                            old_target = self.baseline_consumption * reduction_multiplier_old
+                            old_success = old_avg < old_target
+                            old_savings_pct = (
+                                (self.baseline_consumption - old_avg) / self.baseline_consumption * 100
+                            ) if self.baseline_consumption > 0 else 0.0
+
+                            await self.storage.log_weekly_challenge(challenge_data={
+                                'week_start_date': week_ptr.isoformat(),
+                                'week_end_date': (week_ptr + timedelta(days=6)).isoformat(),
+                                'phase': PHASE_ACTIVE,
+                                'target_percentage': target_percentage,
+                                'baseline_W': self.baseline_consumption,
+                                'actual_W': old_avg,
+                                'savings_W': self.baseline_consumption - old_avg,
+                                'savings_percentage': old_savings_pct,
+                                'achieved': old_success,
+                            })
+                            self._logged_weeks.add(week_key)
+                            self.update_weekly_streak(old_success, week_key)
+                            _LOGGER.info(
+                                "Logged missed weekly challenge: week=%s, success=%s, savings=%.1f%%",
+                                week_key, old_success, old_savings_pct
+                            )
+                week_ptr = week_ptr + timedelta(days=7)
 
         # Now initialize or advance to the current Monday
         if self.current_week_start_date is None or self.current_week_start_date != current_week_monday:
