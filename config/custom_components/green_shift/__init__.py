@@ -317,9 +317,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug("Running periodic sensor data cleanup...")
         try:
             await storage._cleanup_old_data()
+
+            # Update last cleanup timestamp in state (same pattern as RL cleanup)
+            current_state = await storage.load_state()
+            current_state["last_sensor_cleanup"] = datetime.now().isoformat()
+            await storage.save_state(current_state)
+
             _LOGGER.info("Periodic sensor data cleanup completed successfully")
         except Exception as e:
             _LOGGER.error("Periodic sensor data cleanup error: %s", e)
+
+    # Check if sensor cleanup is needed on startup (in case HA was shut down for days)
+    sensor_state = await storage.load_state()
+    last_sensor_cleanup_str = sensor_state.get("last_sensor_cleanup") if sensor_state else None
+
+    if last_sensor_cleanup_str:
+        try:
+            last_sensor_cleanup = datetime.fromisoformat(last_sensor_cleanup_str)
+            hours_since_sensor_cleanup = (datetime.now() - last_sensor_cleanup).total_seconds() / 3600
+
+            if hours_since_sensor_cleanup >= 24:
+                _LOGGER.info(
+                    "Sensor data cleanup overdue (%.1f hours since last run), running now...",
+                    hours_since_sensor_cleanup
+                )
+                await sensor_data_cleanup_callback(None)
+        except Exception as e:
+            _LOGGER.warning("Could not parse last sensor cleanup date: %s", e)
+    else:
+        # First time running, do cleanup
+        _LOGGER.info("No previous sensor data cleanup found, running initial cleanup...")
+        await sensor_data_cleanup_callback(None)
 
     hass.data[DOMAIN]["sensor_cleanup_listener"] = async_track_time_change(
         hass, sensor_data_cleanup_callback, hour=3, minute=30, second=0

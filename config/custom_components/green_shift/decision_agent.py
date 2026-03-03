@@ -732,13 +732,18 @@ class DecisionAgent:
         # Noop: no notification; reward computed immediately; Q-table updated in-place.
         if action == ACTIONS["noop"]:
             noop_reward = self._compute_noop_reward()
-            await self._update_q_table_with_feedback(state_key, action, noop_reward, accepted=True)
+            # γ=0 for noop: no real state transition occurred, so using future-value estimation would compare Q(s,a) against Q(s,a) (identical state). 
+            # This would inflate noop Q-values over time.
+            if state_key not in self.q_table:
+                self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
+            current_q = self.q_table[state_key].get(action, 0.0)
+            self.q_table[state_key][action] = current_q + self.learning_rate * (noop_reward - current_q)
             self.episode_number += 1
             # Decay epsilon after completing a noop episode
             self.epsilon = max(MIN_EPSILON, INITIAL_EPSILON * (EPSILON_DECAY_RATE ** self.episode_number))
             await self._log_rl_episode(state_key, action, noop_reward, action_source,
-                                       opportunity_score=opportunity_score, accepted=None)
-            _LOGGER.debug("Noop selected: no notification sent, immediate reward=%.4f", noop_reward)
+                                       opportunity_score=opportunity_score)
+            _LOGGER.debug("Noop selected: no notification sent, immediate reward=%.4f, γ=0", noop_reward)
             return
 
         notification_id = await self._execute_action(action)
@@ -1356,7 +1361,7 @@ class DecisionAgent:
                 reward=reward,
                 action_source=episode["action_source"],
                 opportunity_score=episode["opportunity_score"],
-                accepted=accepted  # Include acceptance status for research analysis
+                accepted=accepted
             )
             
             _LOGGER.info("Q-table updated with actual feedback: %s (reward=%.2f)", 
@@ -1527,6 +1532,8 @@ class DecisionAgent:
             gamma_used = GAMMA if accepted else 0.0
         elif action_source.startswith("shadow"):
             gamma_used = 0.0  # Shadow learning uses γ=0 (no future-value component)
+        elif action == ACTIONS["noop"]:
+            gamma_used = 0.0  # Noop uses γ=0: no real state transition
 
         episode_data = {
             "episode": self.shadow_episode_number if action_source.startswith("shadow") else self.episode_number,
@@ -1545,11 +1552,11 @@ class DecisionAgent:
             "anomaly_index": self.anomaly_index,
             "behaviour_index": self.behaviour_index,
             "fatigue_index": self.fatigue_index,
-            "opportunity_score": opportunity_score,  # None for shadow episodes, calculated for active
+            "opportunity_score": opportunity_score, # None for shadow episodes, calculated for active
             "time_of_day_hour": time_of_day_hour,
             "baseline_power_reference": self.baseline_consumption,
-            "accepted": accepted,  # User acceptance (None for shadow/no-op, True/False for real notifications)
-            "gamma_used": gamma_used  # Gamma value used in Q-table update (None for shadow, 0.0 for reject, 0.95 for accept)
+            "accepted": accepted, # User acceptance (None for shadow/no-op, True/False for real notifications)
+            "gamma_used": gamma_used # Gamma used in Q-table update: GAMMA (accept), 0.0 (reject/noop/shadow), None (unknown)
         }
 
         await self.storage.log_rl_decision(episode_data)

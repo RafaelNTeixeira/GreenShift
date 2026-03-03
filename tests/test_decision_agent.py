@@ -2485,3 +2485,81 @@ class TestEpsilonDecay:
 
         assert agent.epsilon < INITIAL_EPSILON, "Epsilon must have decayed after user feedback"
         assert agent.epsilon >= MIN_EPSILON
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _log_rl_episode: gamma_used resolution
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestLogRlEpisodeGamma:
+    """_log_rl_episode must record the correct gamma_used for every episode category.
+
+    Cases:
+      - accepted=True  (real accept)  -> gamma_used = GAMMA
+      - accepted=False (real reject)  -> gamma_used = 0.0
+      - shadow episode                -> gamma_used = 0.0
+      - active-phase noop             -> gamma_used = GAMMA
+    """
+
+    def _make_logging_agent(self):
+        """Agent with mock storage that captures the log_rl_decision payload."""
+        agent = make_agent()
+        agent.phase = "active"
+        agent.state_vector = [0.0] * 18
+        agent.action_mask = {a: True for a in range(5)}
+        agent.q_table = {}
+        storage = AsyncMock()
+        storage.log_rl_decision = AsyncMock()
+        agent.storage = storage
+        return agent
+
+    def _get_logged_gamma(self, agent):
+        call_args = agent.storage.log_rl_decision.call_args
+        episode_data = call_args[0][0]
+        return episode_data["gamma_used"]
+
+    @pytest.mark.asyncio
+    async def test_accepted_notification_gamma_is_GAMMA(self):
+        from custom_components.green_shift.const import GAMMA
+        agent = self._make_logging_agent()
+        await agent._log_rl_episode(
+            state_key=(1, 0, 0, 0, 0, 0), action=1,
+            reward=0.5, action_source="exploit", accepted=True
+        )
+        assert self._get_logged_gamma(agent) == GAMMA
+
+    @pytest.mark.asyncio
+    async def test_rejected_notification_gamma_is_zero(self):
+        agent = self._make_logging_agent()
+        await agent._log_rl_episode(
+            state_key=(1, 0, 0, 0, 0, 0), action=1,
+            reward=-0.5, action_source="exploit", accepted=False
+        )
+        assert self._get_logged_gamma(agent) == 0.0
+
+    @pytest.mark.asyncio
+    async def test_shadow_episode_gamma_is_zero(self):
+        agent = self._make_logging_agent()
+        agent.phase = "baseline"
+        await agent._log_rl_episode(
+            state_key=(1, 0, 0, 0, 0, 0), action=1,
+            reward=0.3, action_source="shadow_explore", accepted=None
+        )
+        assert self._get_logged_gamma(agent) == 0.0
+
+    @pytest.mark.asyncio
+    async def test_active_phase_noop_gamma_is_zero(self):
+        """Noop uses γ=0: no real state transition occurs, so future-value estimation
+        would compare Q(s,a) against Q(s,a) (same state), causing the same inflation
+        bias fixed for shadow learning.  The research DB must record gamma_used=0.0."""
+        from custom_components.green_shift.const import ACTIONS
+        agent = self._make_logging_agent()
+        await agent._log_rl_episode(
+            state_key=(0, 0, 0, 0, 0, 0), action=ACTIONS["noop"],
+            reward=0.1, action_source="explore", accepted=None
+        )
+        gamma = self._get_logged_gamma(agent)
+        assert gamma == 0.0, (
+            f"Active-phase noop must log gamma_used=0.0 (γ=0, no real state transition), "
+            f"got {gamma!r}"
+        )
