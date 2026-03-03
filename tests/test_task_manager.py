@@ -117,7 +117,7 @@ def make_task_manager(sensors=None, phase="active", working_hours=True, config=N
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# generate_daily_tasks — phase guard
+# generate_daily_tasks
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestGenerateDailyTasksPhaseGuard:
@@ -141,6 +141,11 @@ class TestGenerateDailyTasksPhaseGuard:
         tm = make_task_manager(phase="active")
         result = await tm.generate_daily_tasks()
         assert isinstance(result, list)
+
+    def test_last_verification_results_empty_on_new_instance(self):
+        """_last_verification_results must start empty on a fresh TaskManager."""
+        tm = make_task_manager()
+        assert tm._last_verification_results == {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -381,6 +386,33 @@ class TestPeakAvoidanceTask:
             verified, actual, pending = await tm._verify_single_task(task)
         assert not verified  # peak_hour key absent -> graceful False
         assert actual is None
+
+    @pytest.mark.asyncio
+    async def test_peak_avoidance_pending_when_peak_hour_not_reached(self):
+        """peak_avoidance returns pending=True when the peak hour hasn't arrived yet."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        power_data = [(real_dt(2026, 2, 19, 12, i), 300.0) for i in range(60)]
+        tm.data_collector.get_power_history = AsyncMock(return_value=power_data)
+        task = {
+            "task_id": "peak_pending",
+            "task_type": "peak_avoidance",
+            "target_value": 400,
+            "area_name": None,
+            "peak_hour": 23,
+            "verified": False,
+        }
+        fake_now = real_dt(2026, 2, 19, 14, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert not verified
+        assert actual is None
+        assert pending is True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -647,7 +679,7 @@ class TestVerificationWorkingHoursFilter:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Verification time anchor — created_at vs TASK_GENERATION_TIME fallback
+# Verification time anchor — created_at vs TASK_GENERATION_TIME
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestVerificationTimeAnchor:
@@ -724,6 +756,39 @@ class TestVerificationTimeAnchor:
         assert hours_arg is not None
         # TASK_GENERATION_TIME = (6, 0, 0) -> 20:00 - 06:00 = 14 hours
         assert abs(hours_arg - 14) < 1, f"Expected ~14 hours (06:00 fallback) but got {hours_arg}"
+
+    @pytest.mark.asyncio
+    async def test_hours_passed_ceil_not_truncated(self):
+        """_verify_single_task must use math.ceil, not int().
+        created_at 06:00, fake_now 13:54 -> hours_passed=7.9 -> query must ask for 8 h."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 12, i), 300.0) for i in range(30)
+        ])
+        task = {
+            "task_id": "ceil_test",
+            "task_type": "power_reduction",
+            "target_value": 500,
+            "area_name": None,
+            "created_at": "2026-02-19T06:00:00",
+            "verified": False,
+        }
+        fake_now = real_dt(2026, 2, 19, 13, 54, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm._verify_single_task(task)
+
+        call_kwargs = tm.data_collector.get_power_history.call_args
+        if call_kwargs.kwargs.get("hours") is not None:
+            hours_arg = call_kwargs.kwargs["hours"]
+        else:
+            hours_arg = call_kwargs.args[0] if call_kwargs.args else None
+        assert hours_arg == 8, f"Expected ceil(7.9)=8 but got {hours_arg}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -988,6 +1053,44 @@ class TestVerifyTasksPreVerified:
         # mark_task_verified should NOT be called again
         tm.storage.mark_task_verified.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_verify_tasks_populates_last_verification_results(self):
+        """verify_tasks() must populate _last_verification_results for each task."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        today_str = "2026-02-19"
+        tasks = [{
+            "task_id": "vr_test",
+            "task_type": "power_reduction",
+            "target_value": 400,
+            "area_name": None,
+            "verified": False,
+            "created_at": f"{today_str}T06:00:00",
+            "peak_hour": None,
+            "completion_value": None,
+        }]
+        tm.storage.get_today_tasks = AsyncMock(return_value=tasks)
+        base = real_dt(2026, 2, 19, 12, 0, 0)
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (base + timedelta(minutes=i), 600.0) for i in range(30)
+        ])
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm.verify_tasks()
+
+        result = tm._last_verification_results.get("vr_test")
+        assert result is not None, "_last_verification_results not populated"
+        for key in ("verified", "failed", "pending", "checked_at", "reason"):
+            assert key in result, f"Missing key '{key}' in result"
+        assert result["failed"] is True
+        assert result["pending"] is False
+        assert result["reason"] != ""
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # _verify_single_task: temperature_reduction type
@@ -1075,111 +1178,6 @@ class TestVerifySingleTaskTemperature:
         assert verified is False
         assert actual is None
 
-
-class TestBugFixes:
-
-    @pytest.mark.asyncio
-    async def test_hours_passed_ceil_not_truncated(self):
-        """_verify_single_task must use math.ceil, not int().
-        06:00 created_at, fake_now = 13:54 -> hours_passed = 7.9 -> query must ask for 8 h."""
-        from unittest.mock import patch
-        from datetime import datetime as real_dt
-
-        tm = make_task_manager()
-        tm.data_collector.get_power_history = AsyncMock(return_value=[
-            (real_dt(2026, 2, 19, 12, i), 300.0) for i in range(30)
-        ])
-        task = {
-            "task_id": "ceil_test",
-            "task_type": "power_reduction",
-            "target_value": 500,
-            "area_name": None,
-            "created_at": "2026-02-19T06:00:00",
-            "verified": False,
-        }
-        fake_now = real_dt(2026, 2, 19, 13, 54, 0)
-        with patch.object(tm_mod, "datetime") as mock_dt:
-            mock_dt.now.return_value = fake_now
-            mock_dt.fromisoformat = real_dt.fromisoformat
-            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
-            await tm._verify_single_task(task)
-
-        call_kwargs = tm.data_collector.get_power_history.call_args
-        if call_kwargs.kwargs.get("hours") is not None:
-            hours_arg = call_kwargs.kwargs["hours"]
-        else:
-            hours_arg = call_kwargs.args[0] if call_kwargs.args else None
-        assert hours_arg == 8, f"Expected ceil(7.9)=8 but got {hours_arg}"
-
-    @pytest.mark.asyncio
-    async def test_peak_avoidance_pending_when_peak_hour_not_reached(self):
-        """peak_avoidance should return pending=True when the peak hour hasn't arrived yet."""
-        from unittest.mock import patch
-        from datetime import datetime as real_dt
-
-        tm = make_task_manager()
-        power_data = [(real_dt(2026, 2, 19, 12, i), 300.0) for i in range(60)]
-        tm.data_collector.get_power_history = AsyncMock(return_value=power_data)
-        task = {
-            "task_id": "peak_pending",
-            "task_type": "peak_avoidance",
-            "target_value": 400,
-            "area_name": None,
-            "peak_hour": 23,
-            "verified": False,
-        }
-        fake_now = real_dt(2026, 2, 19, 14, 0, 0)
-        with patch.object(tm_mod, "datetime") as mock_dt:
-            mock_dt.now.return_value = fake_now
-            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
-            verified, actual, pending = await tm._verify_single_task(task)
-
-        assert not verified
-        assert actual is None
-        assert pending is True
-
-    @pytest.mark.asyncio
-    async def test_verify_tasks_populates_last_verification_results(self):
-        """verify_tasks() should populate _last_verification_results."""
-        from unittest.mock import patch
-        from datetime import datetime as real_dt
-
-        tm = make_task_manager()
-        today_str = "2026-02-19"
-        tasks = [{
-            "task_id": "vr_test",
-            "task_type": "power_reduction",
-            "target_value": 400,
-            "area_name": None,
-            "verified": False,
-            "created_at": f"{today_str}T06:00:00",
-            "peak_hour": None,
-            "completion_value": None,
-        }]
-        tm.storage.get_today_tasks = AsyncMock(return_value=tasks)
-        base = real_dt(2026, 2, 19, 12, 0, 0)
-        tm.data_collector.get_power_history = AsyncMock(return_value=[
-            (base + timedelta(minutes=i), 600.0) for i in range(30)
-        ])
-        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
-        with patch.object(tm_mod, "datetime") as mock_dt:
-            mock_dt.now.return_value = fake_now
-            mock_dt.fromisoformat = real_dt.fromisoformat
-            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
-            await tm.verify_tasks()
-
-        result = tm._last_verification_results.get("vr_test")
-        assert result is not None, "_last_verification_results not populated"
-        for key in ("verified", "failed", "pending", "checked_at", "reason"):
-            assert key in result, f"Missing key '{key}' in result"
-        assert result["failed"] is True
-        assert result["pending"] is False
-        assert result["reason"] != ""
-
-    def test_last_verification_results_empty_on_new_instance(self):
-        """_last_verification_results must start empty."""
-        tm = make_task_manager()
-        assert tm._last_verification_results == {}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # _verify_single_task: error handling returns (False, None)

@@ -561,9 +561,9 @@ views:
                             {% if t.verified %}
                             ✅ **VERIFICADA!** Atingiu a meta!
                             {% elif t.check_result == 'pending' %}
-                            ⏳ **A aguardar** – {{ t.check_reason }}{% if t.last_check_minutes_ago is not none %} *(atualizada há {{ t.last_check_minutes_ago }} min)*{% endif %}
+                            ⏳ **A aguardar** - {{ t.check_reason }}{% if t.last_check_minutes_ago is not none %} *(atualizada há {{ t.last_check_minutes_ago }} min)*{% endif %}
                             {% elif t.check_result == 'failed' %}
-                            ❌ **Meta não atingida** – {{ t.check_reason }}{% if t.last_check_minutes_ago is not none %} *(verificada há {{ t.last_check_minutes_ago }} min)*{% endif %}
+                            ❌ **Meta não atingida** - {{ t.check_reason }}{% if t.last_check_minutes_ago is not none %} *(verificada há {{ t.last_check_minutes_ago }} min)*{% endif %}
                             {% elif t.check_result == 'not_checked' or t.check_result is none %}
                             🎯 **Ativa** - Complete hoje!
                             {% else %}

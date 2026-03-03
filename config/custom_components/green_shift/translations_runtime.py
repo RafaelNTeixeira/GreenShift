@@ -392,3 +392,36 @@ def get_time_of_day_name(time_key: str, language: str) -> str:
         str: The time of day name in the specified language, or the original key if not available.
     """
     return TIME_OF_DAY.get(language, TIME_OF_DAY["en"]).get(time_key, time_key)
+
+
+# Verification reason template strings
+# Keys used by task_manager.verify_tasks() to produce the UI reason field
+VERIFICATION_REASON_TEMPLATES = {
+    "en": {
+        "target_achieved":        "Target achieved",
+        "waiting_for_peak_hour":  "Waiting for peak hour ({peak_hour:02d}:00)",
+        "evaluation_deferred":    "Evaluation deferred",
+        "avg_above_target":       "Avg: {actual}{unit}, target was {target}{unit}",
+        "insufficient_data":      "Insufficient data",
+    },
+    "pt": {
+        "target_achieved":        "Objetivo atingido",
+        "waiting_for_peak_hour":  "À espera da hora de pico ({peak_hour:02d}:00)",
+        "evaluation_deferred":    "Avaliação adiada",
+        "avg_above_target":       "Média: {actual}{unit}, objetivo era {target}{unit}",
+        "insufficient_data":      "Dados insuficientes",
+    },
+}
+
+
+def get_verification_reason_templates(language: str) -> dict:
+    """
+    Get task-verification reason string templates for the specified language.
+
+    Args:
+        language (str): 2-letter ISO language code (e.g. 'en', 'pt')
+
+    Returns:
+        dict: Mapping of reason keys to format strings.
+    """
+    return VERIFICATION_REASON_TEMPLATES.get(language, VERIFICATION_REASON_TEMPLATES["en"])

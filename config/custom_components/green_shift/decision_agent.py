@@ -733,11 +733,11 @@ class DecisionAgent:
             # Exploitation: best known action
             action_source = "exploit"
             if state_key not in self.q_table:
-                self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
+                self.q_table[state_key] = {a: 0.5 for a in ACTIONS.values()}
 
             # Tie-breaking: random choice among all actions sharing the highest Q-value
-            max_q = max(self.q_table[state_key].get(a, 0.0) for a in available_actions)
-            best_actions = [a for a in available_actions if self.q_table[state_key].get(a, 0.0) == max_q]
+            max_q = max(self.q_table[state_key].get(a, 0.5) for a in available_actions)
+            best_actions = [a for a in available_actions if self.q_table[state_key].get(a, 0.5) == max_q]
             action = random.choice(best_actions)
             _LOGGER.debug("Exploitation: selected action %d (Q=%.2f, tied=%d)", action, max_q, len(best_actions))
 
@@ -748,8 +748,8 @@ class DecisionAgent:
             # γ=0 for noop: no real state transition occurred, so using future-value estimation would compare Q(s,a) against Q(s,a) (identical state). 
             # This would inflate noop Q-values over time.
             if state_key not in self.q_table:
-                self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
-            current_q = self.q_table[state_key].get(action, 0.0)
+                self.q_table[state_key] = {a: 0.5 for a in ACTIONS.values()}
+            current_q = self.q_table[state_key].get(action, 0.5)
             self.q_table[state_key][action] = current_q + self.learning_rate * (noop_reward - current_q)
             self.episode_number += 1
             await self._log_rl_episode(state_key, action, noop_reward, action_source,
@@ -815,11 +815,11 @@ class DecisionAgent:
             # Exploitation: best known action from Q-table
             action_source = "shadow_exploit"
             if state_key not in self.q_table:
-                self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
+                self.q_table[state_key] = {a: 0.5 for a in ACTIONS.values()}
 
             # Tie-breaking: random choice among all actions sharing the highest Q-value
-            max_q = max(self.q_table[state_key].get(a, 0.0) for a in available_actions)
-            best_actions_s = [a for a in available_actions if self.q_table[state_key].get(a, 0.0) == max_q]
+            max_q = max(self.q_table[state_key].get(a, 0.5) for a in available_actions)
+            best_actions_s = [a for a in available_actions if self.q_table[state_key].get(a, 0.5) == max_q]
             action = random.choice(best_actions_s)
             _LOGGER.debug("Shadow learning (exploit): selected action %d (Q=%.2f, tied=%d)", action, max_q, len(best_actions_s))
 
@@ -973,9 +973,9 @@ class DecisionAgent:
             reward (float): The calculated shadow reward for the action.
         """
         if state_key not in self.q_table:
-            self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
+            self.q_table[state_key] = {a: 0.5 for a in ACTIONS.values()}
 
-        current_q = self.q_table[state_key].get(action, 0.0)
+        current_q = self.q_table[state_key].get(action, 0.5)
 
         # Shadow learning uses γ=0: no future-value estimation.
         # During baseline no real action is taken, so the "next state" is identical to the current state.
@@ -1007,9 +1007,9 @@ class DecisionAgent:
             accepted (bool): True if user accepted, False if rejected
         """
         if state_key not in self.q_table:
-            self.q_table[state_key] = {a: 0.0 for a in ACTIONS.values()}
+            self.q_table[state_key] = {a: 0.5 for a in ACTIONS.values()}
 
-        current_q = self.q_table[state_key].get(action, 0.0)
+        current_q = self.q_table[state_key].get(action, 0.5)
         
         # Dynamic gamma: 0 for rejection (terminal state), GAMMA for acceptance
         gamma = GAMMA if accepted else 0.0
@@ -1017,7 +1017,7 @@ class DecisionAgent:
         # Get next state for future value estimation
         next_state_key = self._discretize_state()
         if next_state_key not in self.q_table:
-            self.q_table[next_state_key] = {a: 0.0 for a in ACTIONS.values()}
+            self.q_table[next_state_key] = {a: 0.5 for a in ACTIONS.values()}
 
         max_next_q = max(self.q_table[next_state_key].values())
         
@@ -1527,8 +1527,8 @@ class DecisionAgent:
         action_name = [k for k, v in ACTIONS.items() if v == action][0]
 
         # Get current Q-values for this state
-        q_values = self.q_table.get(state_key, {a: 0.0 for a in ACTIONS.values()})
-        max_q = max(q_values.values()) if q_values else 0.0
+        q_values = self.q_table.get(state_key, {a: 0.5 for a in ACTIONS.values()})
+        max_q = max(q_values.values()) if q_values else 0.5
 
         # Get current power
         current_state = self.data_collector.get_current_state()

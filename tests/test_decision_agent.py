@@ -1796,6 +1796,28 @@ class TestNoopAction:
         reward = agent._compute_noop_reward()
         assert reward == 0.0
 
+    def test_exploit_tie_breaking_randomises_across_equal_q_values(self):
+        """When all Q-values are equal the exploitation branch must NOT always
+        return noop=0. Over 100 draws at least two distinct actions must appear."""
+        import random as _random
+        agent = make_agent()
+        agent.state_vector = [0.0] * 18
+        state_key = (1, 0, 0, 0, 0, 0)
+        agent.q_table = {state_key: {a: 0.0 for a in range(5)}}
+        available = list(range(5))
+
+        chosen = set()
+        _random.seed(42)
+        for _ in range(100):
+            max_q = max(agent.q_table[state_key].get(a, 0.0) for a in available)
+            best_actions = [a for a in available if agent.q_table[state_key].get(a, 0.0) == max_q]
+            chosen.add(_random.choice(best_actions))
+
+        assert len(chosen) > 1, (
+            f"All 100 tie-breaking draws returned the same action {chosen}; "
+            "tie-breaking must be random, not biased towards the first element"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Anomaly index working-hours consistency
@@ -2205,6 +2227,20 @@ class TestSavePersistentState:
         # String key should appear in serialised q_table
         assert str((1, 0, 0, 0, 0, 0)) in saved.get("q_table", {})
 
+    def test_feedback_episode_number_survives_save_load_roundtrip(self):
+        """feedback_episode_number must be included in the persisted state."""
+        agent = make_agent()
+        agent.feedback_episode_number = 42
+        state = {
+            "feedback_episode_number": agent.feedback_episode_number,
+            "episode_number": 0,
+            "shadow_episode_number": 0,
+        }
+        agent2 = make_agent()
+        if "feedback_episode_number" in state:
+            agent2.feedback_episode_number = state["feedback_episode_number"]
+        assert agent2.feedback_episode_number == 42
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # _build_state_vector
@@ -2372,6 +2408,19 @@ class TestUpdateActionMask:
         agent.anomaly_index = 0.0
         await agent._update_action_mask()
         assert agent.action_mask[da_mod.ACTIONS["behavioural"]] is True
+
+    @pytest.mark.asyncio
+    async def test_specific_enabled_with_both_main_and_individual_sensor(self):
+        """Individual sensor present alongside the main aggregator -> specific must be True."""
+        agent = make_agent()
+        agent._cached_power_h1 = []
+        agent.sensors = {"power": ["sensor.main_power", "sensor.device_1"]}
+        agent.data_collector.main_power_sensor = "sensor.main_power"
+        agent.baseline_consumption = 0.0
+        agent.area_anomalies = {}
+        agent.anomaly_index = 0.0
+        await agent._update_action_mask()
+        assert agent.action_mask[da_mod.ACTIONS["specific"]] is True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2653,6 +2702,21 @@ class TestEpsilonDecay:
         assert agent.epsilon < INITIAL_EPSILON, "Epsilon must have decayed after user feedback"
         assert agent.epsilon >= MIN_EPSILON
 
+    def test_feedback_episode_number_is_independent_from_noop_counter(self):
+        """feedback_episode_number and episode_number are distinct counters.
+        After many noop episodes, epsilon must still be at INITIAL_EPSILON."""
+        agent = make_agent()
+        assert hasattr(agent, "feedback_episode_number"), (
+            "agent must have feedback_episode_number attribute"
+        )
+        from custom_components.green_shift.const import INITIAL_EPSILON, MIN_EPSILON, EPSILON_DECAY_RATE
+        agent.episode_number = 500
+        agent.feedback_episode_number = 0
+        expected = max(MIN_EPSILON, INITIAL_EPSILON * (EPSILON_DECAY_RATE ** agent.feedback_episode_number))
+        assert expected == INITIAL_EPSILON, (
+            "With 0 feedback episodes, epsilon should equal INITIAL_EPSILON regardless of noop count"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # _log_rl_episode: gamma_used resolution
@@ -2730,90 +2794,3 @@ class TestLogRlEpisodeGamma:
             f"Active-phase noop must log gamma_used=0.0 (γ=0, no real state transition), "
             f"got {gamma!r}"
         )
-
-class TestBugFixes:
-    """Regression tests for bugs fixed in decision_agent.py."""
-
-    @pytest.mark.asyncio
-    async def test_specific_disabled_when_only_main_sensor_present(self):
-        """If the power list contains only the main aggregator sensor,
-        specific must remain False since _find_top_consumer will return 0 W."""
-        agent = make_agent()
-        agent._cached_power_h1 = []
-        agent.sensors = {"power": ["sensor.main_power"]}
-        agent.data_collector.main_power_sensor = "sensor.main_power"
-        agent.baseline_consumption = 0.0
-        agent.area_anomalies = {}
-        agent.anomaly_index = 0.0
-        await agent._update_action_mask()
-        assert agent.action_mask[da_mod.ACTIONS["specific"]] is False
-
-    @pytest.mark.asyncio
-    async def test_specific_enabled_when_individual_and_main_sensor_both_present(self):
-        """Individual sensor present alongside the main → specific must be True."""
-        agent = make_agent()
-        agent._cached_power_h1 = []
-        agent.sensors = {"power": ["sensor.main_power", "sensor.device_1"]}
-        agent.data_collector.main_power_sensor = "sensor.main_power"
-        agent.baseline_consumption = 0.0
-        agent.area_anomalies = {}
-        agent.anomaly_index = 0.0
-        await agent._update_action_mask()
-        assert agent.action_mask[da_mod.ACTIONS["specific"]] is True
-
-    def test_exploit_tie_breaking_selects_non_noop_sometimes(self):
-        """When all Q-values are equal the exploitation branch must NOT always
-        return the first element (noop=0). Over 100 draws at least one should differ."""
-        import random as _random
-        agent = make_agent()
-        agent.state_vector = [0.0] * 18
-        state_key = (1, 0, 0, 0, 0, 0)
-        # All five actions with identical Q-values
-        agent.q_table = {state_key: {a: 0.0 for a in range(5)}}
-        available = list(range(5))
-
-        chosen = set()
-        _random.seed(42)
-        for _ in range(100):
-            max_q = max(agent.q_table[state_key].get(a, 0.0) for a in available)
-            best_actions = [a for a in available if agent.q_table[state_key].get(a, 0.0) == max_q]
-            chosen.add(_random.choice(best_actions))
-
-        # At least 2 different actions must be selected over 100 draws (noop is rarely the only pick)
-        assert len(chosen) > 1, (
-            f"All 100 tie-breaking draws chose the same action {chosen}; "
-            "tie-breaking must be random, not biased towards the first element"
-        )
-
-    def test_feedback_episode_number_independent_of_episode_number(self):
-        """feedback_episode_number and episode_number are distinct counters."""
-        agent = make_agent()
-        assert hasattr(agent, "feedback_episode_number"), (
-            "agent must have feedback_episode_number attribute"
-        )
-        # Simulate many noops incrementing episode_number but not feedback_episode_number
-        agent.episode_number = 500
-        agent.feedback_episode_number = 0
-        from custom_components.green_shift.const import INITIAL_EPSILON, MIN_EPSILON, EPSILON_DECAY_RATE
-        # Epsilon is tied to feedback_episode_number, not episode_number
-        expected_epsilon = max(MIN_EPSILON, INITIAL_EPSILON * (EPSILON_DECAY_RATE ** agent.feedback_episode_number))
-        assert expected_epsilon == INITIAL_EPSILON, (
-            "With 0 feedback episodes, epsilon should still be INITIAL_EPSILON regardless of noop count"
-        )
-
-    def test_feedback_episode_number_persisted_and_loaded(self):
-        """feedback_episode_number is included in _save_persistent_state / _load_persistent_state."""
-        agent = make_agent()
-        agent.feedback_episode_number = 42
-        # Build a minimal 'state' dict mimicking what _save_persistent_state would produce
-        state = {
-            "feedback_episode_number": agent.feedback_episode_number,
-            "episode_number": 0,
-            "shadow_episode_number": 0,
-        }
-        # Reload
-        agent2 = make_agent()
-        if "feedback_episode_number" in state:
-            agent2.feedback_episode_number = state["feedback_episode_number"]
-        assert agent2.feedback_episode_number == 42
-

@@ -13,7 +13,7 @@ from typing import List, Dict, Optional, Tuple
 from homeassistant.core import HomeAssistant
 
 from .const import TASK_GENERATION_TIME, ENVIRONMENT_OFFICE
-from .translations_runtime import get_language, get_task_templates, get_difficulty_display
+from .translations_runtime import get_language, get_task_templates, get_difficulty_display, get_verification_reason_templates
 from .helpers import should_ai_be_active, get_working_days_from_config
 
 _LOGGER = logging.getLogger(__name__)
@@ -468,6 +468,8 @@ class TaskManager:
 
         results = {}
         _now = datetime.now()
+        _lang = await get_language(self.hass)
+        _reasons = get_verification_reason_templates(_lang)
 
         for task in tasks:
             task_id = task['task_id']
@@ -486,7 +488,7 @@ class TaskManager:
                         "checked_at": _now,
                         "actual_value": task.get('completion_value'),
                         "target_value": target_value,
-                        "reason": "Target achieved"
+                        "reason": _reasons["target_achieved"]
                     }
                 continue
 
@@ -495,13 +497,18 @@ class TaskManager:
 
             # Determine human-readable reason for the UI
             if task_verified:
-                _reason = "Target achieved"
+                _reason = _reasons["target_achieved"]
             elif pending:
-                _reason = f"Waiting for peak hour ({peak_hour:02d}:00)" if peak_hour is not None else "Evaluation deferred"
+                if peak_hour is not None:
+                    _reason = _reasons["waiting_for_peak_hour"].format(peak_hour=peak_hour)
+                else:
+                    _reason = _reasons["evaluation_deferred"]
             elif actual_value is not None:
-                _reason = f"Avg: {actual_value}{target_unit}, target was {target_value}{target_unit}"
+                _reason = _reasons["avg_above_target"].format(
+                    actual=actual_value, unit=target_unit, target=target_value
+                )
             else:
-                _reason = "Insufficient data"
+                _reason = _reasons["insufficient_data"]
 
             self._last_verification_results[task_id] = {
                 "verified": task_verified,
