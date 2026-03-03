@@ -208,14 +208,14 @@ class TestIsWithinWorkingHours:
         assert is_within_working_hours(office_cfg, t) is True
 
     def test_office_weekday_on_boundary_start(self, office_cfg):
-        # Exactly 08:00 — boundary is inclusive
+        # Exactly 08:00: boundary is inclusive
         t = datetime(2026, 2, 18, 8, 0)
         assert is_within_working_hours(office_cfg, t) is True
 
     def test_office_weekday_on_boundary_end(self, office_cfg):
-        # Exactly 18:00 — boundary is inclusive
+        # Exactly 18:00: boundary is exclusive (end time is not included)
         t = datetime(2026, 2, 18, 18, 0)
-        assert is_within_working_hours(office_cfg, t) is True
+        assert is_within_working_hours(office_cfg, t) is False
 
     def test_office_weekday_before_hours(self, office_cfg):
         # Tuesday 07:59

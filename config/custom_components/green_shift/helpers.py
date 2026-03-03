@@ -245,7 +245,7 @@ def is_within_working_hours(config_data: Dict, check_time: datetime = None) -> b
         end_time = datetime.strptime(working_end, "%H:%M").time()
         current_time = check_time.time()
 
-        return start_time <= current_time <= end_time
+        return start_time <= current_time < end_time
     except (ValueError, AttributeError):
         # If parsing fails, assume within working hours
         return True

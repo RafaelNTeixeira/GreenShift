@@ -420,10 +420,10 @@ class TestAsyncStepWorkingHours:
 
         assert result["type"] == "form", "No working days must re-show the form"
         assert result["step_id"] == "working_hours"
-        assert "working_days" in result.get("errors", {}), (
-            "Expected 'working_days' error when all day checkboxes are False"
+        assert "base" in result.get("errors", {}), (
+            "Expected 'base' error when all day checkboxes are False"
         )
-        assert result["errors"]["working_days"] == "no_working_days"
+        assert result["errors"]["base"] == "no_working_days"
 
     async def test_single_working_day_is_accepted(self, config_flow):
         """A single working day selected must pass validation and proceed."""
@@ -441,7 +441,7 @@ class TestAsyncStepWorkingHours:
 
         result = await config_flow.async_step_working_hours(user_input)
 
-        assert "working_days" not in (result.get("errors") or {}), (
+        assert "base" not in (result.get("errors") or {}), (
             "A single selected day must not trigger the no_working_days error"
         )
 
