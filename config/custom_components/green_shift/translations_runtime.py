@@ -115,10 +115,6 @@ NOTIFICATION_TEMPLATES = {
                 "message": "🔌 {device_name} está atualmente a usar {device_power}W, o que é superior ao habitual. Considere desligá-lo quando não estiver em uso."
             },
             {
-                "title": "Dica de Energia do Dispositivo",
-                "message": "💡 {device_name} está a funcionar continuamente e está a consumir {device_power}W. Reiniciá-lo pode ajudar a otimizar a sua eficiência."
-            },
-            {
                 "title": "Aviso de Uso de Aparelho",
                 "message": "⚡ O seu {device_name} está a consumir {device_power}W neste momento. Se não o está a usar ativamente, desligá-lo pode poupar energia."
             }
