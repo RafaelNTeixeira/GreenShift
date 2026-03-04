@@ -1674,19 +1674,12 @@ class DecisionAgent:
                     std = np.std(temp_values)
                     current = temp_values[-1]
 
-                    baseline_temp = self.area_baselines.get(area, {}).get("temperature")
-
+                    # Z-score: detects sudden local shifts in the 2-hour window
                     if std > 0.5:
                         z_score = abs((current - mean) / std)
                         area_anomalies["temperature"] = min(z_score / 3.0, 1.0)
 
-                    # Also check against area baseline if available
-                    if baseline_temp and baseline_temp > 0:
-                        baseline_deviation = abs(current - baseline_temp) / baseline_temp
-                        if baseline_deviation > 0.2:  # More than 20% deviation from baseline
-                            area_anomalies["temperature"] = max(area_anomalies.get("temperature", 0), min(baseline_deviation, 1.0))
-
-                    # Additional check: extreme values
+                    # Absolute extreme-value check
                     if current < 16 or current > 28:
                         area_anomalies["temperature"] = max(area_anomalies.get("temperature", 0), 0.8)
 
@@ -1699,16 +1692,10 @@ class DecisionAgent:
                     std = np.std(power_values)
                     current = power_values[-1]
 
-                    area_power_baseline = self.area_baselines.get(area, {}).get("power")
+                    # Z-score: detects sudden local spikes in the 2-hour window
                     if std > 10.0:
                         z_score = max((current - mean) / std, 0)
                         area_anomalies["power"] = min(z_score / 5.0, 1.0)
-
-                    # Also check against area baseline if in active phase
-                    if area_power_baseline and area_power_baseline > 0:
-                        baseline_deviation = (current - area_power_baseline) / area_power_baseline
-                        if baseline_deviation > 0.3:  # More than 30% above baseline
-                            area_anomalies["power"] = max(area_anomalies.get("power", 0), min(baseline_deviation, 1.0))
 
             # Check humidity anomalies
             hum_history = await self.data_collector.get_area_history(area, "humidity", hours=2, working_hours_only=_wh_filter)
@@ -1718,23 +1705,16 @@ class DecisionAgent:
                     mean = np.mean(hum_values)
                     std = np.std(hum_values)
                     current = hum_values[-1]
-                    area_hum_baseline = self.area_baselines.get(area, {}).get("humidity")
 
-                    # Z-score for humidity anomalies
+                    # Z-score: detects sudden local shifts in the 2-hour window
                     if std > 1.0:
                         z_score = abs((current - mean) / std)
                         area_anomalies["humidity"] = min(z_score / 4.0, 1.0)
 
-                    # Check against comfortable range (30-60%)
+                    # Absolute comfort-range check (30-60%)
                     if current < 30 or current > 60:
                         deviation = max(30 - current, current - 60, 0)
                         area_anomalies["humidity"] = max(area_anomalies.get("humidity", 0), min(deviation / 30.0, 1.0))
-
-                    # Also check against area baseline if available
-                    if area_hum_baseline and area_hum_baseline > 0:
-                        baseline_deviation = abs(current - area_hum_baseline) / area_hum_baseline
-                        if baseline_deviation > 0.2:  # More than 20% deviation from baseline
-                            area_anomalies["humidity"] = max(area_anomalies.get("humidity", 0), min(baseline_deviation, 1.0))
 
             if area_anomalies:
                 self.area_anomalies[area] = area_anomalies
