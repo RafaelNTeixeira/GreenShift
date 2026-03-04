@@ -1669,3 +1669,82 @@ class TestVerificationFailureReasons:
         # Must NOT be the generic fallback string
         assert result["reason"] != "Avg: 22.0°C, target was 20.0°C"
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# peak_avoidance verification: working_hours_filter
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPeakAvoidanceWorkingHoursFilter:
+    """peak_avoidance verification must pass working_hours_only=True in office
+    mode and working_hours_only=None in home mode, consistent with all other
+    task types. Previously the peak_avoidance branch called get_power_history
+    without the filter, ignoring the environment mode setting."""
+
+    @pytest.mark.asyncio
+    async def test_office_mode_passes_working_hours_filter(self):
+        """In office mode, get_power_history must be called with working_hours_only=True."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        sensors = {"power": ["sensor.power_1"]}
+        tm = make_task_manager(sensors=sensors, config={"environment_mode": "office"})
+
+        peak_hour = 14
+        base = real_dt(2026, 2, 19, peak_hour, 0, 0)
+        power_data = [(base + timedelta(minutes=i), 300.0) for i in range(60)]
+        tm.data_collector.get_power_history = AsyncMock(return_value=power_data)
+
+        task = {
+            "task_id": "pa_office",
+            "task_type": "peak_avoidance",
+            "target_value": 450,
+            "area_name": None,
+            "peak_hour": peak_hour,
+            "verified": False,
+        }
+
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm._verify_single_task(task)
+
+        call_kwargs = tm.data_collector.get_power_history.call_args
+        assert call_kwargs.kwargs.get("working_hours_only") is True, (
+            "peak_avoidance in office mode must pass working_hours_only=True to get_power_history"
+        )
+
+    @pytest.mark.asyncio
+    async def test_home_mode_no_working_hours_filter(self):
+        """In home mode, get_power_history must be called without working_hours_only filter."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        sensors = {"power": ["sensor.power_1"]}
+        tm = make_task_manager(sensors=sensors, config={"environment_mode": "home"})
+
+        peak_hour = 14
+        base = real_dt(2026, 2, 19, peak_hour, 0, 0)
+        power_data = [(base + timedelta(minutes=i), 300.0) for i in range(60)]
+        tm.data_collector.get_power_history = AsyncMock(return_value=power_data)
+
+        task = {
+            "task_id": "pa_home",
+            "task_type": "peak_avoidance",
+            "target_value": 450,
+            "area_name": None,
+            "peak_hour": peak_hour,
+            "verified": False,
+        }
+
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm._verify_single_task(task)
+
+        call_kwargs = tm.data_collector.get_power_history.call_args
+        assert not call_kwargs.kwargs.get("working_hours_only"), (
+            "peak_avoidance in home mode must not pass working_hours_only=True to get_power_history"
+        )
+

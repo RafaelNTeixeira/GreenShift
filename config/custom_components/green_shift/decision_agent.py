@@ -38,6 +38,7 @@ from .const import (
     SHADOW_EXPLORATION_RATE,
     SHADOW_LEARNING_RATE,
     SHADOW_INTERVAL_MULTIPLIER,
+    Q_INIT,
     ENVIRONMENT_OFFICE,
     NOTIFICATION_HISTORY_LIMIT,
     INITIAL_EPSILON,
@@ -733,11 +734,11 @@ class DecisionAgent:
             # Exploitation: best known action
             action_source = "exploit"
             if state_key not in self.q_table:
-                self.q_table[state_key] = {a: 0.3 for a in ACTIONS.values()}
+                self.q_table[state_key] = {a: Q_INIT for a in ACTIONS.values()}
 
             # Tie-breaking: random choice among all actions sharing the highest Q-value
-            max_q = max(self.q_table[state_key].get(a, 0.3) for a in available_actions)
-            best_actions = [a for a in available_actions if self.q_table[state_key].get(a, 0.3) == max_q]
+            max_q = max(self.q_table[state_key].get(a, Q_INIT) for a in available_actions)
+            best_actions = [a for a in available_actions if self.q_table[state_key].get(a, Q_INIT) == max_q]
             action = random.choice(best_actions)
             _LOGGER.debug("Exploitation: selected action %d (Q=%.2f, tied=%d)", action, max_q, len(best_actions))
 
@@ -748,8 +749,8 @@ class DecisionAgent:
             # γ=0 for noop: no real state transition occurred, so using future-value estimation would compare Q(s,a) against Q(s,a) (identical state). 
             # This would inflate noop Q-values over time.
             if state_key not in self.q_table:
-                self.q_table[state_key] = {a: 0.3 for a in ACTIONS.values()}
-            current_q = self.q_table[state_key].get(action, 0.3)
+                self.q_table[state_key] = {a: Q_INIT for a in ACTIONS.values()}
+            current_q = self.q_table[state_key].get(action, Q_INIT)
             self.q_table[state_key][action] = current_q + self.learning_rate * (noop_reward - current_q)
             self.episode_number += 1
             await self._log_rl_episode(state_key, action, noop_reward, action_source,
@@ -815,11 +816,11 @@ class DecisionAgent:
             # Exploitation: best known action from Q-table
             action_source = "shadow_exploit"
             if state_key not in self.q_table:
-                self.q_table[state_key] = {a: 0.5 for a in ACTIONS.values()}
+                self.q_table[state_key] = {a: Q_INIT for a in ACTIONS.values()}
 
             # Tie-breaking: random choice among all actions sharing the highest Q-value
-            max_q = max(self.q_table[state_key].get(a, 0.5) for a in available_actions)
-            best_actions_s = [a for a in available_actions if self.q_table[state_key].get(a, 0.5) == max_q]
+            max_q = max(self.q_table[state_key].get(a, Q_INIT) for a in available_actions)
+            best_actions_s = [a for a in available_actions if self.q_table[state_key].get(a, Q_INIT) == max_q]
             action = random.choice(best_actions_s)
             _LOGGER.debug("Shadow learning (exploit): selected action %d (Q=%.2f, tied=%d)", action, max_q, len(best_actions_s))
 
@@ -973,9 +974,9 @@ class DecisionAgent:
             reward (float): The calculated shadow reward for the action.
         """
         if state_key not in self.q_table:
-            self.q_table[state_key] = {a: 0.5 for a in ACTIONS.values()}
+            self.q_table[state_key] = {a: Q_INIT for a in ACTIONS.values()}
 
-        current_q = self.q_table[state_key].get(action, 0.5)
+        current_q = self.q_table[state_key].get(action, Q_INIT)
 
         # Shadow learning uses γ=0: no future-value estimation.
         # During baseline no real action is taken, so the "next state" is identical to the current state.
@@ -1007,9 +1008,9 @@ class DecisionAgent:
             accepted (bool): True if user accepted, False if rejected
         """
         if state_key not in self.q_table:
-            self.q_table[state_key] = {a: 0.5 for a in ACTIONS.values()}
+            self.q_table[state_key] = {a: Q_INIT for a in ACTIONS.values()}
 
-        current_q = self.q_table[state_key].get(action, 0.5)
+        current_q = self.q_table[state_key].get(action, Q_INIT)
         
         # Dynamic gamma: 0 for rejection (terminal state), GAMMA for acceptance
         gamma = GAMMA if accepted else 0.0
@@ -1017,7 +1018,7 @@ class DecisionAgent:
         # Get next state for future value estimation
         next_state_key = self._discretize_state()
         if next_state_key not in self.q_table:
-            self.q_table[next_state_key] = {a: 0.5 for a in ACTIONS.values()}
+            self.q_table[next_state_key] = {a: Q_INIT for a in ACTIONS.values()}
 
         # Restrict max_next_q to actions that are actually available in the current action mask
         available_actions = (
@@ -1025,7 +1026,7 @@ class DecisionAgent:
             if self.action_mask
             else list(ACTIONS.values())
         )
-        max_next_q = max(self.q_table[next_state_key].get(a, 0.5) for a in available_actions)
+        max_next_q = max(self.q_table[next_state_key].get(a, Q_INIT) for a in available_actions)
         
         # Q-learning update with dynamic gamma
         new_q = current_q + self.learning_rate * (reward + gamma * max_next_q - current_q)
@@ -1533,8 +1534,8 @@ class DecisionAgent:
         action_name = [k for k, v in ACTIONS.items() if v == action][0]
 
         # Get current Q-values for this state
-        q_values = self.q_table.get(state_key, {a: 0.5 for a in ACTIONS.values()})
-        max_q = max(q_values.values()) if q_values else 0.5
+        q_values = self.q_table.get(state_key, {a: Q_INIT for a in ACTIONS.values()})
+        max_q = max(q_values.values()) if q_values else Q_INIT
 
         # Get current power
         current_state = self.data_collector.get_current_state()
@@ -2126,7 +2127,7 @@ class DecisionAgent:
 
         Returns:
             dict:
-            - status: "pending", "in_progress" or "completed"
+            - status: "on_track", "off_track" or "pending" (if baseline not set)
             - current_avg: Current average consumption for the week
             - target_avg: Target average consumption based on baseline and reduction goal
             - progress: Percentage of target consumption (current_avg / target_avg * 100)

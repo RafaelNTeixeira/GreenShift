@@ -693,7 +693,9 @@ class TaskManager:
                     _LOGGER.warning("peak_avoidance task %s missing peak_hour field; cannot verify", task.get('task_id'))
                     return False, None, False
 
-                power_history = await self.data_collector.get_power_history(hours=math.ceil(hours_passed))
+                is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+                working_hours_filter = True if is_office_mode else None
+                power_history = await self.data_collector.get_power_history(hours=math.ceil(hours_passed), working_hours_only=working_hours_filter)
                 if not power_history:
                     return False, None, False
 
