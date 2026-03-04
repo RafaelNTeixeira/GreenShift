@@ -679,7 +679,8 @@ async def async_setup_services(hass: HomeAssistant):
 
         # Learning progress
         _LOGGER.info(f"\nLearning parameters:")
-        _LOGGER.info(f"  Episode number: {agent.episode_number}")
+        _LOGGER.info(f"  Active Episode number: {agent.episode_number}")
+        _LOGGER.info(f"  Shadow Episode number: {agent.shadow_episode_number}")
         _LOGGER.info(f"  Epsilon (exploration rate): {agent.epsilon}")
         _LOGGER.info(f"  Learning rate: {agent.learning_rate}")
 
