@@ -43,6 +43,10 @@ KEEP_SHUTDOWN_BACKUPS = 3  # Keep last N shutdown backups (prevents accumulation
 RESEARCH_RETENTION_DAYS = 120  # Keep research data for 120 days (4 months)
 NOTIFICATION_HISTORY_LIMIT = 100 # Keep last N notifications in JSON state
 
+# Temperature task tuning
+OUTDOOR_HOT_TEMP_THRESHOLD = 24.0  # °C - above this the system suggests raising AC setpoint (cooling season)
+OUTDOOR_COLD_TEMP_THRESHOLD = 18.0  # °C - below this the system suggests lowering heating setpoint (heating season)
+
 # Sensor categories and keywords for auto-discovery
 SENSOR_MAPPING = {
     "power": {

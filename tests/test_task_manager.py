@@ -1748,3 +1748,241 @@ class TestPeakAvoidanceWorkingHoursFilter:
             "peak_avoidance in home mode must not pass working_hours_only=True to get_power_history"
         )
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AC guard: temperature tasks only generated when has_ac=True
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestTemperatureTaskACGuard:
+    """Temperature task generators are conditional on config has_ac=True."""
+
+    @pytest.mark.asyncio
+    async def test_temperature_task_not_generated_when_has_ac_false(self):
+        """has_ac=False -> temperature generator excluded from the pool."""
+        sensors = {"temperature": ["sensor.t1"]}  # only temperature, no power/light/occ
+        tm = make_task_manager(sensors=sensors, config={"has_ac": False})
+        result = await tm.generate_daily_tasks()
+        # No valid generators -> empty task list
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_temperature_task_not_generated_when_has_ac_missing(self):
+        """Missing has_ac key defaults to False -> temperature generator excluded."""
+        sensors = {"temperature": ["sensor.t1"]}
+        tm = make_task_manager(sensors=sensors, config={})
+        result = await tm.generate_daily_tasks()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_temperature_task_generated_when_has_ac_true(self):
+        """has_ac=True -> temperature generator included in pool and task produced."""
+        sensors = {"temperature": ["sensor.t1"]}
+        tm = make_task_manager(sensors=sensors, config={"has_ac": True})
+        result = await tm.generate_daily_tasks()
+        assert isinstance(result, list)
+        if result:
+            types_found = {t["task_type"] for t in result}
+            assert types_found.issubset({"temperature_reduction", "temperature_increase"})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _generate_temperature_task: seasonal direction
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGenerateTemperatureTaskSeasonalDirection:
+    """_generate_temperature_task selects direction based on outdoor temperature."""
+
+    def _make_weather_state(self, outdoor_temp):
+        state = MagicMock()
+        state.attributes = {"temperature": outdoor_temp}
+        return state
+
+    @pytest.mark.asyncio
+    async def test_cold_outdoor_generates_temperature_reduction(self):
+        """Outdoor temp < threshold -> heating season -> temperature_reduction task."""
+        tm = make_task_manager(
+            sensors={"temperature": ["sensor.t1"]},
+            config={"has_ac": True, "weather_entity": "weather.home"},
+        )
+        tm.hass.states.get = MagicMock(return_value=self._make_weather_state(outdoor_temp=5.0))
+        result = await tm._generate_temperature_task()
+        assert result is not None
+        assert result["task_type"] == "temperature_reduction"
+        assert result["target_value"] < result["baseline_value"]
+
+    @pytest.mark.asyncio
+    async def test_hot_outdoor_generates_temperature_increase(self):
+        """Outdoor temp > threshold -> cooling season -> temperature_increase task."""
+        tm = make_task_manager(
+            sensors={"temperature": ["sensor.t1"]},
+            config={"has_ac": True, "weather_entity": "weather.home"},
+        )
+        tm.hass.states.get = MagicMock(return_value=self._make_weather_state(outdoor_temp=32.0))
+        result = await tm._generate_temperature_task()
+        assert result is not None
+        assert result["task_type"] == "temperature_increase"
+        assert result["target_value"] > result["baseline_value"]
+
+    @pytest.mark.asyncio
+    async def test_no_weather_entity_configured_returns_none(self):
+        """No weather_entity key -> outdoor temp unknown -> no task generated."""
+        tm = make_task_manager(
+            sensors={"temperature": ["sensor.t1"]},
+            config={"has_ac": True},
+        )
+        result = await tm._generate_temperature_task()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_weather_entity_not_found_returns_none(self):
+        """Weather entity exists in config but not in HA states -> no task generated."""
+        tm = make_task_manager(
+            sensors={"temperature": ["sensor.t1"]},
+            config={"has_ac": True, "weather_entity": "weather.missing"},
+        )
+        tm.hass.states.get = MagicMock(return_value=None)
+        result = await tm._generate_temperature_task()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_exactly_at_cold_threshold_generates_reduction(self):
+        """Outdoor temp == OUTDOOR_COLD_TEMP_THRESHOLD (<=) -> reduction task."""
+        cold_threshold = tm_mod.OUTDOOR_COLD_TEMP_THRESHOLD
+        tm = make_task_manager(
+            sensors={"temperature": ["sensor.t1"]},
+            config={"has_ac": True, "weather_entity": "weather.home"},
+        )
+        tm.hass.states.get = MagicMock(return_value=self._make_weather_state(outdoor_temp=cold_threshold))
+        result = await tm._generate_temperature_task()
+        assert result is not None
+        assert result["task_type"] == "temperature_reduction"
+
+    @pytest.mark.asyncio
+    async def test_between_thresholds_returns_none(self):
+        """Outdoor temp between thresholds (not hot, not cold) -> no task generated."""
+        between_temp = (tm_mod.OUTDOOR_COLD_TEMP_THRESHOLD + tm_mod.OUTDOOR_HOT_TEMP_THRESHOLD) / 2
+        tm = make_task_manager(
+            sensors={"temperature": ["sensor.t1"]},
+            config={"has_ac": True, "weather_entity": "weather.home"},
+        )
+        tm.hass.states.get = MagicMock(return_value=self._make_weather_state(outdoor_temp=between_temp))
+        result = await tm._generate_temperature_task()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_exactly_at_hot_threshold_still_in_between(self):
+        """Outdoor temp == OUTDOOR_HOT_TEMP_THRESHOLD (not *strictly* greater) -> no task."""
+        hot_threshold = tm_mod.OUTDOOR_HOT_TEMP_THRESHOLD
+        tm = make_task_manager(
+            sensors={"temperature": ["sensor.t1"]},
+            config={"has_ac": True, "weather_entity": "weather.home"},
+        )
+        tm.hass.states.get = MagicMock(return_value=self._make_weather_state(outdoor_temp=hot_threshold))
+        result = await tm._generate_temperature_task()
+        # <= cold threshold is False (24 > 18), > hot threshold is False (24 is not > 24) -> None
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_increase_task_has_correct_fields(self):
+        """temperature_increase task must carry the expected dict keys."""
+        tm = make_task_manager(
+            sensors={"temperature": ["sensor.t1"]},
+            config={"has_ac": True, "weather_entity": "weather.home"},
+        )
+        tm.hass.states.get = MagicMock(return_value=self._make_weather_state(outdoor_temp=35.0))
+        result = await tm._generate_temperature_task()
+        assert result is not None
+        for key in ("task_id", "task_type", "title", "description", "target_value",
+                    "target_unit", "baseline_value", "difficulty_level", "difficulty_display"):
+            assert key in result, f"Missing key: {key}"
+        assert result["target_unit"] == "°C"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _verify_single_task: temperature_increase type
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestVerifySingleTaskTemperatureIncrease:
+    """Cooling-season tasks pass when avg temp >= target (house not over-cooled)."""
+
+    @pytest.mark.asyncio
+    async def test_increase_verified_when_avg_at_or_above_target(self):
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager(sensors={"temperature": ["sensor.t1"]})
+        base = real_dt(2026, 2, 19, 8, 0, 0)
+        tm.data_collector.get_temperature_history = AsyncMock(
+            return_value=[(base + timedelta(hours=i), 24.0) for i in range(5)]
+        )
+        task = {
+            "task_id": "temp_inc_ok",
+            "task_type": "temperature_increase",
+            "target_value": 23.0,
+            "area_name": None,
+            "created_at": "2026-02-19T08:00:00",
+            "verified": False,
+        }
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert verified is True
+        assert actual == pytest.approx(24.0, abs=0.1)
+
+    @pytest.mark.asyncio
+    async def test_increase_fails_when_avg_below_target(self):
+        """House still over-cooled (avg temp below target) -> task not achieved."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager(sensors={"temperature": ["sensor.t1"]})
+        base = real_dt(2026, 2, 19, 8, 0, 0)
+        tm.data_collector.get_temperature_history = AsyncMock(
+            return_value=[(base + timedelta(hours=i), 20.0) for i in range(5)]
+        )
+        task = {
+            "task_id": "temp_inc_fail",
+            "task_type": "temperature_increase",
+            "target_value": 23.0,
+            "area_name": None,
+            "created_at": "2026-02-19T08:00:00",
+            "verified": False,
+        }
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert verified is False
+        assert actual == pytest.approx(20.0, abs=0.1)
+
+    @pytest.mark.asyncio
+    async def test_increase_returns_false_when_no_history(self):
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager(sensors={"temperature": ["sensor.t1"]})
+        tm.data_collector.get_temperature_history = AsyncMock(return_value=[])
+        task = {
+            "task_id": "temp_inc_no_data",
+            "task_type": "temperature_increase",
+            "target_value": 23.0,
+            "area_name": None,
+            "created_at": "2026-02-19T08:00:00",
+            "verified": False,
+        }
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert verified is False
+        assert actual is None

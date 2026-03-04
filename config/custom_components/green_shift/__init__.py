@@ -728,8 +728,8 @@ async def async_setup_services(hass: HomeAssistant):
         new_q_reject = initial_q + agent.learning_rate * (test_reward_reject + gamma_reject * max_next_q - initial_q)
 
         _LOGGER.info(f"Simulating: action={test_action}, reward={test_reward_reject:.4f}, gamma={gamma_reject}")
-        _LOGGER.info(f"Calculation: {initial_q:.4f} + {agent.learning_rate} × ({test_reward_reject:.4f} + {gamma_reject}×{max_next_q:.4f} - {initial_q:.4f})")
-        _LOGGER.info(f"Result: {initial_q:.4f} → {new_q_reject:.4f} (Δ = {new_q_reject - initial_q:+.4f})")
+        _LOGGER.info(f"Calculation: {initial_q:.4f} + {agent.learning_rate} x ({test_reward_reject:.4f} + {gamma_reject}x{max_next_q:.4f} - {initial_q:.4f})")
+        _LOGGER.info(f"Result: {initial_q:.4f} -> {new_q_reject:.4f} (Δ = {new_q_reject - initial_q:+.4f})")
 
         # TEST 2: ACCEPTANCE
         _LOGGER.info(f"\n{'─'*60}")
@@ -741,16 +741,16 @@ async def async_setup_services(hass: HomeAssistant):
         new_q_accept = initial_q + agent.learning_rate * (test_reward_accept + gamma_accept * max_next_q - initial_q)
 
         _LOGGER.info(f"Simulating: action={test_action}, reward={test_reward_accept:.4f}, gamma={gamma_accept}")
-        _LOGGER.info(f"Calculation: {initial_q:.4f} + {agent.learning_rate} × ({test_reward_accept:.4f} + {gamma_accept}×{max_next_q:.4f} - {initial_q:.4f})")
-        _LOGGER.info(f"Result: {initial_q:.4f} → {new_q_accept:.4f} (Δ = {new_q_accept - initial_q:+.4f})")
+        _LOGGER.info(f"Calculation: {initial_q:.4f} + {agent.learning_rate} x ({test_reward_accept:.4f} + {gamma_accept}x{max_next_q:.4f} - {initial_q:.4f})")
+        _LOGGER.info(f"Result: {initial_q:.4f} -> {new_q_accept:.4f} (Δ = {new_q_accept - initial_q:+.4f})")
 
         # Apply rejection update (to show the fix works)
         agent.q_table[state_before][test_action] = new_q_reject
 
         _LOGGER.info(f"\n{'='*60}")
         _LOGGER.info(f"SUMMARY:")
-        _LOGGER.info(f"  Rejection: Q goes {initial_q:.4f} → {new_q_reject:.4f} (gamma=0.0, terminal)")
-        _LOGGER.info(f"  Acceptance: Q goes {initial_q:.4f} → {new_q_accept:.4f} (gamma={GAMMA}, normal)")
+        _LOGGER.info(f"  Rejection: Q goes {initial_q:.4f} -> {new_q_reject:.4f} (gamma=0.0, terminal)")
+        _LOGGER.info(f"  Acceptance: Q goes {initial_q:.4f} -> {new_q_accept:.4f} (gamma={GAMMA}, normal)")
         _LOGGER.info(f"\n✓ Applied rejection update to Q-table (shows decrease)")
         _LOGGER.info("="*60)
 

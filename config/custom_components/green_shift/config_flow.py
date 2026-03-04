@@ -112,6 +112,8 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     translation_key="environment_mode"
                 )
             ),
+            # Whether the user has AC (air conditioning). Required to generate temperature tasks.
+            vol.Optional("has_ac", default=False): vol.Coerce(bool),
         })
 
         return self.async_show_form(

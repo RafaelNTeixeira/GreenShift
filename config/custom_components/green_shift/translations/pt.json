@@ -11,7 +11,11 @@
         "data": {
           "currency": "Moeda",
           "electricity_price": "Preço por kWh",
-          "environment_mode": "Tipo de Ambiente"
+          "environment_mode": "Tipo de Ambiente",
+          "has_ac": "Tenho ar condicionado (AC / bomba de calor)"
+        },
+        "data_description": {
+          "has_ac": "Ative para desbloquear tarefas de temperatura sazonais. No verão a IA pedirá para aumentar o setpoint do AC (poupar energia de arrefecimento); no inverno pedirá para baixar o setpoint de aquecimento."
         }
       },
       "working_hours": {

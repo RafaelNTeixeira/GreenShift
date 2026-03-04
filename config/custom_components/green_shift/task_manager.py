@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from homeassistant.core import HomeAssistant
 
-from .const import TASK_GENERATION_TIME, ENVIRONMENT_OFFICE
+from .const import TASK_GENERATION_TIME, ENVIRONMENT_OFFICE, OUTDOOR_COLD_TEMP_THRESHOLD, OUTDOOR_HOT_TEMP_THRESHOLD
 from .translations_runtime import get_language, get_task_templates, get_difficulty_display, get_verification_reason_templates
 from .helpers import should_ai_be_active, get_working_days_from_config
 
@@ -101,8 +101,9 @@ class TaskManager:
 
         available_task_generators = []
 
-        # Temperature-based tasks (verifiable via temperature sensors)
-        if self.sensors.get("temperature"):
+        # Temperature-based tasks: only available when the user has AC (has_ac=True)
+        # Without AC there is no actionable temperature control, and seasonal direction
+        if self.sensors.get("temperature") and self.config_data.get("has_ac", False):
             available_task_generators.append(self._generate_temperature_task)
 
         # Power-based tasks (verifiable via power sensors)
@@ -169,16 +170,43 @@ class TaskManager:
 
     async def _generate_temperature_task(self) -> Optional[Dict]:
         """
-        Generate a temperature reduction task.
-        
+        Generate a seasonal temperature task.
+
+        In warm weather (outdoor temperature > OUTDOOR_HOT_TEMP_THRESHOLD) the system
+        generates a temperature_increase task: ask the user to raise the AC cooling setpoint slightly, reducing over-cooling energy use.
+
+        In cold weather (outdoor temperature <= OUTDOOR_COLD_TEMP_THRESHOLD) it generates the original temperature_reduction task: lower the heating setpoint to save heating energy.
+
         Returns:
-            dict: A task d: juneictionary with details for a temperature reduction task, or None if it cannot be generated.
+            dict: A task dictionary or None if it cannot be generated.
         """
-        # Get difficulty stats for this task type
-        stats = await self.storage.get_task_difficulty_stats('temperature_reduction')
+        # Determine outdoor temperature from the weather entity 
+        outdoor_temp: Optional[float] = None
+        weather_entity = self.config_data.get("weather_entity")
+        if weather_entity:
+            weather_state = self.hass.states.get(weather_entity)
+            if weather_state and weather_state.attributes:
+                try:
+                    outdoor_temp = float(weather_state.attributes.get("temperature"))
+                except (TypeError, ValueError):
+                    outdoor_temp = None
+
+        is_hot_outside = outdoor_temp is not None and outdoor_temp > OUTDOOR_HOT_TEMP_THRESHOLD
+        is_cold_outside = outdoor_temp is not None and outdoor_temp <= OUTDOOR_COLD_TEMP_THRESHOLD
+
+        # Decide task type and stats key based on season
+        task_type = None
+        if is_hot_outside:
+            task_type = "temperature_increase"
+        elif is_cold_outside:
+            task_type = "temperature_reduction"
+        else:
+            return None
+        
+        stats = await self.storage.get_task_difficulty_stats(task_type)
         difficulty = await self._calculate_task_difficulty(stats)
 
-        # Get average temperature from last 7 days (working hours only in office mode)
+        # Get recent average indoor temperature 
         is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
         working_hours_filter = True if is_office_mode else None
 
@@ -189,31 +217,52 @@ class TaskManager:
         temps = [temp for _, temp in temp_history]
         baseline_temp = np.mean(temps)
 
-        # Calculate target based on difficulty (adjust by 0.5°C to 2°C)
-        base_reduction = 1.0  # Base adjustment in °C
-        reduction = base_reduction * self.difficulty_multipliers[difficulty]
-        target_temp = round(baseline_temp - reduction, 1)  # lower setpoint to reduce heating
+        # Adjustment magnitude: 0.5 °C (easy) up to 1.5 °C (hard) 
+        base_adjustment = 1.0  # °C at normal difficulty
+        adjustment = base_adjustment * self.difficulty_multipliers[difficulty]
 
         # Get user's language and templates
         language = await get_language(self.hass)
         templates = get_task_templates(language)
-        template = templates['temperature_reduction']
 
-        return {
-            'task_id': f"temp_{datetime.now().strftime('%Y%m%d')}",
-            'task_type': 'temperature_reduction',
-            'title': template['title'].format(reduction=reduction),
-            'description': template['description'].format(
-                target_temp=target_temp,
-                baseline_temp=round(baseline_temp, 1)
-            ),
-            'target_value': target_temp,
-            'target_unit': '°C',
-            'baseline_value': round(baseline_temp, 1),
-            'difficulty_level': difficulty,
-            'difficulty_display': get_difficulty_display(difficulty, language),
-            'area_name': None,  # Global task
-        }
+        if is_hot_outside:
+            # Cooling season: ask user to raise AC setpoint (reduce over-cooling)
+            target_temp = round(baseline_temp + adjustment, 1)
+            template = templates["temperature_increase"]
+            return {
+                "task_id": f"temp_{datetime.now().strftime('%Y%m%d')}",
+                "task_type": "temperature_increase",
+                "title": template["title"].format(increase=adjustment),
+                "description": template["description"].format(
+                    target_temp=target_temp,
+                    baseline_temp=round(baseline_temp, 1),
+                ),
+                "target_value": target_temp,
+                "target_unit": "°C",
+                "baseline_value": round(baseline_temp, 1),
+                "difficulty_level": difficulty,
+                "difficulty_display": get_difficulty_display(difficulty, language),
+                "area_name": None,
+            }
+        else:
+            # Heating season: ask user to lower heating setpoint
+            target_temp = round(baseline_temp - adjustment, 1)
+            template = templates["temperature_reduction"]
+            return {
+                "task_id": f"temp_{datetime.now().strftime('%Y%m%d')}",
+                "task_type": "temperature_reduction",
+                "title": template["title"].format(reduction=adjustment),
+                "description": template["description"].format(
+                    target_temp=target_temp,
+                    baseline_temp=round(baseline_temp, 1),
+                ),
+                "target_value": target_temp,
+                "target_unit": "°C",
+                "baseline_value": round(baseline_temp, 1),
+                "difficulty_level": difficulty,
+                "difficulty_display": get_difficulty_display(difficulty, language),
+                "area_name": None,
+            }
 
     async def _generate_power_reduction_task(self) -> Optional[Dict]:
         """
@@ -524,6 +573,10 @@ class TaskManager:
                     _reason = _reasons.get("temp_reduction_failed", _reasons["avg_above_target"]).format(
                         actual=actual_value, target=target_value
                     )
+                elif _task_type_now == 'temperature_increase':
+                    _reason = _reasons.get("temp_increase_failed", _reasons["avg_above_target"]).format(
+                        actual=actual_value, target=target_value
+                    )
                 elif _task_type_now == 'power_reduction':
                     _reason = _reasons.get("power_above_target", _reasons["avg_above_target"]).format(
                         actual=actual_value, target=target_value
@@ -622,6 +675,19 @@ class TaskManager:
                 avg_temp = np.mean([temp for _, temp in temp_history])
                 _LOGGER.debug("Average temperature for verification: %.1f°C, target: %.1f°C", avg_temp, target_value)
                 verified = bool(avg_temp <= target_value)
+                return verified, round(avg_temp, 2), False
+
+            elif task_type == 'temperature_increase':
+                # Cooling season: verify the house was NOT over-cooled (avg temp >= target)
+                is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+                working_hours_filter = True if is_office_mode else None
+
+                temp_history = await self.data_collector.get_temperature_history(hours=math.ceil(hours_passed), working_hours_only=working_hours_filter)
+                if not temp_history:
+                    return False, None, False
+                avg_temp = np.mean([temp for _, temp in temp_history])
+                _LOGGER.debug("Average temperature for increase verification: %.1f°C, target: %.1f°C", avg_temp, target_value)
+                verified = bool(avg_temp >= target_value)
                 return verified, round(avg_temp, 2), False
 
             elif task_type in ['power_reduction', 'daylight_usage']:

@@ -11,7 +11,11 @@
         "data": {
           "currency": "Currency",
           "electricity_price": "Price per kWh",
-          "environment_mode": "Environment Type"
+          "environment_mode": "Environment Type",
+          "has_ac": "I have air conditioning (AC / heat pump)"
+        },
+        "data_description": {
+          "has_ac": "Enable to unlock season-aware temperature tasks. In summer the AI will ask you to raise your AC setpoint (save cooling energy); in winter it will ask you to lower your heating setpoint."
         }
       },
       "working_hours": {

@@ -216,6 +216,10 @@ TASK_TEMPLATES = {
             "title": "Reduce Temperature by {reduction:.1f}°C",
             "description": "Keep average temperature below {target_temp:.1f}°C today (current avg: {baseline_temp:.1f}°C)"
         },
+        "temperature_increase": {
+            "title": "Raise AC Setpoint by {increase:.1f}°C",
+            "description": "Allow average temperature to stay above {target_temp:.1f}°C today (current avg: {baseline_temp:.1f}°C) - reduces over-cooling energy use"
+        },
         "power_reduction": {
             "title": "Reduce Power by {reduction_pct:.1f}%",
             "description": "Keep average power below {target_power:.0f}W today (7-day avg: {baseline_power:.0f}W)"
@@ -238,6 +242,10 @@ TASK_TEMPLATES = {
         "temperature_reduction": {
             "title": "Reduzir Temperatura em {reduction:.1f}°C",
             "description": "Mantenha a temperatura média abaixo de {target_temp:.1f}°C hoje (média atual: {baseline_temp:.1f}°C)"
+        },
+        "temperature_increase": {
+            "title": "Aumentar Setpoint do AC em {increase:.1f}°C",
+            "description": "Permita que a temperatura média fique acima de {target_temp:.1f}°C hoje (média atual: {baseline_temp:.1f}°C) - reduz o consumo de arrefecimento excessivo"
         },
         "power_reduction": {
             "title": "Reduzir Potência em {reduction_pct:.1f}%",
@@ -405,6 +413,7 @@ VERIFICATION_REASON_TEMPLATES = {
         "insufficient_data":       "Insufficient data",
         # Task-type specific failure reasons
         "temp_reduction_failed":   "Avg temp: {actual}°C - target was ≤{target}°C (reduce heating)",
+        "temp_increase_failed":    "Avg temp: {actual}°C - target was ≥{target}°C (raise AC setpoint to save cooling energy)",
         "power_above_target":      "Avg power: {actual}W - target was ≤{target}W",
         "daylight_above_target":   "Daytime avg: {actual}W - target was ≤{target}W (use more natural light)",
         "unoccupied_above_target": "Unoccupied avg: {actual}W - target was ≤{target}W (turn off idle devices)",
@@ -418,6 +427,7 @@ VERIFICATION_REASON_TEMPLATES = {
         "insufficient_data":       "Dados insuficientes",
         # Task-type specific failure reasons
         "temp_reduction_failed":   "Temp. média: {actual}°C - objetivo era ≤{target}°C (reduzir aquecimento)",
+        "temp_increase_failed":    "Temp. média: {actual}°C - objetivo era ≥{target}°C (aumentar setpoint do AC para poupar energia de arrefecimento)",
         "power_above_target":      "Potência média: {actual}W - objetivo era ≤{target}W",
         "daylight_above_target":   "Média diurna: {actual}W - objetivo era ≤{target}W (aproveitar mais luz natural)",
         "unoccupied_above_target": "Média desocupado: {actual}W - objetivo era ≤{target}W (desligar dispositivos inativos)",
