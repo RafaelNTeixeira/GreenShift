@@ -398,18 +398,30 @@ def get_time_of_day_name(time_key: str, language: str) -> str:
 # Keys used by task_manager.verify_tasks() to produce the UI reason field
 VERIFICATION_REASON_TEMPLATES = {
     "en": {
-        "target_achieved":        "Target achieved",
-        "waiting_for_peak_hour":  "Waiting for peak hour ({peak_hour:02d}:00)",
-        "evaluation_deferred":    "Evaluation deferred",
-        "avg_above_target":       "Avg: {actual}{unit}, target was {target}{unit}",
-        "insufficient_data":      "Insufficient data",
+        "target_achieved":         "Target achieved",
+        "waiting_for_peak_hour":   "Waiting for peak hour ({peak_hour:02d}:00)",
+        "evaluation_deferred":     "Evaluation deferred",
+        "avg_above_target":        "Avg: {actual}{unit}, target was {target}{unit}",
+        "insufficient_data":       "Insufficient data",
+        # Task-type specific failure reasons
+        "temp_reduction_failed":   "Avg temp: {actual}°C - target was ≤{target}°C (reduce heating)",
+        "power_above_target":      "Avg power: {actual}W - target was ≤{target}W",
+        "daylight_above_target":   "Daytime avg: {actual}W - target was ≤{target}W (use more natural light)",
+        "unoccupied_above_target": "Unoccupied avg: {actual}W - target was ≤{target}W (turn off idle devices)",
+        "peak_above_target":       "Peak-hour avg: {actual}W - target was ≤{target}W (shift usage away from peak)",
     },
     "pt": {
-        "target_achieved":        "Objetivo atingido",
-        "waiting_for_peak_hour":  "À espera da hora de pico ({peak_hour:02d}:00)",
-        "evaluation_deferred":    "Avaliação adiada",
-        "avg_above_target":       "Média: {actual}{unit}, objetivo era {target}{unit}",
-        "insufficient_data":      "Dados insuficientes",
+        "target_achieved":         "Objetivo atingido",
+        "waiting_for_peak_hour":   "À espera da hora de pico ({peak_hour:02d}:00)",
+        "evaluation_deferred":     "Avaliação adiada",
+        "avg_above_target":        "Média: {actual}{unit}, objetivo era {target}{unit}",
+        "insufficient_data":       "Dados insuficientes",
+        # Task-type specific failure reasons
+        "temp_reduction_failed":   "Temp. média: {actual}°C - objetivo era ≤{target}°C (reduzir aquecimento)",
+        "power_above_target":      "Potência média: {actual}W - objetivo era ≤{target}W",
+        "daylight_above_target":   "Média diurna: {actual}W - objetivo era ≤{target}W (aproveitar mais luz natural)",
+        "unoccupied_above_target": "Média desocupado: {actual}W - objetivo era ≤{target}W (desligar dispositivos inativos)",
+        "peak_above_target":       "Média hora pico: {actual}W - objetivo era ≤{target}W (evitar consumo na ponta)",
     },
 }
 

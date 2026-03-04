@@ -1019,7 +1019,13 @@ class DecisionAgent:
         if next_state_key not in self.q_table:
             self.q_table[next_state_key] = {a: 0.5 for a in ACTIONS.values()}
 
-        max_next_q = max(self.q_table[next_state_key].values())
+        # Restrict max_next_q to actions that are actually available in the current action mask
+        available_actions = (
+            [a for a, avail in self.action_mask.items() if avail]
+            if self.action_mask
+            else list(ACTIONS.values())
+        )
+        max_next_q = max(self.q_table[next_state_key].get(a, 0.5) for a in available_actions)
         
         # Q-learning update with dynamic gamma
         new_q = current_q + self.learning_rate * (reward + gamma * max_next_q - current_q)

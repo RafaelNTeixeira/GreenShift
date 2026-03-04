@@ -65,22 +65,33 @@ class TaskManager:
             working_days = get_working_days_from_config(self.config_data)
             today_weekday = datetime.now().weekday()
             if today_weekday not in working_days:
-                _LOGGER.debug(
-                    "Not a working day (weekday=%d, working_days=%s) - task generation skipped",
-                    today_weekday, working_days
-                )
+                _LOGGER.debug("Not a working day (weekday=%d, working_days=%s) - task generation skipped",
+                    today_weekday, working_days)
                 return []
 
         today = datetime.now().strftime("%Y-%m-%d")
 
-        # Task-streak: check yesterday's completion before generating a new day
+        # Task-streak: check the last day that could have had tasks before generating today
+        # In home mode that is simply yesterday
+        # In office mode, yesterday may be a non-working day (e.g. Monday -> yesterday = Sunday)
+        # In that case we must walk backwards to the most-recent working day (e.g. Friday)
         if self.decision_agent:
-            yesterday = (datetime.now().date() - timedelta(days=1))
-            yesterday_tasks = await self.storage.get_tasks_for_date(yesterday)
-            if yesterday_tasks:
-                any_done = any(t['verified'] for t in yesterday_tasks)
+            is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+            check_date = datetime.now().date() - timedelta(days=1)
+
+            if is_office_mode:
+                working_days = get_working_days_from_config(self.config_data)
+                for offset in range(1, 8):
+                    candidate = datetime.now().date() - timedelta(days=offset)
+                    if candidate.weekday() in working_days:
+                        check_date = candidate
+                        break
+
+            streak_tasks = await self.storage.get_tasks_for_date(check_date)
+            if streak_tasks:
+                any_done = any(t['verified'] for t in streak_tasks)
                 if not any_done:
-                    self.decision_agent.update_task_streak(False, yesterday)
+                    self.decision_agent.update_task_streak(False, check_date)
 
         # Check if tasks already exist for today
         existing_tasks = await self.storage.get_today_tasks()
@@ -178,10 +189,10 @@ class TaskManager:
         temps = [temp for _, temp in temp_history]
         baseline_temp = np.mean(temps)
 
-        # Calculate target based on difficulty (reduce by 0.5°C to 2°C)
-        base_reduction = 1.0  # Base reduction in °C
+        # Calculate target based on difficulty (adjust by 0.5°C to 2°C)
+        base_reduction = 1.0  # Base adjustment in °C
         reduction = base_reduction * self.difficulty_multipliers[difficulty]
-        target_temp = round(baseline_temp - reduction, 1)
+        target_temp = round(baseline_temp - reduction, 1)  # lower setpoint to reduce heating
 
         # Get user's language and templates
         language = await get_language(self.hass)
@@ -508,9 +519,31 @@ class TaskManager:
                 else:
                     _reason = _reasons["evaluation_deferred"]
             elif actual_value is not None:
-                _reason = _reasons["avg_above_target"].format(
-                    actual=actual_value, unit=target_unit, target=target_value
-                )
+                _task_type_now = task.get('task_type', '')
+                if _task_type_now == 'temperature_reduction':
+                    _reason = _reasons.get("temp_reduction_failed", _reasons["avg_above_target"]).format(
+                        actual=actual_value, target=target_value
+                    )
+                elif _task_type_now == 'power_reduction':
+                    _reason = _reasons.get("power_above_target", _reasons["avg_above_target"]).format(
+                        actual=actual_value, target=target_value
+                    )
+                elif _task_type_now == 'daylight_usage':
+                    _reason = _reasons.get("daylight_above_target", _reasons["avg_above_target"]).format(
+                        actual=actual_value, target=target_value
+                    )
+                elif _task_type_now == 'unoccupied_power':
+                    _reason = _reasons.get("unoccupied_above_target", _reasons["avg_above_target"]).format(
+                        actual=actual_value, target=target_value
+                    )
+                elif _task_type_now == 'peak_avoidance':
+                    _reason = _reasons.get("peak_above_target", _reasons["avg_above_target"]).format(
+                        actual=actual_value, target=target_value
+                    )
+                else:
+                    _reason = _reasons["avg_above_target"].format(
+                        actual=actual_value, unit=target_unit, target=target_value
+                    )
             else:
                 _reason = _reasons["insufficient_data"]
 
@@ -588,7 +621,8 @@ class TaskManager:
                     return False, None, False
                 avg_temp = np.mean([temp for _, temp in temp_history])
                 _LOGGER.debug("Average temperature for verification: %.1f°C, target: %.1f°C", avg_temp, target_value)
-                return avg_temp <= target_value, round(avg_temp, 2), False
+                verified = bool(avg_temp <= target_value)
+                return verified, round(avg_temp, 2), False
 
             elif task_type in ['power_reduction', 'daylight_usage']:
                 # Check average power today (working hours only in office mode)

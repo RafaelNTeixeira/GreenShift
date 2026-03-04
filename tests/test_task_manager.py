@@ -1355,3 +1355,317 @@ class TestVerifySingleTaskErrorHandling:
         assert verified is False
         assert actual is None
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Office-mode Friday streak: last working day lookup 
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestOfficeModeFridayStreak:
+    """
+    In office mode, generate_daily_tasks() must check the LAST WORKING DAY's
+    tasks for the streak calculation, not blindly use yesterday.
+
+    Scenario: HA is run on Monday; yesterday = Sunday (no tasks).
+    Friday had tasks that were all unverified -> streak reset must fire.
+    """
+
+    @pytest.mark.asyncio
+    async def test_monday_checks_friday_tasks_in_office_mode(self):
+        """When today is Monday (office), the streak check should use the most-recent
+        working day (Friday), not yesterday (Sunday which has no tasks)."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt, date as real_date
+
+        office_cfg = {"environment_mode": "office"}
+        tm = make_task_manager(config=office_cfg)
+        # Force working days to Mon-Fri only
+        tm_mod.get_working_days_from_config = MagicMock(return_value=list(range(5)))
+
+        # Storage: no tasks on Sunday but failed tasks on Friday (3 days back from Mon)
+        friday_tasks = [
+            {"task_id": "fri_1", "task_type": "power_reduction", "verified": False},
+            {"task_id": "fri_2", "task_type": "power_reduction", "verified": False},
+        ]
+
+        monday = real_date(2026, 3, 2)   # This is a Monday
+        friday = real_date(2026, 2, 27)  # The Friday before
+
+        async def get_tasks_for_date(date_arg):
+            if date_arg == friday:
+                return friday_tasks
+            return []
+
+        tm.storage.get_tasks_for_date = AsyncMock(side_effect=get_tasks_for_date)
+
+        # Use a FixedDatetime subclass so .now() returns Monday and .date() works correctly
+        fake_now = real_dt(2026, 3, 2, 6, 0, 0)  # Monday 06:00
+
+        class FixedDatetime(real_dt):
+            @classmethod
+            def now(cls, tz=None):
+                return fake_now
+
+        with patch.object(tm_mod, "datetime", FixedDatetime):
+            await tm.generate_daily_tasks()
+
+        # The streak must have been called with False for the Friday date
+        tm.decision_agent.update_task_streak.assert_called_once_with(False, friday)
+
+    @pytest.mark.asyncio
+    async def test_friday_failed_streak_reset_in_office_mode(self):
+        """Simpler: use the real datetime but manipulate storage to return failed
+        Friday tasks as the 'last working day' when current day is Monday.
+        Verifies that update_task_streak(False, friday) is eventually called."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt, date as real_date
+        import datetime as _stdlib
+
+        office_cfg = {"environment_mode": "office"}
+        tm = make_task_manager(config=office_cfg)
+
+        # Stub working days Mon-Fri (0-4)
+        tm_mod.get_working_days_from_config = MagicMock(return_value=list(range(5)))
+
+        monday = real_date(2026, 3, 2)
+        friday = real_date(2026, 2, 27)
+
+        friday_failed = [{"task_id": "f1", "verified": False}]
+
+        async def get_tasks(d):
+            if d == friday:
+                return friday_failed
+            return []
+
+        tm.storage.get_tasks_for_date = AsyncMock(side_effect=get_tasks)
+
+        # Patch datetime inside t_mod so .now().date() returns Monday
+        fake_now = real_dt(2026, 3, 2, 7, 0, 0)
+
+        original_date = _stdlib.date
+
+        class FixedDatetime(real_dt):
+            @classmethod
+            def now(cls, tz=None):
+                return fake_now
+
+        FixedDatetime.date = real_dt.date  # keep .date method
+
+        with patch.object(tm_mod, "datetime", FixedDatetime):
+            await tm.generate_daily_tasks()
+
+        tm.decision_agent.update_task_streak.assert_called_once_with(False, friday)
+
+    @pytest.mark.asyncio
+    async def test_home_mode_still_uses_yesterday(self):
+        """In home mode, the streak check should still use yesterday (not skip it)."""
+        from datetime import datetime as real_dt, date as real_date
+        import datetime as _stdlib
+
+        home_cfg = {"environment_mode": "home"}
+        tm = make_task_manager(config=home_cfg)
+        tm_mod.get_working_days_from_config = MagicMock(return_value=list(range(7)))
+
+        yesterday = real_date(2026, 3, 1)
+        yesterday_failed = [{"task_id": "y1", "verified": False}]
+
+        async def get_tasks(d):
+            if d == yesterday:
+                return yesterday_failed
+            return []
+
+        tm.storage.get_tasks_for_date = AsyncMock(side_effect=get_tasks)
+
+        fake_now = real_dt(2026, 3, 2, 7, 0, 0)
+
+        class FixedDatetime(real_dt):
+            @classmethod
+            def now(cls, tz=None):
+                return fake_now
+
+        from unittest.mock import patch
+        with patch.object(tm_mod, "datetime", FixedDatetime):
+            await tm.generate_daily_tasks()
+
+        tm.decision_agent.update_task_streak.assert_called_once_with(False, yesterday)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task-type-specific verification failure reasons
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestVerificationFailureReasons:
+    """
+    verify_tasks() must produce task-type-specific failure reasons so the user
+    understands WHY the task was not completed.
+    """
+
+    def _failed_task(self, task_type, target=400, area=None, peak_hour=None, cooling_mode=False):
+        # Use a fixed date that matches the fake_now used in _run_verify (2026-02-19)
+        # so that hours_passed is positive and _verify_single_task is not short-circuited.
+        t = {
+            "task_id": f"{task_type}_test",
+            "task_type": task_type,
+            "target_value": target,
+            "target_unit": "W",
+            "area_name": area,
+            "peak_hour": peak_hour,
+            "cooling_mode": cooling_mode,
+            "verified": False,
+            "created_at": "2026-02-19T06:00:00",
+        }
+        return t
+
+    async def _run_verify(self, tm, task, actual_value=500.0, fake_hour=20):
+        """Helper: return the reason string after one verify_tasks() run."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm.storage.get_today_tasks = AsyncMock(return_value=[task])
+
+        base = real_dt(2026, 2, 19, 10, 0, 0)
+        data = [(base + timedelta(minutes=i), actual_value) for i in range(60)]
+        tm.data_collector.get_power_history = AsyncMock(return_value=data)
+        tm.data_collector.get_temperature_history = AsyncMock(return_value=data)
+        tm.data_collector.get_area_history = AsyncMock(return_value=data)
+
+        fake_now = real_dt(2026, 2, 19, fake_hour, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm.verify_tasks()
+
+        result = tm._last_verification_results.get(task["task_id"])
+        return result["reason"] if result else ""
+
+    @pytest.mark.asyncio
+    async def test_power_reduction_failure_reason_mentions_watts(self):
+        tm = make_task_manager()
+        task = self._failed_task("power_reduction", target=300)  # 500W > 300W -> fails
+        reason = await self._run_verify(tm, task, actual_value=500.0)
+        assert "500" in reason
+        assert "300" in reason
+
+    @pytest.mark.asyncio
+    async def test_daylight_failure_reason_mentions_natural_light(self):
+        """daylight_usage failure should include a hint about natural light."""
+        tm = make_task_manager()
+        base = datetime(2026, 2, 19, 12, 0, 0)  # daytime hours
+        data = [(base + timedelta(minutes=i), 600.0) for i in range(60)]
+        tm.data_collector.get_power_history = AsyncMock(return_value=data)
+        task = self._failed_task("daylight_usage", target=400)
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        tm.storage.get_today_tasks = AsyncMock(return_value=[task])
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm.verify_tasks()
+        result = tm._last_verification_results.get(task["task_id"])
+        assert result is not None
+        # The EN reason for daylight_usage includes "natural light"
+        assert "natural light" in result["reason"].lower() or "600" in result["reason"]
+
+    @pytest.mark.asyncio
+    async def test_unoccupied_power_failure_reason_mentions_idle_devices(self):
+        """unoccupied_power failure reason should mention turning off idle devices."""
+        sensors = {"power": ["sensor.p"], "occupancy": ["bs.occ"]}
+        tm = make_task_manager(sensors=sensors)
+        base = datetime(2026, 2, 19, 10, 0, 0)
+        data = [(base + timedelta(minutes=i), 600.0) for i in range(60)]
+
+        async def area_history(area, metric, **kwargs):
+            if metric == "power":
+                return data
+            return [(base + timedelta(minutes=i), 0) for i in range(60)]  # unoccupied
+
+        tm.data_collector.get_area_history = AsyncMock(side_effect=area_history)
+        task = self._failed_task("unoccupied_power", target=400, area="Office")
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        tm.storage.get_today_tasks = AsyncMock(return_value=[task])
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm.verify_tasks()
+        result = tm._last_verification_results.get(task["task_id"])
+        assert result is not None
+        assert "600" in result["reason"] or "idle" in result["reason"].lower()
+
+    @pytest.mark.asyncio
+    async def test_peak_avoidance_failure_reason_mentions_peak(self):
+        """peak_avoidance failure reason should mention shifting usage from peak."""
+        tm = make_task_manager()
+        base = datetime(2026, 2, 19, 14, 0, 0)
+        data = [(base + timedelta(minutes=i), 600.0) for i in range(60)]
+        tm.data_collector.get_power_history = AsyncMock(return_value=data)
+        task = self._failed_task("peak_avoidance", target=400, peak_hour=14)
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        tm.storage.get_today_tasks = AsyncMock(return_value=[task])
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm.verify_tasks()
+        result = tm._last_verification_results.get(task["task_id"])
+        assert result is not None
+        assert "600" in result["reason"] or "peak" in result["reason"].lower()
+
+    @pytest.mark.asyncio
+    async def test_temperature_reduction_failure_reason_mentions_heating(self):
+        """temperature_reduction (heating mode) failure reason should mention heating."""
+        sensors = {"temperature": ["sensor.t"]}
+        tm = make_task_manager(sensors=sensors)
+        base = datetime(2026, 2, 19, 8, 0, 0)
+        data = [(base + timedelta(hours=i), 22.0) for i in range(10)]
+        tm.data_collector.get_temperature_history = AsyncMock(return_value=data)
+        # cooling_mode=False means heating season, target is below baseline (21°C)
+        task = self._failed_task("temperature_reduction", target=20.0, cooling_mode=False)
+        task["target_unit"] = "°C"
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        tm.storage.get_today_tasks = AsyncMock(return_value=[task])
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm.verify_tasks()
+        result = tm._last_verification_results.get(task["task_id"])
+        assert result is not None
+        assert "heat" in result["reason"].lower() or "22" in result["reason"]
+
+    @pytest.mark.asyncio
+    async def test_temperature_reduction_failure_reason_is_type_specific(self):
+        """temperature_reduction failure reason must use the temperature-specific
+        template (not the generic avg_above_target) and expose the actual value."""
+        sensors = {"temperature": ["sensor.t"]}
+        tm = make_task_manager(sensors=sensors)
+        base = datetime(2026, 2, 19, 8, 0, 0)
+        # avg 22°C but target is 20°C -> 22 > 20 -> fails
+        data = [(base + timedelta(hours=i), 22.0) for i in range(10)]
+        tm.data_collector.get_temperature_history = AsyncMock(return_value=data)
+        task = self._failed_task("temperature_reduction", target=20.0)
+        task["target_unit"] = "°C"
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        tm.storage.get_today_tasks = AsyncMock(return_value=[task])
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm.verify_tasks()
+        result = tm._last_verification_results.get(task["task_id"])
+        assert result is not None
+        # Must be the temperature-specific reason (mentions "heat" or the actual °C value)
+        assert "heat" in result["reason"].lower() or "22" in result["reason"]
+        # Must NOT be the generic fallback string
+        assert result["reason"] != "Avg: 22.0°C, target was 20.0°C"
+

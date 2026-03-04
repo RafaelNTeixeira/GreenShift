@@ -2794,3 +2794,119 @@ class TestLogRlEpisodeGamma:
             f"Active-phase noop must log gamma_used=0.0 (γ=0, no real state transition), "
             f"got {gamma!r}"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# max_next_Q restricted to available actions
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestQTableUpdateRestrictedToAvailableActions:
+    """_update_q_table_with_feedback() must restrict max_next_q to actions that are currently AVAILABLE in the action_mask."""
+
+    @pytest.mark.asyncio
+    async def test_q_update_ignores_masked_action_in_max_next_q(self):
+        """
+        Setup:
+          - action_mask: only 'noop' (0) and 'behavioural' (3) are available
+          - Q-table for next_state: anomaly (2) has Q=0.9, available actions have Q=0.3
+          - Expected: max_next_q = 0.3  (not 0.9)
+        """
+        from custom_components.green_shift.const import ACTIONS, GAMMA
+
+        agent = make_agent()
+        agent.state_vector = [0.0] * 18
+        agent.baseline_consumption = 1000.0
+
+        # Only noop and behavioural are available; anomaly is masked out
+        agent.action_mask = {
+            ACTIONS["noop"]:        True,
+            ACTIONS["specific"]:    False,
+            ACTIONS["anomaly"]:     False,   # masked: high Q should be ignored
+            ACTIONS["behavioural"]: True,
+            ACTIONS["normative"]:   False,
+        }
+
+        # Pre-populate Q-table for the next state (same state after discretization)
+        state_key = agent._discretize_state()
+        agent.q_table[state_key] = {
+            ACTIONS["noop"]:        0.3,
+            ACTIONS["specific"]:    0.4,
+            ACTIONS["anomaly"]:     0.9,   # high value but action is masked
+            ACTIONS["behavioural"]: 0.3,
+            ACTIONS["normative"]:   0.5,
+        }
+
+        initial_q = 0.4
+        agent.q_table[state_key][ACTIONS["behavioural"]] = initial_q
+        reward = 0.5
+        learning_rate = 0.1
+
+        await agent._update_q_table_with_feedback(
+            state_key=state_key,
+            action=ACTIONS["behavioural"],
+            reward=reward,
+            accepted=True,
+        )
+
+        # With ONLY available actions (noop=0.3, behavioural=initial_q=0.4 before update):
+        # max_next_q_correct = 0.4 (behavioural, highest among available before update)
+        # (noop=0.3 < behavioural=initial_q=0.4)
+        # new_q = initial_q + lr * (reward + GAMMA * max_next_q_correct - initial_q)
+        # = 0.4 + 0.1 * (0.5 + 0.95 * 0.4 - 0.4)
+        # = 0.4 + 0.1 * (0.5 + 0.38 - 0.4)
+        # = 0.4 + 0.1 * 0.48 = 0.4 + 0.048 = 0.448
+
+        # With checking all actions (including masked anomaly=0.9):
+        # max_next_q_buggy = 0.9 (anomaly)
+        # new_q = 0.4 + 0.1*(0.5 + 0.95*0.9 - 0.4) = 0.4 + 0.1*(0.5+0.855-0.4) = 0.4+0.0955 = 0.4955
+
+        final_q = agent.q_table[state_key][ACTIONS["behavioural"]]
+
+        # Verify the result is closer to the correct value (0.448) than the buggy value (0.4955)
+        correct_max_next_q = 0.4  # best available Q before update
+        expected_correct = initial_q + learning_rate * (reward + GAMMA * correct_max_next_q - initial_q)
+        buggy_max_next_q = 0.9  # anomaly Q (masked)
+        expected_buggy = initial_q + learning_rate * (reward + GAMMA * buggy_max_next_q - initial_q)
+
+        assert abs(final_q - expected_correct) < 0.001, (
+            f"Expected Q≈{expected_correct:.4f} (available actions only), "
+            f"got {final_q:.4f}. Buggy value would be {expected_buggy:.4f}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_rejection_uses_gamma_zero_regardless_of_mask(self):
+        """When accepted=False, gamma=0 so max_next_q is irrelevant; masked values
+        must not influence the rejected update either."""
+        from custom_components.green_shift.const import ACTIONS
+
+        agent = make_agent()
+        agent.state_vector = [0.0] * 18
+        agent.baseline_consumption = 1000.0
+        agent.action_mask = {
+            ACTIONS["noop"]:        True,
+            ACTIONS["specific"]:    False,
+            ACTIONS["anomaly"]:     False,
+            ACTIONS["behavioural"]: True,
+            ACTIONS["normative"]:   False,
+        }
+
+        state_key = agent._discretize_state()
+        agent.q_table[state_key] = {a: 0.9 for a in ACTIONS.values()}  # all high
+
+        initial_q = agent.q_table[state_key][ACTIONS["behavioural"]]
+        reward = -0.5
+        lr = agent.learning_rate  # default 0.1
+
+        await agent._update_q_table_with_feedback(
+            state_key=state_key,
+            action=ACTIONS["behavioural"],
+            reward=reward,
+            accepted=False,
+        )
+
+        # gamma=0 -> new_q = init_q + lr * (reward + 0 - init_q) = init_q + lr*(reward - init_q)
+        expected = initial_q + lr * (reward - initial_q)
+        final_q = agent.q_table[state_key][ACTIONS["behavioural"]]
+        assert abs(final_q - expected) < 0.001, (
+            f"Rejected update should use gamma=0; expected {expected:.4f}, got {final_q:.4f}"
+        )
