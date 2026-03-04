@@ -477,9 +477,6 @@ class DecisionAgent:
         _wh_filter = (self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE) or None
         self._cached_power_h1 = await self.data_collector.get_power_history(hours=1, working_hours_only=_wh_filter)
 
-        # Build state vector from DataCollector's current readings
-        await self._build_state_vector()
-
         # Calculate indices (anomaly, behaviour, fatigue)
         await self._update_anomaly_index()
         # Area anomalies are throttled to every 4 cycles (~60 s) to reduce DB I/O.
@@ -488,6 +485,9 @@ class DecisionAgent:
             await self._update_area_anomalies()
         self._update_behaviour_index()
         await self._update_fatigue_index()
+
+        # Build state vector from DataCollector's current readings
+        await self._build_state_vector()
 
         # Update action mask M_t
         await self._update_action_mask()
@@ -921,9 +921,9 @@ class DecisionAgent:
                 context_alignment += 0.3 * max(0, 1.0 - variability)
 
         elif action_name == "normative":
-            # Normative nudges work best when baseline exists and deviation is notable
+            # Normative nudges work best when baseline exists and current consumption exceeds it (indicating potential for improvement)
             if self.baseline_consumption > 0:
-                deviation = abs(current_power - self.baseline_consumption) / self.baseline_consumption
+                deviation = max(0, current_power - self.baseline_consumption) / self.baseline_consumption
                 context_alignment = min(deviation, 1.0)
             else:
                 context_alignment = 0.2  # Still somewhat useful
