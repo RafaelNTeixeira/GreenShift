@@ -456,13 +456,25 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
         )
 
         if savings_data["days_with_data"] == 0:
-            self._attr_native_value = 0
+            # No daily aggregate yet (first ~30 min of active phase): use live reading as a provisional estimate so the sensor never shows 0 once active phase starts.
+            live_power = self._collector.get_current_state().get("power", 0) or 0
+            baseline_w = self._agent.baseline_consumption
+            if baseline_w and baseline_w > 0:
+                saving_watts_live = baseline_w - live_power
+                # Estimate savings for a single 15-second interval (smallest meaningful window)
+                savings_kwh_live = max(0, saving_watts_live / 1000.0 * (15 / 3600))
+                savings_total_live = savings_kwh_live * price_per_kwh
+            else:
+                saving_watts_live = 0
+                savings_total_live = 0
+            self._attr_native_value = round(max(0, savings_total_live), 2)
             self._attr_extra_state_attributes = {
-                "avg_power_w": 0,
+                "avg_power_w": round(live_power, 2),
                 "baseline_consumption_w": round(self._agent.baseline_consumption, 2),
-                "saving_watts": 0,
+                "saving_watts": round(saving_watts_live, 2),
                 "currency": self.unit_of_measurement,
                 "days_tracked": 0,
+                "note": "Provisional estimate - daily aggregate not yet available",
             }
             return
 
@@ -514,8 +526,23 @@ class CO2SavedSensor(GreenShiftAISensor):
         )
 
         if savings_data["days_with_data"] == 0:
-            self._attr_native_value = 0
-            self._attr_extra_state_attributes = {"trees": 0, "flights": 0, "car_km": 0}
+            # No daily aggregate yet — use live reading for a provisional estimate.
+            live_power = self._collector.get_current_state().get("power", 0) or 0
+            baseline_w = self._agent.baseline_consumption
+            if baseline_w and baseline_w > 0:
+                saving_w_live = baseline_w - live_power
+                saving_kwh_live = max(0, saving_w_live / 1000.0 * (15 / 3600))
+                impact_live = get_environmental_impact(saving_kwh_live)
+            else:
+                impact_live = {"co2_kg": 0, "trees": 0, "flights": 0, "km": 0}
+            self._attr_native_value = impact_live["co2_kg"]
+            self._attr_extra_state_attributes = {
+                "trees": impact_live["trees"],
+                "flights": impact_live["flights"],
+                "car_km": impact_live["km"],
+                "total_savings_kwh": 0,
+                "note": "Provisional estimate - daily aggregate not yet available",
+            }
             return
 
         saving_kwh = savings_data["total_savings_kwh"]

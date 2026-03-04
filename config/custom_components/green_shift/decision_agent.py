@@ -733,11 +733,11 @@ class DecisionAgent:
             # Exploitation: best known action
             action_source = "exploit"
             if state_key not in self.q_table:
-                self.q_table[state_key] = {a: 0.5 for a in ACTIONS.values()}
+                self.q_table[state_key] = {a: 0.3 for a in ACTIONS.values()}
 
             # Tie-breaking: random choice among all actions sharing the highest Q-value
-            max_q = max(self.q_table[state_key].get(a, 0.5) for a in available_actions)
-            best_actions = [a for a in available_actions if self.q_table[state_key].get(a, 0.5) == max_q]
+            max_q = max(self.q_table[state_key].get(a, 0.3) for a in available_actions)
+            best_actions = [a for a in available_actions if self.q_table[state_key].get(a, 0.3) == max_q]
             action = random.choice(best_actions)
             _LOGGER.debug("Exploitation: selected action %d (Q=%.2f, tied=%d)", action, max_q, len(best_actions))
 
@@ -748,8 +748,8 @@ class DecisionAgent:
             # γ=0 for noop: no real state transition occurred, so using future-value estimation would compare Q(s,a) against Q(s,a) (identical state). 
             # This would inflate noop Q-values over time.
             if state_key not in self.q_table:
-                self.q_table[state_key] = {a: 0.5 for a in ACTIONS.values()}
-            current_q = self.q_table[state_key].get(action, 0.5)
+                self.q_table[state_key] = {a: 0.3 for a in ACTIONS.values()}
+            current_q = self.q_table[state_key].get(action, 0.3)
             self.q_table[state_key][action] = current_q + self.learning_rate * (noop_reward - current_q)
             self.episode_number += 1
             await self._log_rl_episode(state_key, action, noop_reward, action_source,

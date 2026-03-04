@@ -149,7 +149,7 @@ class TestGenerateDailyTasksPhaseGuard:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# generate_daily_tasks — working hours guard
+# generate_daily_tasks : working hours guard
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestGenerateDailyTasksWorkingHours:
@@ -185,7 +185,7 @@ class TestGenerateDailyTasksWorkingHours:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# generate_daily_tasks — idempotence
+# generate_daily_tasks : idempotence
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestGenerateDailyTasksIdempotence:
@@ -203,7 +203,7 @@ class TestGenerateDailyTasksIdempotence:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# generate_daily_tasks — sensor availability
+# generate_daily_tasks : sensor availability
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestGenerateDailyTasksSensorAvailability:
@@ -278,7 +278,7 @@ class TestDifficultyMultipliers:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Peak Avoidance Task — peak_hour storage and targeted verification
+# Peak Avoidance Task : peak_hour storage and targeted verification
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestPeakAvoidanceTask:
@@ -307,7 +307,7 @@ class TestPeakAvoidanceTask:
         tm = make_task_manager(sensors=sensors)
 
         # Hour 10 -> 900 W (would fail if checked against target 450 W)
-        # Hour 14 -> 400 W (below target 450 W) — this is the stored peak_hour
+        # Hour 14 -> 400 W (below target 450 W) : this is the stored peak_hour
         base_10 = real_dt(2026, 2, 19, 10, 0, 0)
         base_14 = real_dt(2026, 2, 19, 14, 0, 0)
         power_data = (
@@ -376,7 +376,7 @@ class TestPeakAvoidanceTask:
             # No 'peak_hour' key
             "verified": False,
         }
-        # hours_passed check will run first — give enough data so it doesn't exit early
+        # hours_passed check will run first : give enough data so it doesn't exit early
         from unittest.mock import patch
         from datetime import datetime as real_dt
         fake_now = real_dt(2026, 2, 19, 20, 0, 0)
@@ -416,7 +416,7 @@ class TestPeakAvoidanceTask:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Unoccupied Power Task — occupancy-aware generation and verification
+# Unoccupied Power Task : occupancy-aware generation and verification
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestUnoccupiedPowerTask:
@@ -586,7 +586,7 @@ class TestUnoccupiedPowerTask:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Power Reduction / Daylight Usage — working_hours_filter in office mode
+# Power Reduction / Daylight Usage : working_hours_filter in office mode
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestVerificationWorkingHoursFilter:
@@ -679,7 +679,152 @@ class TestVerificationWorkingHoursFilter:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Verification time anchor — created_at vs TASK_GENERATION_TIME
+# unoccupied_power: working_hours_filter in office mode
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUnoccupiedPowerWorkingHoursFilter:
+    """unoccupied_power generation and verification must pass working_hours_only=True
+    in office mode for consistency with the other task types."""
+
+    @pytest.mark.asyncio
+    async def test_generation_office_mode_passes_working_hours_filter(self):
+        """_generate_unoccupied_power_task must call get_area_history with
+        working_hours_only=True when running in office mode."""
+        office_cfg = {"environment_mode": "office"}
+        sensors = {"power": ["sensor.power_1"], "occupancy": ["binary_sensor.occ_1"]}
+        tm = make_task_manager(sensors=sensors, config=office_cfg)
+        tm.data_collector.get_all_areas = MagicMock(return_value=["Office"])
+
+        base_time = datetime(2026, 2, 19, 10, 0, 0)
+        power_data = [(base_time + timedelta(minutes=i), 300.0) for i in range(50)]
+        calls = []
+
+        async def _area_history(area, metric, **kwargs):
+            calls.append((metric, kwargs.get("working_hours_only")))
+            if metric == "power":
+                return power_data
+            return []
+
+        tm.data_collector.get_area_history = _area_history
+        await tm._generate_unoccupied_power_task()
+
+        wh_values = [wh for _, wh in calls]
+        assert all(wh is True for wh in wh_values), (
+            f"All get_area_history calls must use working_hours_only=True in office mode, got: {calls}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_generation_home_mode_no_working_hours_filter(self):
+        """_generate_unoccupied_power_task must call get_area_history without
+        working_hours_only filter in home mode."""
+        home_cfg = {"environment_mode": "home"}
+        sensors = {"power": ["sensor.power_1"], "occupancy": ["binary_sensor.occ_1"]}
+        tm = make_task_manager(sensors=sensors, config=home_cfg)
+        tm.data_collector.get_all_areas = MagicMock(return_value=["Living Room"])
+
+        base_time = datetime(2026, 2, 19, 10, 0, 0)
+        power_data = [(base_time + timedelta(minutes=i), 300.0) for i in range(50)]
+        calls = []
+
+        async def _area_history(area, metric, **kwargs):
+            calls.append((metric, kwargs.get("working_hours_only")))
+            if metric == "power":
+                return power_data
+            return []
+
+        tm.data_collector.get_area_history = _area_history
+        await tm._generate_unoccupied_power_task()
+
+        wh_values = [wh for _, wh in calls]
+        assert all(wh is None for wh in wh_values), (
+            f"All get_area_history calls must use working_hours_only=None in home mode, got: {calls}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_verification_office_mode_passes_working_hours_filter(self):
+        """_verify_single_task for unoccupied_power must call get_area_history with
+        working_hours_only=True in office mode."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        office_cfg = {"environment_mode": "office"}
+        sensors = {"power": ["sensor.power_1"], "occupancy": ["binary_sensor.occ_1"]}
+        tm = make_task_manager(sensors=sensors, config=office_cfg)
+
+        base_time = real_dt(2026, 2, 19, 10, 0, 0)
+        power_data = [(base_time + timedelta(minutes=i), 200.0) for i in range(50)]
+        calls = []
+
+        async def _area_history(area, metric, **kwargs):
+            calls.append((metric, kwargs.get("working_hours_only")))
+            if metric == "power":
+                return power_data
+            return []
+
+        tm.data_collector.get_area_history = _area_history
+
+        task = {
+            "task_id": "unocc_office",
+            "task_type": "unoccupied_power",
+            "target_value": 250,
+            "area_name": "Office",
+            "verified": False,
+        }
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm._verify_single_task(task)
+
+        wh_values = [wh for _, wh in calls]
+        assert all(wh is True for wh in wh_values), (
+            f"Verification get_area_history calls must use working_hours_only=True in office mode, got: {calls}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_verification_home_mode_no_working_hours_filter(self):
+        """_verify_single_task for unoccupied_power must call get_area_history without
+        working_hours_only filter in home mode."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        home_cfg = {"environment_mode": "home"}
+        sensors = {"power": ["sensor.power_1"], "occupancy": ["binary_sensor.occ_1"]}
+        tm = make_task_manager(sensors=sensors, config=home_cfg)
+
+        base_time = real_dt(2026, 2, 19, 10, 0, 0)
+        power_data = [(base_time + timedelta(minutes=i), 200.0) for i in range(50)]
+        calls = []
+
+        async def _area_history(area, metric, **kwargs):
+            calls.append((metric, kwargs.get("working_hours_only")))
+            if metric == "power":
+                return power_data
+            return []
+
+        tm.data_collector.get_area_history = _area_history
+
+        task = {
+            "task_id": "unocc_home",
+            "task_type": "unoccupied_power",
+            "target_value": 250,
+            "area_name": "Living Room",
+            "verified": False,
+        }
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            await tm._verify_single_task(task)
+
+        wh_values = [wh for _, wh in calls]
+        assert all(wh is None for wh in wh_values), (
+            f"Verification get_area_history calls must use working_hours_only=None in home mode, got: {calls}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Verification time anchor: created_at vs TASK_GENERATION_TIME
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestVerificationTimeAnchor:
@@ -792,7 +937,7 @@ class TestVerificationTimeAnchor:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Streak integration — via TaskManager
+# Streak integration : via TaskManager
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestTaskManagerStreak:

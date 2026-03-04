@@ -308,6 +308,10 @@ class TaskManager:
         stats = await self.storage.get_task_difficulty_stats('unoccupied_power')
         difficulty = await self._calculate_task_difficulty(stats)
 
+        # In office mode restrict history to working hours, consistent with other generators.
+        is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+        working_hours_filter = True if is_office_mode else None
+
         # Find the area with highest average power during unoccupied periods
         areas = self.data_collector.get_all_areas()
         if not areas or len(areas) == 0:
@@ -320,11 +324,11 @@ class TaskManager:
             if area == "No Area":
                 continue
 
-            power_history = await self.data_collector.get_area_history(area, 'power', days=7)
+            power_history = await self.data_collector.get_area_history(area, 'power', days=7, working_hours_only=working_hours_filter)
             if not power_history:
                 continue
 
-            occ_history = await self.data_collector.get_area_history(area, 'occupancy', days=7)
+            occ_history = await self.data_collector.get_area_history(area, 'occupancy', days=7, working_hours_only=working_hours_filter)
             if occ_history:
                 # Build occupancy lookup keyed by minute (both streams share the same snapshot interval)
                 occ_by_minute = {
@@ -613,14 +617,18 @@ class TaskManager:
                 if not area_name:
                     return False, None, False
 
+                # Apply working-hours filter in office mode for consistency with task generation.
+                is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
+                working_hours_filter = True if is_office_mode else None
+
                 area_power_history = await self.data_collector.get_area_history(
-                    area_name, 'power', hours=math.ceil(hours_passed)
+                    area_name, 'power', hours=math.ceil(hours_passed), working_hours_only=working_hours_filter
                 )
                 if not area_power_history:
                     return False, None, False
 
                 area_occ_history = await self.data_collector.get_area_history(
-                    area_name, 'occupancy', hours=math.ceil(hours_passed)
+                    area_name, 'occupancy', hours=math.ceil(hours_passed), working_hours_only=working_hours_filter
                 )
                 if area_occ_history:
                     occ_by_minute = {

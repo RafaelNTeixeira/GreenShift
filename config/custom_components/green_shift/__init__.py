@@ -239,7 +239,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Hourly aggregation for research data (keeps today's aggregate current)
     async def daily_aggregation_callback(now):
-        """Compute/update daily aggregates for research analysis every hour."""
+        """Compute/update daily aggregates for research analysis every 30 minutes."""
         _LOGGER.debug("Updating daily aggregates for research database...")
         today = datetime.now().strftime("%Y-%m-%d")  # Use local calendar date
 
@@ -251,7 +251,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.error("Failed to update daily aggregates: %s", exc)
 
     hass.data[DOMAIN]["daily_aggregation_listener"] = async_track_time_interval(
-        hass, daily_aggregation_callback, timedelta(hours=1)
+        hass, daily_aggregation_callback, timedelta(minutes=30)
     )
 
     # Automatic backup every BACKUP_INTERVAL_HOURS hours
@@ -670,7 +670,7 @@ async def async_setup_services(hass: HomeAssistant):
             time_bins = [s[4] for s in agent.q_table.keys()]
             occupancy_bins = [s[5] for s in agent.q_table.keys()]
 
-            _LOGGER.info(f"  Power bins used: {len(set(power_bins))} / 51 (range: {min(power_bins) if power_bins else 0}-{max(power_bins) if power_bins else 0})")
+            _LOGGER.info(f"  Power bins used: {len(set(power_bins))} / 5 (range: {min(power_bins) if power_bins else 0}-{max(power_bins) if power_bins else 0})")
             _LOGGER.info(f"  Anomaly levels used: {len(set(anomaly_bins))} / 4")
             _LOGGER.info(f"  Fatigue levels used: {len(set(fatigue_bins))} / 3")
             _LOGGER.info(f"  Area anomaly states used: {len(set(area_bins))} / 2")
