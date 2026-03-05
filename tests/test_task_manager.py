@@ -2059,3 +2059,110 @@ class TestVerifyPendingWithinFirstHour:
 
         assert pending is False, "After 1+ hours pending must be False"
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auto-feedback on task generation day
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAutoFeedbackOnGeneration:
+    """
+    When generate_daily_tasks() runs it looks at yesterday's tasks and
+    auto-submits difficulty feedback for any task that has none yet:
+      - verified=True, no feedback  -> auto 'just_right'
+      - verified=False, no feedback -> auto 'too_hard'
+    Tasks that already carry user_feedback are left untouched.
+    """
+
+    def _make_yesterday_task(self, task_id, verified, user_feedback=None):
+        return {
+            "task_id": task_id,
+            "task_type": "power_reduction",
+            "verified": verified,
+            "user_feedback": user_feedback,
+        }
+
+    @pytest.mark.asyncio
+    async def test_auto_submits_just_right_for_completed_task_without_feedback(self):
+        """A completed (verified) task with no user_feedback receives auto 'just_right'."""
+        tm = make_task_manager()
+        yesterday_task = self._make_yesterday_task("y1", verified=True, user_feedback=None)
+        tm.storage.get_tasks_for_date = AsyncMock(return_value=[yesterday_task])
+        tm.storage.save_task_feedback = AsyncMock(return_value=True)
+
+        await tm.generate_daily_tasks()
+
+        tm.storage.save_task_feedback.assert_called_once_with("y1", "just_right")
+        tm.storage.log_task_feedback.assert_called_once_with("y1", "just_right")
+
+    @pytest.mark.asyncio
+    async def test_auto_submits_too_hard_for_unfinished_task_without_feedback(self):
+        """An unfinished (not verified) task with no user_feedback receives auto 'too_hard'."""
+        tm = make_task_manager()
+        yesterday_task = self._make_yesterday_task("y2", verified=False, user_feedback=None)
+        tm.storage.get_tasks_for_date = AsyncMock(return_value=[yesterday_task])
+        tm.storage.save_task_feedback = AsyncMock(return_value=True)
+
+        await tm.generate_daily_tasks()
+
+        tm.storage.save_task_feedback.assert_called_once_with("y2", "too_hard")
+        tm.storage.log_task_feedback.assert_called_once_with("y2", "too_hard")
+
+    @pytest.mark.asyncio
+    async def test_does_not_overwrite_existing_user_feedback(self):
+        """Tasks that already have user_feedback must NOT receive an auto-feedback call."""
+        tm = make_task_manager()
+        yesterday_task = self._make_yesterday_task("y3", verified=False, user_feedback="too_easy")
+        tm.storage.get_tasks_for_date = AsyncMock(return_value=[yesterday_task])
+        tm.storage.save_task_feedback = AsyncMock(return_value=True)
+
+        await tm.generate_daily_tasks()
+
+        tm.storage.save_task_feedback.assert_not_called()
+        tm.storage.log_task_feedback.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_mixed_tasks_auto_feedback_applied_only_where_missing(self):
+        """Mixed scenario: only tasks without feedback receive auto-feedback."""
+        tm = make_task_manager()
+        tasks = [
+            self._make_yesterday_task("y1", verified=True,  user_feedback=None),        # -> just_right
+            self._make_yesterday_task("y2", verified=False, user_feedback=None),        # -> too_hard
+            self._make_yesterday_task("y3", verified=True,  user_feedback="too_easy"),  # -> skip
+            self._make_yesterday_task("y4", verified=False, user_feedback="too_hard"),  # -> skip
+        ]
+        tm.storage.get_tasks_for_date = AsyncMock(return_value=tasks)
+        tm.storage.save_task_feedback = AsyncMock(return_value=True)
+
+        await tm.generate_daily_tasks()
+
+        calls = [(c.args[0], c.args[1]) for c in tm.storage.save_task_feedback.call_args_list]
+        assert ("y1", "just_right") in calls
+        assert ("y2", "too_hard")   in calls
+        assert ("y3", "too_easy")   not in calls  # was already set
+        assert ("y4", "too_hard")   not in calls  # was already set
+        assert len(calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_no_auto_feedback_when_no_yesterday_tasks(self):
+        """No auto-feedback submitted when yesterday's task list is empty."""
+        tm = make_task_manager()
+        # Default: storage.get_tasks_for_date returns []
+        tm.storage.save_task_feedback = AsyncMock(return_value=True)
+
+        await tm.generate_daily_tasks()
+
+        tm.storage.save_task_feedback.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_auto_feedback_skipped_when_save_fails(self):
+        """When save_task_feedback returns False, log_task_feedback must NOT be called."""
+        tm = make_task_manager()
+        yesterday_task = self._make_yesterday_task("y5", verified=False, user_feedback=None)
+        tm.storage.get_tasks_for_date = AsyncMock(return_value=[yesterday_task])
+        tm.storage.save_task_feedback = AsyncMock(return_value=False)  # storage failure
+
+        await tm.generate_daily_tasks()
+
+        tm.storage.save_task_feedback.assert_called_once_with("y5", "too_hard")
+        tm.storage.log_task_feedback.assert_not_called()
+

@@ -195,14 +195,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Listener for changes to the energy saving target slider
     async def target_changed(event):
-        """Handle changes to the energy saving target slider."""
-        _LOGGER.debug("Energy saving target changed, triggering update")
+        """Handle changes to the energy saving target slider and persist the new value."""
+        new_state = event.data.get("new_state")
+        if new_state is not None:
+            try:
+                new_target = float(new_state.state)
+                updated_data = {**entry.data, "energy_saving_target": new_target}
+                hass.config_entries.async_update_entry(entry, data=updated_data)
+                _LOGGER.debug("Persisted energy_saving_target: %.1f%%", new_target)
+            except (ValueError, TypeError):
+                pass
         async_dispatcher_send(hass, GS_AI_UPDATE_SIGNAL)
 
     hass.data[DOMAIN]["target_listener"] = async_track_state_change_event(
         hass,
         ["input_number.energy_saving_target"],
         target_changed
+    )
+
+    # Listener for changes to the electricity price slider
+    async def electricity_price_changed(event):
+        """Persist the electricity price when the user changes the slider."""
+        new_state = event.data.get("new_state")
+        if new_state is not None:
+            try:
+                new_price = float(new_state.state)
+                updated_data = {**entry.data, "electricity_price": new_price}
+                hass.config_entries.async_update_entry(entry, data=updated_data)
+                _LOGGER.debug("Persisted electricity_price: %.4f", new_price)
+            except (ValueError, TypeError):
+                pass
+
+    hass.data[DOMAIN]["price_listener"] = async_track_state_change_event(
+        hass,
+        ["input_number.electricity_price"],
+        electricity_price_changed
     )
 
     # Daily task generation at TASK_GENERATION_TIME
@@ -411,7 +438,7 @@ async def async_setup_services(hass: HomeAssistant):
             _LOGGER.error("Could not find task_id for task index %d", task_index)
             return
 
-        success = await storage.save_task_feedback(task_id, feedback)
+        success = await storage.submit_task_feedback(task_id, feedback)
 
         if success:
             # Also log to research database
@@ -1058,6 +1085,7 @@ async def sync_helper_entities(hass: HomeAssistant, entry: ConfigEntry):
     """
     chosen_currency = entry.data.get("currency", "EUR")
     chosen_price = entry.data.get("electricity_price", 0.25)
+    chosen_target = entry.data.get("energy_saving_target", 15)
 
     # Update currency (input_select)
     try:
@@ -1082,6 +1110,18 @@ async def sync_helper_entities(hass: HomeAssistant, entry: ConfigEntry):
         _LOGGER.debug("Synced electricity_price helper to %.2f", chosen_price)
     except Exception as e:
         _LOGGER.warning("Could not sync input_number.electricity_price: %s", e)
+
+    # Update energy saving target (input_number)
+    try:
+        await hass.services.async_call(
+            "input_number",
+            "set_value",
+            {"entity_id": "input_number.energy_saving_target", "value": chosen_target},
+            blocking=False,
+        )
+        _LOGGER.debug("Synced energy_saving_target helper to %.1f%%", chosen_target)
+    except Exception as e:
+        _LOGGER.warning("Could not sync input_number.energy_saving_target: %s", e)
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """
@@ -1137,6 +1177,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Cancel target listener
         if "target_listener" in hass.data[DOMAIN]:
             hass.data[DOMAIN]["target_listener"]()
+
+        # Cancel electricity price listener
+        if "price_listener" in hass.data[DOMAIN]:
+            hass.data[DOMAIN]["price_listener"]()
 
         # Cancel task listeners
         if "task_generation_listener" in hass.data[DOMAIN]:

@@ -93,6 +93,20 @@ class TaskManager:
                 if not any_done:
                     self.decision_agent.update_task_streak(False, check_date)
 
+                # Auto-submit difficulty feedback for tasks that have none yet:
+                #   - Completed without feedback -> "just_right" (neutral; keeps difficulty stable)
+                #   - Not completed -> "too_hard" (signals the target was too ambitious)
+                for task in streak_tasks:
+                    if not task.get('user_feedback'):
+                        auto_feedback = 'just_right' if task['verified'] else 'too_hard'
+                        saved = await self.storage.save_task_feedback(task['task_id'], auto_feedback)
+                        if saved:
+                            await self.storage.log_task_feedback(task['task_id'], auto_feedback)
+                            _LOGGER.debug(
+                                "Auto-submitted difficulty feedback '%s' for task %s (verified=%s)",
+                                auto_feedback, task['task_id'], task['verified']
+                            )
+
         # Check if tasks already exist for today
         existing_tasks = await self.storage.get_today_tasks()
         if existing_tasks:
