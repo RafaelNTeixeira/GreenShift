@@ -2910,3 +2910,173 @@ class TestQTableUpdateRestrictedToAvailableActions:
         assert abs(final_q - expected) < 0.001, (
             f"Rejected update should use gamma=0; expected {expected:.4f}, got {final_q:.4f}"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Behavioural template_index must be ABSOLUTE (position in all_templates)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestBehaviouralTemplateAbsoluteIndex:
+    """When behavioural templates are filtered by context, the
+    template_index stored in the returned notification dict must be the absolute
+    position in all_templates - not the position inside the filtered subset.
+
+    The filtering is additive: generic templates (no context_filter) are always
+    included, and context-specific templates are added on top.
+    """
+
+    _AWAY_IDX_A = 6
+    _AWAY_IDX_B = 7
+
+    def _make_templates(self):
+        """Return 8 dummy behavioural templates; only indices 6 and 7 are
+        contextually gated behind away_mode."""
+        templates = []
+        for i in range(8):
+            if i in (self._AWAY_IDX_A, self._AWAY_IDX_B):
+                templates.append({
+                    "title": f"Away {i}",
+                    "message": "You are away - save energy!",
+                    "context_filter": "away_mode",
+                })
+            else:
+                templates.append({
+                    "title": f"Generic {i}",
+                    "message": "Consider reducing consumption.",
+                })
+        return templates
+
+    def _make_context(self, *, is_away_mode=False, is_daylight_waste=False, is_nighttime=False):
+        return {
+            "current_power": 500,
+            "baseline_power": 1000,
+            "target_power": 800,
+            "percent_above": 10,
+            "device_name": "Heater",
+            "device_power": 200,
+            "area_name": "Living room",
+            "metric": "temperature",
+            "time_of_day": "morning",
+            "is_away_mode": is_away_mode,
+            "is_daylight_waste": is_daylight_waste,
+            "is_nighttime": is_nighttime,
+        }
+
+    @pytest.mark.asyncio
+    async def test_away_mode_templates_are_reachable_and_carry_absolute_index(self):
+        """With is_away_mode=True the pool includes generic (0-5) + away_mode (6,7).
+        template_index 6 and 7 must appear in the output — confirming the fix
+        preserves absolute positions rather than re-indexing the filtered slice."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.target_percentage = 20.0
+
+        templates = self._make_templates()
+        context = self._make_context(is_away_mode=True)
+
+        with patch.object(
+            da_mod, "get_notification_templates",
+            return_value={"behavioural": templates}
+        ), patch.object(
+            da_mod, "get_language",
+            new=AsyncMock(return_value="en")
+        ):
+            agent._gather_notification_context = AsyncMock(return_value=context)
+            seen_indices = set()
+            for _ in range(200):
+                result = await agent._generate_notification("behavioural")
+                assert result is not None
+                seen_indices.add(result["template_index"])
+
+        # All 8 absolute positions must be reachable (generic 0-5 always + away 6,7)
+        assert seen_indices == set(range(8)), (
+            f"All 8 absolute template indices must be reachable; got {seen_indices}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_away_mode_template_index_never_exceeds_list_length(self):
+        """template_index must always be a valid index into all_templates (< 8)."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.target_percentage = 20.0
+
+        templates = self._make_templates()
+        context = self._make_context(is_away_mode=True)
+
+        with patch.object(
+            da_mod, "get_notification_templates",
+            return_value={"behavioural": templates}
+        ), patch.object(
+            da_mod, "get_language",
+            new=AsyncMock(return_value="en")
+        ):
+            agent._gather_notification_context = AsyncMock(return_value=context)
+            for _ in range(50):
+                result = await agent._generate_notification("behavioural")
+                assert result is not None
+                assert 0 <= result["template_index"] < len(templates), (
+                    f"template_index {result['template_index']} out of bounds for "
+                    f"list of length {len(templates)}"
+                )
+
+    @pytest.mark.asyncio
+    async def test_no_context_filter_uses_only_generic_range(self):
+        """When no contextual flags are set, only the 6 generic templates
+        (indices 0-5) should be reachable, confirming context-gated templates
+        are correctly excluded."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.target_percentage = 20.0
+
+        templates = self._make_templates()
+        context = self._make_context()  # all flags False
+
+        with patch.object(
+            da_mod, "get_notification_templates",
+            return_value={"behavioural": templates}
+        ), patch.object(
+            da_mod, "get_language",
+            new=AsyncMock(return_value="en")
+        ):
+            agent._gather_notification_context = AsyncMock(return_value=context)
+            seen_indices = set()
+            for _ in range(100):
+                result = await agent._generate_notification("behavioural")
+                assert result is not None
+                seen_indices.add(result["template_index"])
+
+        generic_range = set(range(self._AWAY_IDX_A))  # {0,1,2,3,4,5}
+        assert seen_indices.issubset(generic_range), (
+            f"Without context flags only generic indices 0-5 must appear; got {seen_indices}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_non_behavioural_action_uses_full_template_list(self):
+        """For non-behavioural action types (e.g. normative) the index must
+        still be drawn from the full list without any context filtering."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.target_percentage = 20.0
+
+        normative_templates = [
+            {"title": f"Norm {i}", "message": f"Norm msg {i}"} for i in range(4)
+        ]
+        context = self._make_context()
+
+        with patch.object(
+            da_mod, "get_notification_templates",
+            return_value={"normative": normative_templates}
+        ), patch.object(
+            da_mod, "get_language",
+            new=AsyncMock(return_value="en")
+        ):
+            agent._gather_notification_context = AsyncMock(return_value=context)
+            seen_indices = set()
+            for _ in range(80):
+                result = await agent._generate_notification("normative")
+                assert result is not None
+                seen_indices.add(result["template_index"])
+
+        assert seen_indices == {0, 1, 2, 3}, (
+            f"All 4 normative templates must be reachable; got {seen_indices}"
+        )

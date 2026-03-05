@@ -667,9 +667,6 @@ class DailyTasksSensor(GreenShiftAISensor):
     async def async_added_to_hass(self):
         """Register the listener when the entity is added to HA."""
         await super().async_added_to_hass()
-        self.async_on_remove(
-            async_dispatcher_connect(self.hass, GS_AI_UPDATE_SIGNAL,self._update_callback)
-        )
         # Initial load
         await self._async_update_state()
 

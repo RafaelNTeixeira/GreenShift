@@ -351,9 +351,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except Exception as e:
             _LOGGER.warning("Could not parse last sensor cleanup date: %s", e)
     else:
-        # First time running, do cleanup
-        _LOGGER.info("No previous sensor data cleanup found, running initial cleanup...")
-        await sensor_data_cleanup_callback(None)
+        # storage.setup() already called _cleanup_old_data() during initialization;
+        # just record the timestamp so future scheduled runs know when cleanup last ran.
+        _LOGGER.info("No previous sensor data cleanup found, recording initial timestamp...")
+        _init_state = await storage.load_state()
+        _init_state["last_sensor_cleanup"] = datetime.now().isoformat()
+        await storage.save_state(_init_state)
 
     hass.data[DOMAIN]["sensor_cleanup_listener"] = async_track_time_change(
         hass, sensor_data_cleanup_callback, hour=3, minute=30, second=0

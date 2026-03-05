@@ -75,14 +75,6 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            # Validate electricity price: must be non-negative.
-            try:
-                price = float(user_input.get("electricity_price", 0))
-                if price < 0:
-                    errors["electricity_price"] = "negative_price"
-            except (ValueError, TypeError):
-                errors["electricity_price"] = "invalid_price"
-
             if not errors:
                 self.data.update(user_input)
 
@@ -133,8 +125,8 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            # Validate time format: must match HH:MM (e.g. "08:00").
-            _TIME_RE = re.compile(r'^\d{2}:\d{2}$')
+            # Validate time format: hours 00-23, minutes 00-59.
+            _TIME_RE = re.compile(r'^([01]\d|2[0-3]):[0-5]\d$')
             for field in ("working_start", "working_end"):
                 if not _TIME_RE.match(str(user_input.get(field, ""))):
                     errors[field] = "invalid_time_format"

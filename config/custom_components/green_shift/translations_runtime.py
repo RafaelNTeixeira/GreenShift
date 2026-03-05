@@ -86,11 +86,11 @@ NOTIFICATION_TEMPLATES = {
         "normative": [
             {
                 "title": "Weekly Goal Update",
-                "message": "🎯 Your consumption this week is {percent_above}% above target. You're close to achieving your {baseline_power}W goal - keep it up!"
+                "message": "🎯 Your consumption this week is {percent_above}% above target. You're close to achieving your {target_power}W goal - keep it up!"
             },
             {
                 "title": "Progress Check-In",
-                "message": "🏆 You've saved energy before - your best week showed {baseline_power}W average. Current week: {current_power}W. You can do it again!"
+                "message": "🏆 You've saved energy before - your best week showed {target_power}W average. Current week: {current_power}W. You can do it again!"
             },
             {
                 "title": "Benchmark Update",
@@ -182,11 +182,11 @@ NOTIFICATION_TEMPLATES = {
         "normative": [
             {
                 "title": "Atualização de Meta Semanal",
-                "message": "🎯 O seu consumo esta semana está {percent_above}% acima da meta. Está perto de atingir o seu objetivo de {baseline_power}W - continue assim!"
+                "message": "🎯 O seu consumo esta semana está {percent_above}% acima da meta. Está perto de atingir o seu objetivo de {target_power}W - continue assim!"
             },
             {
                 "title": "Verificação de Progresso",
-                "message": "🏆 Já poupou energia antes - a sua melhor semana mostrou uma média de {baseline_power}W. Semana atual: {current_power}W. Consegue fazê-lo novamente!"
+                "message": "🏆 Já poupou energia antes - a sua melhor semana mostrou uma média de {target_power}W. Semana atual: {current_power}W. Consegue fazê-lo novamente!"
             },
             {
                 "title": "Atualização de Benchmark",

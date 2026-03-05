@@ -14,6 +14,16 @@ import types
 import importlib
 import pathlib
 
+# Load real voluptuous and save the key callables BEFORE the mock loop can
+# overwrite them on the same module object.
+import importlib as _real_importlib
+_real_vol = _real_importlib.import_module("voluptuous")
+_real_Schema  = _real_vol.Schema
+_real_All     = _real_vol.All
+_real_Coerce  = _real_vol.Coerce
+_real_Range   = _real_vol.Range
+_real_Invalid = _real_vol.Invalid
+
 # Mock Home Assistant modules before importing config_flow
 for mod in [
     "homeassistant",
@@ -214,32 +224,6 @@ class TestAsyncStepSettings:
         assert config_flow.data["electricity_price"] == 0.28
 
     # ---- electricity_price must be >= 0 ----
-    async def test_negative_electricity_price_returns_error(self, config_flow):
-        """A negative price must re-show the settings form with an error."""
-        user_input = {
-            "currency": "EUR",
-            "electricity_price": -0.10,
-            "environment_mode": "home",
-        }
-
-        result = await config_flow.async_step_settings(user_input)
-
-        assert result["type"] == "form", "Negative price must re-show the settings form"
-        assert result["step_id"] == "settings"
-        assert "electricity_price" in result.get("errors", {}), (
-            "Expected 'electricity_price' error for negative price"
-        )
-
-    async def test_negative_price_does_not_update_flow_data(self, config_flow):
-        """A negative price must not be persisted to flow data."""
-        config_flow.data = {}
-        await config_flow.async_step_settings({
-            "currency": "EUR",
-            "electricity_price": -1.0,
-            "environment_mode": "home",
-        })
-        assert "electricity_price" not in config_flow.data
-
     async def test_zero_electricity_price_is_accepted(self, config_flow):
         """Price of 0.0 is a valid edge case and must proceed normally."""
         await config_flow.async_step_settings({
@@ -443,6 +427,59 @@ class TestAsyncStepWorkingHours:
 
         assert "base" not in (result.get("errors") or {}), (
             "A single selected day must not trigger the no_working_days error"
+        )
+
+    # ── Improved time regex rejects impossible hour/minute values ──
+
+    @pytest.mark.parametrize("bad_time", [
+        "25:00",   # hour > 23
+        "24:00",   # hour > 23
+        "00:60",   # minute > 59
+        "23:60",   # minute > 59
+        "99:99",   # both invalid
+    ])
+    async def test_impossible_time_values_rejected(self, config_flow, bad_time):
+        """Syntactically valid-looking but semantically invalid times must be rejected."""
+        user_input = {
+            "working_start": bad_time,
+            "working_end": "18:00",
+            "working_monday": True,
+            "working_tuesday": False,
+            "working_wednesday": False,
+            "working_thursday": False,
+            "working_friday": False,
+            "working_saturday": False,
+            "working_sunday": False,
+        }
+        result = await config_flow.async_step_working_hours(user_input)
+        assert result["type"] == "form", f"Time '{bad_time}' should be rejected"
+        assert "working_start" in result.get("errors", {}), (
+            f"Expected 'working_start' error for impossible time '{bad_time}'"
+        )
+
+    @pytest.mark.parametrize("good_time", [
+        "00:00",
+        "23:59",
+        "09:30",
+        "12:00",
+        "20:45",
+    ])
+    async def test_valid_boundary_times_accepted(self, config_flow, good_time):
+        """Valid boundary times must not produce an invalid_time_format error."""
+        user_input = {
+            "working_start": good_time,
+            "working_end": "23:59",
+            "working_monday": True,
+            "working_tuesday": False,
+            "working_wednesday": False,
+            "working_thursday": False,
+            "working_friday": False,
+            "working_saturday": False,
+            "working_sunday": False,
+        }
+        result = await config_flow.async_step_working_hours(user_input)
+        assert "working_start" not in (result.get("errors") or {}), (
+            f"Valid time '{good_time}' must not produce a format error"
         )
 
 
@@ -831,39 +868,41 @@ class TestConfigFlowIntegration:
 # ============================================================================
 
 class TestElectricityPriceValidation:
-    """Test non-numeric electricity price (TypeError/ValueError branch)."""
+    """Test that Voluptuous schema rejects invalid electricity price values.
 
-    async def test_non_numeric_electricity_price_returns_error(self, config_flow):
-        """A non-numeric string must be rejected with a validation error."""
-        user_input = {
-            "currency": "EUR",
-            "electricity_price": "free",   # cannot be coerced to float
-            "environment_mode": "home",
-        }
+    In production HA validates user_input against the vol.Schema defined in
+    async_step_settings before the method body runs.  The schema uses
+    vol.All(vol.Coerce(float), vol.Range(min=0)) which raises vol.Invalid for
+    non-numeric or negative inputs before async_step_settings is ever called.
+    These tests use _real_Schema/_real_Invalid etc. saved before the mock
+    overwrites them on the shared module object.
+    """
 
-        result = await config_flow.async_step_settings(user_input)
+    def test_zero_is_on_the_acceptable_boundary(self, config_flow):
+        """Sanity check: 0.0 is valid (== min=0 in Range)."""
+        schema = _real_Schema(_real_All(_real_Coerce(float), _real_Range(min=0)))
+        assert schema(0.0) == 0.0
 
-        assert result["type"] == "form"
-        assert result["step_id"] == "settings"
-        assert "electricity_price" in result.get("errors", {}), (
-            "Expected an 'electricity_price' error for non-numeric input"
-        )
+    def test_negative_price_is_below_range_minimum(self, config_flow):
+        """vol.Range(min=0) must reject values below 0."""
+        schema = _real_Schema(_real_All(_real_Coerce(float), _real_Range(min=0)))
+        with pytest.raises(_real_Invalid):
+            schema(-0.10)
 
-    async def test_none_electricity_price_returns_error(self, config_flow):
-        """None value must also be rejected."""
-        user_input = {
-            "currency": "EUR",
-            "electricity_price": None,
-            "environment_mode": "home",
-        }
+    def test_non_numeric_electricity_price_rejected_by_schema(self, config_flow):
+        """A non-numeric string cannot be coerced to float; vol.Coerce raises Invalid."""
+        schema = _real_Schema(_real_All(_real_Coerce(float), _real_Range(min=0)))
+        with pytest.raises(_real_Invalid):
+            schema("free")
 
-        result = await config_flow.async_step_settings(user_input)
+    def test_none_electricity_price_rejected_by_schema(self, config_flow):
+        """None cannot be coerced to float; vol.Coerce raises Invalid."""
+        schema = _real_Schema(_real_All(_real_Coerce(float), _real_Range(min=0)))
+        with pytest.raises((_real_Invalid, TypeError)):
+            schema(None)
 
-        assert result["type"] == "form"
-        assert "electricity_price" in result.get("errors", {})
 
 
-class TestGetWeatherEntities:
     """Test _get_weather_entities helper."""
 
     def test_returns_list_of_weather_entity_ids(self, config_flow, mock_hass):

@@ -412,6 +412,72 @@ class TestEdgeCases:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Normative templates must not use {baseline_power} as goal
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestNormativeTemplateVariables:
+    """Normative templates must use {target_power} for the reduction
+    goal, not {baseline_power} which is the high historical average."""
+
+    def _normative_messages(self, lang: str) -> list:
+        templates = get_notification_templates(lang)
+        return [t["message"] for t in templates.get("normative", [])]
+
+    def test_en_normative_does_not_use_baseline_power_as_goal(self):
+        """EN normative messages must not reference {baseline_power} as a W goal."""
+        for msg in self._normative_messages("en"):
+            # "{baseline_power}W goal" is the wrong pattern that was fixed
+            assert "{baseline_power}W goal" not in msg, (
+                f"EN normative message still uses {{baseline_power}} as a goal: {msg!r}"
+            )
+
+    def test_pt_normative_does_not_use_baseline_power_as_goal(self):
+        """PT normative messages must not reference {baseline_power} as a W goal."""
+        for msg in self._normative_messages("pt"):
+            assert "{baseline_power}W" not in msg, (
+                f"PT normative message still uses {{baseline_power}} as a goal/reference: {msg!r}"
+            )
+
+    def test_en_normative_uses_target_power_in_goal_messages(self):
+        """EN normative messages that mention a reduction goal must use {target_power}."""
+        goal_messages = [
+            m for m in self._normative_messages("en") if "goal" in m.lower()
+        ]
+        assert goal_messages, "Expected at least one EN normative message containing 'goal'"
+        for msg in goal_messages:
+            assert "{target_power}" in msg, (
+                f"Goal message must use {{target_power}}, found: {msg!r}"
+            )
+
+    def test_pt_normative_uses_target_power_in_goal_messages(self):
+        """PT normative messages that mention an 'objetivo' must use {target_power}."""
+        goal_messages = [
+            m for m in self._normative_messages("pt") if "objetivo" in m.lower()
+        ]
+        assert goal_messages, "Expected at least one PT normative message containing 'objetivo'"
+        for msg in goal_messages:
+            assert "{target_power}" in msg, (
+                f"Goal message must use {{target_power}}, found: {msg!r}"
+            )
+
+    def test_en_and_pt_normative_have_same_count(self):
+        """EN and PT should have the same number of normative templates."""
+        en_count = len(get_notification_templates("en").get("normative", []))
+        pt_count = len(get_notification_templates("pt").get("normative", []))
+        assert en_count == pt_count, (
+            f"Template count mismatch: EN={en_count}, PT={pt_count}"
+        )
+
+    def test_en_and_pt_specific_have_same_count(self):
+        """EN and PT should have the same number of specific templates."""
+        en_count = len(get_notification_templates("en").get("specific", []))
+        pt_count = len(get_notification_templates("pt").get("specific", []))
+        assert en_count == pt_count, (
+            f"Specific template count mismatch: EN={en_count}, PT={pt_count}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # get_language: exception path
 # ─────────────────────────────────────────────────────────────────────────────
 

@@ -1986,3 +1986,76 @@ class TestVerifySingleTaskTemperatureIncrease:
 
         assert verified is False
         assert actual is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# hours_passed < 1 must return pending=True
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestVerifyPendingWithinFirstHour:
+    """When a task was generated < 1 hour ago the 3rd return value must
+    be True (pending) so the UI shows 'Evaluation deferred', not 'Insufficient
+    data'."""
+
+    @pytest.mark.asyncio
+    async def test_within_first_hour_returns_pending_true(self):
+        """created_at 10 minutes ago -> hours_passed < 1 -> pending=True."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        # Task was generated 10 minutes ago
+        created_at = real_dt(2026, 2, 19, 11, 50, 0)
+        fake_now   = real_dt(2026, 2, 19, 12,  0, 0)  # only 10 minutes later
+
+        task = {
+            "task_id": "early_verify",
+            "task_type": "power_reduction",
+            "target_value": 400,
+            "area_name": None,
+            "created_at": created_at.isoformat(),
+            "verified": False,
+        }
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert verified is False, "Task should not be verified yet"
+        assert actual is None,    "No actual value expected before first hour"
+        assert pending is True,   "pending must be True within the first hour (was False before the fix)"
+
+    @pytest.mark.asyncio
+    async def test_after_first_hour_pending_is_false(self):
+        """After 1 full hour, pending must be False (evaluation proceeds normally)."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        base = real_dt(2026, 2, 19, 8, 0, 0)
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (base + timedelta(minutes=i), 600.0) for i in range(60)
+        ])
+
+        created_at = real_dt(2026, 2, 19, 6,  0, 0)
+        fake_now   = real_dt(2026, 2, 19, 20, 0, 0)  # 14 hours later
+
+        task = {
+            "task_id": "normal_verify",
+            "task_type": "power_reduction",
+            "target_value": 400,
+            "area_name": None,
+            "created_at": created_at.isoformat(),
+            "verified": False,
+        }
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert pending is False, "After 1+ hours pending must be False"
+

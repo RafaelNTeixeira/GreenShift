@@ -661,7 +661,7 @@ class TaskManager:
 
         if hours_passed < 1:
             # Too early to verify
-            return False, None, False
+            return False, None, True
 
         try:
             if task_type == 'temperature_reduction':

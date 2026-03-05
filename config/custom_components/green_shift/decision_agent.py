@@ -114,7 +114,7 @@ class DecisionAgent:
         self.active_since = None # datetime when the system transitioned to PHASE_ACTIVE
 
         # Gamification streaks
-        self.task_streak = 0                # consecutive days with all daily tasks verified
+        self.task_streak = 0                # consecutive days with at least one daily task verified
         self.task_streak_last_date = None   # date (date obj) of last successful task-streak credit
         self.weekly_streak = 0              # consecutive weeks with weekly challenge achieved
         self.weekly_streak_last_week = None # week_key (ISO str) of last successful weekly-streak credit
@@ -1137,40 +1137,47 @@ class DecisionAgent:
 
         # Filter templates based on context (for behavioral notifications)
         if action_type == "behavioural":
-            # Separate templates by context filter
-            filtered_templates = []
-            
-            for template in all_templates:
+            # Build a list of (absolute_index, template) pairs so the stored
+            # template_index always refers to the position in all_templates,
+            # which is consistent across languages and filter states.
+            filtered_indexed = []
+
+            for i, template in enumerate(all_templates):
                 context_filter = template.get("context_filter")
-                
-                # If template has no filter, it's always available
+
+                # Templates without a filter are always available
                 if not context_filter:
-                    filtered_templates.append(template)
-                # If filter matches current context, include it
+                    filtered_indexed.append((i, template))
                 elif context_filter == "daylight_waste" and context.get("is_daylight_waste"):
-                    filtered_templates.append(template)
+                    filtered_indexed.append((i, template))
                 elif context_filter == "away_mode" and context.get("is_away_mode"):
-                    filtered_templates.append(template)
+                    filtered_indexed.append((i, template))
                 elif context_filter == "nighttime" and context.get("is_nighttime"):
-                    filtered_templates.append(template)
-            
-            # Use filtered templates if any match, otherwise fall back to generic ones
-            if filtered_templates:
-                templates = filtered_templates
-                _LOGGER.debug("Filtered %d behavioral templates based on context", len(templates))
-            else:
-                # Use only generic templates (no context_filter)
-                templates = [t for t in all_templates if not t.get("context_filter")]
+                    filtered_indexed.append((i, template))
+
+            # Fall back to generic (no context_filter) templates when none matched
+            if not filtered_indexed:
+                filtered_indexed = [
+                    (i, t) for i, t in enumerate(all_templates)
+                    if not t.get("context_filter")
+                ]
+
+            if not filtered_indexed:
+                _LOGGER.warning("No suitable templates found for action type: %s", action_type)
+                return None
+
+            _LOGGER.debug("Filtered %d behavioral templates based on context", len(filtered_indexed))
+            picked_pos = random.randint(0, len(filtered_indexed) - 1)
+            template_index, template = filtered_indexed[picked_pos]
         else:
             templates = all_templates
 
-        if not templates:
-            _LOGGER.warning("No suitable templates found for action type: %s", action_type)
-            return None
+            if not templates:
+                _LOGGER.warning("No suitable templates found for action type: %s", action_type)
+                return None
 
-        # Select template randomly from filtered list
-        template_index = random.randint(0, len(templates) - 1)
-        template = templates[template_index]
+            template_index = random.randint(0, len(templates) - 1)
+            template = templates[template_index]
 
         # Format message
         try:
@@ -1202,6 +1209,7 @@ class DecisionAgent:
         current_state = self.data_collector.get_current_state()
         context["current_power"] = int(current_state.get("power", 0))
         context["baseline_power"] = int(self.baseline_consumption)
+        context["target_power"] = int(self.baseline_consumption * (1 - self.target_percentage / 100))
 
         # Calculate percentage difference
         if self.baseline_consumption > 0:
