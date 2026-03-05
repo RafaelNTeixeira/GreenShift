@@ -1253,8 +1253,8 @@ class DecisionAgent:
 
         # Context filters for intelligent template selection
         # Detect "daylight waste" scenario: bright daylight + occupied + high power
-        illuminance = current_state.get("illuminance", 0)
-        occupancy = current_state.get("occupancy", False)
+        illuminance = current_state.get("illuminance", 0) if current_state.get("illuminance") is not None else 0
+        occupancy = current_state.get("occupancy", False) if current_state.get("occupancy") is not None else False
         is_daylight_hours = 8 <= now.hour < 17
         power_above_baseline = current_state.get("power", 0) > self.baseline_consumption * 1.1 if self.baseline_consumption > 0 else False
         
