@@ -438,7 +438,7 @@ async def async_setup_services(hass: HomeAssistant):
             _LOGGER.error("Could not find task_id for task index %d", task_index)
             return
 
-        success = await storage.submit_task_feedback(task_id, feedback)
+        success = await storage.save_task_feedback(task_id, feedback)
 
         if success:
             # Also log to research database
