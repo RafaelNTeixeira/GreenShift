@@ -636,17 +636,12 @@ class DecisionAgent:
         if len(_individual_power) > 0:
             mask[ACTIONS["specific"]] = True
 
-        # anomaly: requires sufficient history and detected anomalies
-        # Reuse the per-cycle cache when available; avoids a duplicate DB read.
-        _wh_filter = (self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE) or None
-        power_history = (
-            self._cached_power_h1
-            if self._cached_power_h1 is not None
-            else await self.data_collector.get_power_history(hours=1, working_hours_only=_wh_filter)
-        )
+        # anomaly: requires sufficient history and detected anomalies.
+        _anomaly_min_readings = int((3600 / UPDATE_INTERVAL_SECONDS) * 0.8)
+        _power_data = self._cached_power_h1 if self._cached_power_h1 is not None else []
         has_area_anomalies = any(any(v > 0.3 for v in area_anomalies.values())
                                 for area_anomalies in self.area_anomalies.values())
-        if len(power_history) >= 100 and (self.anomaly_index > 0.3 or has_area_anomalies):
+        if len(_power_data) >= _anomaly_min_readings and (self.anomaly_index > 0.3 or has_area_anomalies):
             mask[ACTIONS["anomaly"]] = True
 
         # behavioural: always available
@@ -2242,9 +2237,9 @@ class DecisionAgent:
         else:
             progress = 0
 
-        # "on_track"  = currently consuming below target (winning the challenge mid-week)
+        # "on_track"  = currently consuming at or below target (winning the challenge mid-week)
         # "off_track" = currently consuming above target
-        status = "on_track" if progress < 100 else "off_track"
+        status = "on_track" if progress <= 100 else "off_track"
 
         result = {
             "status": status,
