@@ -37,7 +37,8 @@ BackupManager = backup_mod.BackupManager
 def _make_backup_dir(bm: BackupManager, btype: str, name: str) -> Path:
     """Create a fake backup subdirectory."""
     d = {"auto": bm.auto_dir, "startup": bm.startup_dir,
-         "shutdown": bm.shutdown_dir, "manual": bm.manual_dir}[btype] / name
+         "shutdown": bm.shutdown_dir, "manual": bm.manual_dir,
+         "pre_restore": bm.pre_restore_dir}[btype] / name
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -153,6 +154,13 @@ class TestCleanupOldBackups:
         assert kept == sorted(names, reverse=True)[:2]
 
     @pytest.mark.asyncio
+    async def test_removes_excess_pre_restore_backups(self, bm):
+        for i in range(5):
+            _make_backup_dir(bm, "pre_restore", f"2026021{i}_090000")
+        await bm.cleanup_old_backups(keep_auto=10, keep_startup=10, keep_shutdown=10, keep_pre_restore=2)
+        assert len(list(bm.pre_restore_dir.iterdir())) == 2
+
+    @pytest.mark.asyncio
     async def test_manual_backups_never_deleted(self, bm):
         for i in range(10):
             _make_backup_dir(bm, "manual", f"2026021{i}_120000")
@@ -193,6 +201,22 @@ class TestListBackups:
         types_found = {b.split("/")[0] for b in backups}
         assert types_found == {"auto", "startup", "shutdown", "manual"}
 
+    def test_sorted_by_timestamp_across_types(self, bm):
+        """Cross-type ordering must use only the timestamp, not the type prefix.
+
+        Without the fix, alphabetical ordering puts 'startup/' before 'manual/' before 'auto/',
+        so the oldest backup (startup/10:00) would appear first instead of the newest (auto/12:00).
+        """
+        # startup > manual > auto alphabetically, but timestamps must dominate
+        _make_backup_dir(bm, "auto",    "20260218_120000")  # newest
+        _make_backup_dir(bm, "manual",  "20260218_110000")  # middle
+        _make_backup_dir(bm, "startup", "20260218_100000")  # oldest
+        backups = bm.list_backups()
+        timestamps = [b.split("/")[1] for b in backups]
+        assert timestamps == sorted(timestamps, reverse=True)
+        assert backups[0] == "auto/20260218_120000"    # newest first
+        assert backups[-1] == "startup/20260218_100000"  # oldest last
+
     def test_sorted_newest_first(self, bm):
         for ts in ["20260215_100000", "20260218_100000", "20260217_100000"]:
             _make_backup_dir(bm, "auto", ts)
@@ -232,6 +256,30 @@ class TestRestoreFromBackup:
 
         result = await bm.restore_from_backup("20260218_090000")
         assert result is True
+
+    @pytest.mark.asyncio
+    async def test_creates_pre_restore_backup(self, bm, data_dir):
+        """A pre_restore safety backup must be created before any file is overwritten."""
+        backup_path = bm.auto_dir / "20260218_100000"
+        backup_path.mkdir()
+        (backup_path / "state.json").write_text('{"phase": "active"}')
+
+        assert len(list(bm.pre_restore_dir.iterdir())) == 0
+        await bm.restore_from_backup("auto/20260218_100000")
+        assert len(list(bm.pre_restore_dir.iterdir())) == 1
+
+    @pytest.mark.asyncio
+    async def test_returns_false_for_corrupt_sqlite(self, bm, data_dir):
+        """Restore must fail if a backup SQLite file fails integrity_check."""
+        backup_path = bm.auto_dir / "20260218_100000"
+        backup_path.mkdir()
+        # Write bytes that are not a valid SQLite database
+        (backup_path / "sensor_data.db").write_bytes(b"this is not a valid sqlite database file")
+
+        result = await bm.restore_from_backup("auto/20260218_100000")
+        assert result is False
+        # Live DB must not have been overwritten
+        assert not (data_dir / "sensor_data.db").exists()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

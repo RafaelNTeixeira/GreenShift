@@ -424,6 +424,7 @@ All data is stored in: `config/green_shift_data/`
   - `startup/` - On integration startup, keeps last 3
   - `shutdown/` - On integration shutdown, keeps last 3
   - `manual/` - User-created backups (never auto-deleted)
+  - `pre_restore/` - On restoring database (saves current database state before changing it)
 
 ---
 

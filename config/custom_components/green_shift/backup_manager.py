@@ -34,11 +34,13 @@ class BackupManager:
         self.startup_dir = self.backup_dir / "startup"
         self.shutdown_dir = self.backup_dir / "shutdown"
         self.manual_dir = self.backup_dir / "manual"
+        self.pre_restore_dir = self.backup_dir / "pre_restore"
 
         self.auto_dir.mkdir(exist_ok=True)
         self.startup_dir.mkdir(exist_ok=True)
         self.shutdown_dir.mkdir(exist_ok=True)
         self.manual_dir.mkdir(exist_ok=True)
+        self.pre_restore_dir.mkdir(exist_ok=True)
 
         self.db_path = self.data_dir / "sensor_data.db"
         self.research_db_path = self.data_dir / "research_data.db"
@@ -50,7 +52,7 @@ class BackupManager:
         """Create a timestamped backup of all data files.
 
         Args:
-            backup_type: Type of backup ('auto', 'manual', 'startup', 'shutdown')
+            backup_type: Type of backup ('auto', 'manual', 'startup', 'shutdown', 'pre_restore')
 
         Returns:
             True if backup successful, False otherwise
@@ -63,7 +65,8 @@ class BackupManager:
                 "auto": self.auto_dir,
                 "startup": self.startup_dir,
                 "shutdown": self.shutdown_dir,
-                "manual": self.manual_dir
+                "manual": self.manual_dir,
+                "pre_restore": self.pre_restore_dir,
             }
 
             parent_dir = type_dir_map.get(backup_type, self.backup_dir)
@@ -135,7 +138,7 @@ class BackupManager:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _do_backup)
 
-    async def cleanup_old_backups(self, keep_auto: int = 10, keep_startup: int = 3, keep_shutdown: int = 3) -> None:
+    async def cleanup_old_backups(self, keep_auto: int = 10, keep_startup: int = 3, keep_shutdown: int = 3, keep_pre_restore: int = 3) -> None:
         """Remove old backups to save space.
 
         Note: Manual backups are never auto-deleted.
@@ -144,6 +147,7 @@ class BackupManager:
             keep_auto: Number of automatic backups to keep
             keep_startup: Number of startup backups to keep
             keep_shutdown: Number of shutdown backups to keep
+            keep_pre_restore: Number of pre-restore safety backups to keep
         """
         try:
             def _cleanup():
@@ -170,9 +174,16 @@ class BackupManager:
                     total_removed += 1
                     _LOGGER.debug("Removed old shutdown backup: %s", backup.name)
 
+                # Clean pre-restore safety backups
+                pre_restore_backups = sorted([d for d in self.pre_restore_dir.iterdir() if d.is_dir()], reverse=True)
+                for backup in pre_restore_backups[keep_pre_restore:]:
+                    shutil.rmtree(backup)
+                    total_removed += 1
+                    _LOGGER.debug("Removed old pre-restore backup: %s", backup.name)
+
                 if total_removed > 0:
-                    _LOGGER.info("Cleanup: removed %d old backups (keeping auto:%d, startup:%d, shutdown:%d)",
-                                total_removed, keep_auto, keep_startup, keep_shutdown)
+                    _LOGGER.info("Cleanup: removed %d old backups (keeping auto:%d, startup:%d, shutdown:%d, pre_restore:%d)",
+                                total_removed, keep_auto, keep_startup, keep_shutdown, keep_pre_restore)
 
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, _cleanup)
@@ -208,12 +219,31 @@ class BackupManager:
                 _LOGGER.error("Backup not found: %s", backup_name)
                 return False
 
+            # Create a safety backup of the current state before overwriting anything
+            await self.create_backup("pre_restore")
+
             def _do_restore():
-                # Restore databases
                 backup_sensor_db = backup_path / "sensor_data.db"
                 backup_research_db = backup_path / "research_data.db"
                 backup_state = backup_path / "state.json"
 
+                # Validate SQLite integrity before touching live databases
+                for db_file in [backup_sensor_db, backup_research_db]:
+                    if db_file.exists():
+                        try:
+                            conn = sqlite3.connect(str(db_file))
+                            result = conn.execute("PRAGMA integrity_check").fetchone()
+                            conn.close()
+                            if result[0] != "ok":
+                                raise ValueError(
+                                    f"Integrity check failed for {db_file.name}: {result[0]}"
+                                )
+                        except sqlite3.DatabaseError as exc:
+                            raise ValueError(
+                                f"Invalid SQLite file {db_file.name}: {exc}"
+                            ) from exc
+
+                # Restore databases
                 if backup_sensor_db.exists():
                     shutil.copy2(str(backup_sensor_db), str(self.db_path))
                     _LOGGER.info("Restored sensor database from backup")
@@ -252,8 +282,8 @@ class BackupManager:
                     if backup.is_dir():
                         backups.append(f"{type_name}/{backup.name}")
 
-            # Sort by timestamp (newest first)
-            backups.sort(reverse=True)
+            # Sort by timestamp only (newest first), ignoring the type prefix
+            backups.sort(key=lambda x: x.split('/')[-1], reverse=True)
             return backups
         except Exception as e:
             _LOGGER.error("Failed to list backups: %s", e)
