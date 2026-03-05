@@ -1853,7 +1853,7 @@ class StorageManager:
             # Get energy metrics from sensor database
             sensor_cursor.execute("""
                 SELECT
-                    MAX(energy) as total_energy_kwh,
+                    (MAX(energy) - MIN(energy)) as total_energy_kwh,
                     AVG(power) as avg_power,
                     MAX(power) as peak_power,
                     MIN(power) as min_power,

@@ -2120,13 +2120,16 @@ class DecisionAgent:
             _LOGGER.warning("Baseline consumption not set. Cannot calculate weekly challenge status.")
             return {"status": "pending", "current_avg": 0, "target_avg": 0, "progress": 0}
 
-        # Return cached result if it is < 5 minutes old.
+        # Return cached result if it is < 5 minutes old AND the target_percentage has not changed.
         # WeeklyChallengeSensor subscribes to GS_AI_UPDATE_SIGNAL (every 15 s), which would otherwise trigger a full week DB scan on every cycle.
+        # The target_percentage check ensures that changing the goal via input_number.energy_saving_target invalidates the cache immediately.
         _cache_ttl = 300  # seconds
+        _cached_target = self._weekly_challenge_cache.get("goal_percentage") if self._weekly_challenge_cache else None
         if (
             self._weekly_challenge_cache
             and self._weekly_challenge_cache_ts is not None
             and (datetime.now() - self._weekly_challenge_cache_ts).total_seconds() < _cache_ttl
+            and _cached_target == target_percentage
         ):
             return self._weekly_challenge_cache
 
