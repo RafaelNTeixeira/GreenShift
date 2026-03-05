@@ -3080,3 +3080,317 @@ class TestBehaviouralTemplateAbsoluteIndex:
         assert seen_indices == {0, 1, 2, 3}, (
             f"All 4 normative templates must be reachable; got {seen_indices}"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _handle_notification_feedback: full pipeline
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _make_feedback_agent(notif_id, accepted_init=None):
+    """Return an agent pre-loaded with one pending episode and matching history entry."""
+    agent = make_agent()
+    agent.phase = "active"
+    agent.episode_number = 5
+    agent.feedback_episode_number = 3
+    from custom_components.green_shift.const import INITIAL_EPSILON
+    agent.epsilon = INITIAL_EPSILON
+
+    agent.notification_history.append({
+        "notification_id": notif_id,
+        "responded": False,
+        "accepted": accepted_init,
+    })
+    agent.pending_episodes[notif_id] = {
+        "state_key": (1, 0, 0, 0, 0, 0),
+        "action": 1,
+        "initial_power": 800.0,
+        "timestamp": datetime.now(),
+        "action_source": "exploit",
+        "opportunity_score": 0.6,
+    }
+    agent._calculate_reward_with_feedback = AsyncMock(return_value=1.0)
+    agent._update_q_table_with_feedback = AsyncMock()
+    agent._log_rl_episode = AsyncMock()
+    agent._update_behaviour_index = MagicMock()
+
+    storage = AsyncMock()
+    storage.log_nudge_response = AsyncMock()
+    storage._save_persistent_state = AsyncMock()
+    agent.storage = storage
+    agent._save_persistent_state = AsyncMock()
+    return agent
+
+
+class TestHandleNotificationFeedback:
+    """_handle_notification_feedback: full pipeline for accept and reject."""
+
+    @pytest.mark.asyncio
+    async def test_accept_marks_notification_responded_true(self):
+        notif_id = "test-accept-001"
+        agent = _make_feedback_agent(notif_id)
+        await agent._handle_notification_feedback(notif_id, accepted=True)
+        entry = next(n for n in agent.notification_history if n["notification_id"] == notif_id)
+        assert entry["responded"] is True
+        assert entry["accepted"] is True
+
+    @pytest.mark.asyncio
+    async def test_reject_marks_notification_responded_false(self):
+        notif_id = "test-reject-001"
+        agent = _make_feedback_agent(notif_id)
+        await agent._handle_notification_feedback(notif_id, accepted=False)
+        entry = next(n for n in agent.notification_history if n["notification_id"] == notif_id)
+        assert entry["responded"] is True
+        assert entry["accepted"] is False
+
+    @pytest.mark.asyncio
+    async def test_accept_appends_positive_engagement_score(self):
+        notif_id = "test-accept-eng"
+        agent = _make_feedback_agent(notif_id)
+        agent.engagement_history.clear()
+        await agent._handle_notification_feedback(notif_id, accepted=True)
+        assert len(agent.engagement_history) == 1
+        assert agent.engagement_history[-1] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_reject_appends_negative_engagement_score(self):
+        notif_id = "test-reject-eng"
+        agent = _make_feedback_agent(notif_id)
+        agent.engagement_history.clear()
+        await agent._handle_notification_feedback(notif_id, accepted=False)
+        assert len(agent.engagement_history) == 1
+        assert agent.engagement_history[-1] == -0.5
+
+    @pytest.mark.asyncio
+    async def test_feedback_calls_update_behaviour_index(self):
+        notif_id = "test-behav-001"
+        agent = _make_feedback_agent(notif_id)
+        await agent._handle_notification_feedback(notif_id, accepted=True)
+        agent._update_behaviour_index.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_accept_removes_pending_episode(self):
+        notif_id = "test-pend-remove"
+        agent = _make_feedback_agent(notif_id)
+        assert notif_id in agent.pending_episodes
+        await agent._handle_notification_feedback(notif_id, accepted=True)
+        assert notif_id not in agent.pending_episodes
+
+    @pytest.mark.asyncio
+    async def test_reject_removes_pending_episode(self):
+        notif_id = "test-pend-reject"
+        agent = _make_feedback_agent(notif_id)
+        assert notif_id in agent.pending_episodes
+        await agent._handle_notification_feedback(notif_id, accepted=False)
+        assert notif_id not in agent.pending_episodes
+
+    @pytest.mark.asyncio
+    async def test_reject_passes_accepted_false_to_q_update(self):
+        notif_id = "test-q-reject"
+        agent = _make_feedback_agent(notif_id)
+        await agent._handle_notification_feedback(notif_id, accepted=False)
+        agent._update_q_table_with_feedback.assert_called_once()
+        _, kwargs = agent._update_q_table_with_feedback.call_args
+        assert kwargs.get("accepted") is False or agent._update_q_table_with_feedback.call_args[0][3] is False
+
+    @pytest.mark.asyncio
+    async def test_feedback_increments_feedback_episode_number(self):
+        notif_id = "test-ep-incr"
+        agent = _make_feedback_agent(notif_id)
+        before = agent.feedback_episode_number
+        await agent._handle_notification_feedback(notif_id, accepted=True)
+        assert agent.feedback_episode_number == before + 1
+
+    @pytest.mark.asyncio
+    async def test_feedback_calls_storage_log_nudge_response(self):
+        notif_id = "test-log-nudge"
+        agent = _make_feedback_agent(notif_id)
+        await agent._handle_notification_feedback(notif_id, accepted=True)
+        agent.storage.log_nudge_response.assert_called_once_with(notif_id, True)
+
+    @pytest.mark.asyncio
+    async def test_reject_calls_storage_log_nudge_response_with_false(self):
+        notif_id = "test-log-nudge-rej"
+        agent = _make_feedback_agent(notif_id)
+        await agent._handle_notification_feedback(notif_id, accepted=False)
+        agent.storage.log_nudge_response.assert_called_once_with(notif_id, False)
+
+    @pytest.mark.asyncio
+    async def test_feedback_saves_persistent_state(self):
+        notif_id = "test-save-state"
+        agent = _make_feedback_agent(notif_id)
+        await agent._handle_notification_feedback(notif_id, accepted=True)
+        agent._save_persistent_state.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_missing_pending_episode_does_not_raise(self):
+        """Responding to a notification that is not in pending_episodes must not crash."""
+        notif_id = "test-no-pending"
+        agent = _make_feedback_agent(notif_id)
+        agent.pending_episodes.clear()  # remove the pre-loaded episode
+        # Should complete without raising, just log a warning
+        await agent._handle_notification_feedback(notif_id, accepted=True)
+
+    @pytest.mark.asyncio
+    async def test_notification_id_not_in_history_does_not_crash(self):
+        """If notification_id is not found in notification_history the call
+        must still proceed (no KeyError / StopIteration raised)."""
+        notif_id = "ghost-notification"
+        agent = _make_feedback_agent("some-other-id")
+        # notif_id is NOT in notification_history
+        await agent._handle_notification_feedback(notif_id, accepted=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _compute_noop_reward: near-baseline boundary (-0.1 band)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestComputeNoopRewardNearBaseline:
+    """_compute_noop_reward must return -0.1 when 0 < deviation < 0.3."""
+
+    def test_slightly_above_baseline_returns_minus_0_1(self):
+        """10% above baseline falls in the near-baseline band (0 < dev < 0.3)."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 1100.0})
+        reward = agent._compute_noop_reward()
+        assert reward == pytest.approx(-0.1), (
+            f"Expected -0.1 for slightly-above-baseline, got {reward}"
+        )
+
+    def test_just_below_0_3_deviation_returns_minus_0_1(self):
+        """29% above baseline is still in the near band, not the miss band."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 1290.0})
+        reward = agent._compute_noop_reward()
+        assert reward == pytest.approx(-0.1), (
+            f"29%% above baseline should be -0.1, got {reward}"
+        )
+
+    def test_exactly_0_3_deviation_transitions_to_miss_band(self):
+        """30% deviation is >= 0.3, so it falls in the 'missed opportunity' band."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 1300.0})
+        reward = agent._compute_noop_reward()
+        # deviation = 0.3, formula -> max(-0.5, -0.3 * 0.5) = -0.15
+        assert reward < -0.1, (
+            f"30%% deviation must use miss-band formula (< -0.1), got {reward}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _calculate_opportunity_score: direct parametric tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCalculateOpportunityScore:
+    """Direct tests for the four components of _calculate_opportunity_score."""
+
+    def _base_agent(self, power=500.0, baseline=1000.0, occupancy=True,
+                    anomaly=0.0, area_anomalies=None, fatigue=0.0, behaviour=1.0):
+        agent = make_agent()
+        agent.baseline_consumption = baseline
+        agent.anomaly_index = anomaly
+        agent.area_anomalies = area_anomalies or {}
+        agent.fatigue_index = fatigue
+        agent.behaviour_index = behaviour
+        agent.data_collector.get_current_state = MagicMock(return_value={
+            "power": power, "occupancy": occupancy
+        })
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_at_baseline_savings_potential_is_zero(self):
+        """When current power == baseline, savings_potential component is 0."""
+        agent = self._base_agent(power=1000.0, baseline=1000.0)
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 12, 0, 0)  # peak time
+            score = await agent._calculate_opportunity_score()
+        # savings_potential = 0, so score comes entirely from other components
+        # With anomaly=0, fatigue=0, behaviour=1, context from noon occupancy
+        # Max theoretical: 0*0.35 + 0*0.35 + 1.0*0.20 + 1.0*0.10 = 0.30
+        assert score <= 0.31
+
+    @pytest.mark.asyncio
+    async def test_below_baseline_savings_potential_is_zero(self):
+        """When power < baseline, savings_potential = 0 (user already saving)."""
+        agent = self._base_agent(power=600.0, baseline=1000.0)
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 3, 0, 0)  # late night
+            score = await agent._calculate_opportunity_score()
+        # savings=0, anomaly=0: urgency=0, fatigue=0 behaviour=1: receptiveness=1.0
+        # context at 3am: time=0.3, no occupancy=0.5, context=(0.3+0.5)/2=0.4
+        # score = 0 + 0 + 0.20*1.0 + 0.10*0.4 = 0.24
+        assert score == pytest.approx(0.24, abs=0.05)
+
+    @pytest.mark.asyncio
+    async def test_above_baseline_savings_potential_positive(self):
+        """50% above baseline -> savings_potential=0.5 contributes to score."""
+        agent = self._base_agent(power=1500.0, baseline=1000.0,
+                                 anomaly=0.0, fatigue=1.0, behaviour=0.0, occupancy=False)
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 3, 0, 0)  # suppress context
+            score = await agent._calculate_opportunity_score()
+        # savings_potential=0.5, urgency=0, receptiveness=0, context=low
+        # Lower bound: 0.35*0.5 = 0.175
+        assert score >= 0.17
+
+    @pytest.mark.asyncio
+    async def test_savings_potential_capped_at_one(self):
+        """300% above baseline -> savings_potential capped at 1.0."""
+        agent = self._base_agent(power=4000.0, baseline=1000.0,
+                                 anomaly=0.0, fatigue=1.0, behaviour=0.0, occupancy=False)
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 3, 0, 0)
+            score = await agent._calculate_opportunity_score()
+        # savings_potential must be 1.0 (capped), so score >= 0.35
+        assert score >= 0.35
+
+    @pytest.mark.asyncio
+    async def test_area_anomalies_boost_urgency(self):
+        """Each area with any anomaly value > 0.3 adds 0.1 to urgency (capped at 1)."""
+        area_anomalies = {
+            "kitchen": {"power": 0.8},
+            "office":  {"power": 0.5},
+        }
+        agent_no_area = self._base_agent(power=500.0, baseline=1000.0,
+                                          anomaly=0.2, area_anomalies={})
+        agent_with_area = self._base_agent(power=500.0, baseline=1000.0,
+                                            anomaly=0.2, area_anomalies=area_anomalies)
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 12, 0, 0)
+            score_no_area   = await agent_no_area._calculate_opportunity_score()
+            score_with_area = await agent_with_area._calculate_opportunity_score()
+        # 2 qualifying area anomalies add 0.20 to urgency weight (0.35 * 0.20 = 0.07 extra)
+        assert score_with_area > score_no_area
+
+    @pytest.mark.asyncio
+    async def test_high_fatigue_reduces_receptiveness(self):
+        """fatigue=1.0 makes receptiveness=0; fatigue=0.0 keeps receptiveness=behaviour."""
+        agent_tired   = self._base_agent(power=1500.0, baseline=1000.0,
+                                          fatigue=1.0, behaviour=1.0)
+        agent_rested  = self._base_agent(power=1500.0, baseline=1000.0,
+                                          fatigue=0.0, behaviour=1.0)
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 12, 0, 0)
+            score_tired  = await agent_tired._calculate_opportunity_score()
+            score_rested = await agent_rested._calculate_opportunity_score()
+        assert score_rested > score_tired
+
+    @pytest.mark.asyncio
+    async def test_score_always_in_zero_to_one_range(self):
+        """Opportunity score must be in [0, 1] for extreme input combinations."""
+        cases = [
+            dict(power=0.0,    baseline=1000.0, anomaly=0.0, fatigue=0.0, behaviour=0.0),
+            dict(power=5000.0, baseline=1000.0, anomaly=1.0, fatigue=0.0, behaviour=1.0),
+            dict(power=1000.0, baseline=1000.0, anomaly=0.5, fatigue=0.5, behaviour=0.5),
+            dict(power=1000.0, baseline=0.0,    anomaly=0.0, fatigue=0.0, behaviour=1.0),
+        ]
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 12, 0, 0)
+            for c in cases:
+                agent = self._base_agent(**c)
+                score = await agent._calculate_opportunity_score()
+                assert 0.0 <= score <= 1.0, (
+                    f"Score {score} out of [0,1] for inputs: {c}"
+                )
