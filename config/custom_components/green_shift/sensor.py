@@ -29,7 +29,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import CO2_FACTOR, DOMAIN, GS_UPDATE_SIGNAL, GS_AI_UPDATE_SIGNAL, BASELINE_DAYS, UPDATE_INTERVAL_SECONDS, PHASE_BASELINE
 from .helpers import get_normalized_value, get_entity_area, get_environmental_impact
