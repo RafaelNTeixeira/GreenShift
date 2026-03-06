@@ -3394,3 +3394,279 @@ class TestCalculateOpportunityScore:
                 assert 0.0 <= score <= 1.0, (
                     f"Score {score} out of [0,1] for inputs: {c}"
                 )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Additional _load_persistent_state coverage
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestLoadPersistentStateExtended:
+    """Extended tests covering fields not tested by TestLoadPersistentState."""
+
+    def _agent_with_storage(self, state_data):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value=state_data)
+        agent.storage = storage
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_loads_start_date_valid_iso_string(self):
+        agent = self._agent_with_storage({"start_date": "2026-01-15T10:00:00"})
+        await agent._load_persistent_state()
+        assert agent.start_date.year == 2026
+        assert agent.start_date.month == 1
+        assert agent.start_date.day == 15
+
+    @pytest.mark.asyncio
+    async def test_loads_start_date_invalid_falls_back_to_now(self):
+        before = datetime.now()
+        agent = self._agent_with_storage({"start_date": "not-a-date"})
+        await agent._load_persistent_state()
+        after = datetime.now()
+        assert before <= agent.start_date <= after
+
+    @pytest.mark.asyncio
+    async def test_loads_area_baselines(self):
+        agent = self._agent_with_storage({"area_baselines": {"Living Room": 300.0, "Kitchen": 150.0}})
+        await agent._load_persistent_state()
+        assert agent.area_baselines == {"Living Room": 300.0, "Kitchen": 150.0}
+
+    @pytest.mark.asyncio
+    async def test_loads_current_week_start_date_valid(self):
+        agent = self._agent_with_storage({"current_week_start_date": "2026-02-02"})
+        await agent._load_persistent_state()
+        from datetime import date
+        assert agent.current_week_start_date == date(2026, 2, 2)
+
+    @pytest.mark.asyncio
+    async def test_loads_current_week_start_date_invalid_sets_none(self):
+        agent = self._agent_with_storage({"current_week_start_date": "bad-date"})
+        await agent._load_persistent_state()
+        assert agent.current_week_start_date is None
+
+    @pytest.mark.asyncio
+    async def test_loads_current_week_start_date_none_value(self):
+        agent = self._agent_with_storage({"current_week_start_date": None})
+        await agent._load_persistent_state()
+        # None value should not change the field (guard `and state[...]`)
+        assert agent.current_week_start_date is None
+
+    @pytest.mark.asyncio
+    async def test_loads_anomaly_index(self):
+        agent = self._agent_with_storage({"anomaly_index": 0.65})
+        await agent._load_persistent_state()
+        assert agent.anomaly_index == pytest.approx(0.65)
+
+    @pytest.mark.asyncio
+    async def test_loads_behaviour_index(self):
+        agent = self._agent_with_storage({"behaviour_index": 0.72})
+        await agent._load_persistent_state()
+        assert agent.behaviour_index == pytest.approx(0.72)
+
+    @pytest.mark.asyncio
+    async def test_loads_engagement_history(self):
+        agent = self._agent_with_storage({"engagement_history": [0.8, 0.6, 0.9]})
+        await agent._load_persistent_state()
+        assert list(agent.engagement_history) == [0.8, 0.6, 0.9]
+
+    @pytest.mark.asyncio
+    async def test_loads_fatigue_index(self):
+        agent = self._agent_with_storage({"fatigue_index": 0.45})
+        await agent._load_persistent_state()
+        assert agent.fatigue_index == pytest.approx(0.45)
+
+    @pytest.mark.asyncio
+    async def test_loads_last_notification_date_valid(self):
+        agent = self._agent_with_storage({"last_notification_date": "2026-02-20"})
+        await agent._load_persistent_state()
+        from datetime import date
+        assert agent.last_notification_date == date(2026, 2, 20)
+
+    @pytest.mark.asyncio
+    async def test_loads_last_notification_date_invalid_sets_none(self):
+        agent = self._agent_with_storage({"last_notification_date": "not-a-date"})
+        await agent._load_persistent_state()
+        assert agent.last_notification_date is None
+
+    @pytest.mark.asyncio
+    async def test_loads_last_notification_time_valid(self):
+        agent = self._agent_with_storage({"last_notification_time": "2026-02-20T14:30:00"})
+        await agent._load_persistent_state()
+        assert agent.last_notification_time.hour == 14
+        assert agent.last_notification_time.minute == 30
+
+    @pytest.mark.asyncio
+    async def test_loads_last_notification_time_invalid_sets_none(self):
+        agent = self._agent_with_storage({"last_notification_time": "garbage"})
+        await agent._load_persistent_state()
+        assert agent.last_notification_time is None
+
+    @pytest.mark.asyncio
+    async def test_loads_notification_history(self):
+        history = [{"notification_id": "n1", "responded": False}]
+        agent = self._agent_with_storage({"notification_history": history})
+        await agent._load_persistent_state()
+        assert len(agent.notification_history) == 1
+        assert list(agent.notification_history)[0]["notification_id"] == "n1"
+
+    @pytest.mark.asyncio
+    async def test_loads_shadow_episode_number(self):
+        agent = self._agent_with_storage({"shadow_episode_number": 25})
+        await agent._load_persistent_state()
+        assert agent.shadow_episode_number == 25
+
+    @pytest.mark.asyncio
+    async def test_loads_feedback_episode_number(self):
+        agent = self._agent_with_storage({"feedback_episode_number": 12})
+        await agent._load_persistent_state()
+        assert agent.feedback_episode_number == 12
+
+    @pytest.mark.asyncio
+    async def test_loads_episode_number(self):
+        agent = self._agent_with_storage({"episode_number": 88})
+        await agent._load_persistent_state()
+        assert agent.episode_number == 88
+
+    @pytest.mark.asyncio
+    async def test_loads_logged_weeks_as_set(self):
+        agent = self._agent_with_storage({"logged_weeks": ["2026-01-05", "2026-01-12"]})
+        await agent._load_persistent_state()
+        assert "2026-01-05" in agent._logged_weeks
+        assert "2026-01-12" in agent._logged_weeks
+        assert isinstance(agent._logged_weeks, set)
+
+    @pytest.mark.asyncio
+    async def test_loads_active_since_valid(self):
+        agent = self._agent_with_storage({"active_since": "2026-02-14T08:00:00"})
+        await agent._load_persistent_state()
+        assert agent.active_since.day == 14
+        assert agent.active_since.month == 2
+
+    @pytest.mark.asyncio
+    async def test_loads_active_since_invalid_sets_none(self):
+        agent = self._agent_with_storage({"active_since": "bad-datetime"})
+        await agent._load_persistent_state()
+        assert agent.active_since is None
+
+    @pytest.mark.asyncio
+    async def test_loads_active_since_none_value(self):
+        agent = self._agent_with_storage({"active_since": None})
+        await agent._load_persistent_state()
+        assert agent.active_since is None
+
+    @pytest.mark.asyncio
+    async def test_loads_pending_episodes_valid(self):
+        pending = {
+            "notif-001": {
+                "state_key": "(1, 0, 0, 0, 0, 0)",
+                "action": 1,
+                "initial_power": 500.0,
+                "timestamp": "2026-02-20T10:00:00",
+                "action_source": "exploit",
+                "opportunity_score": 0.75,
+            }
+        }
+        agent = self._agent_with_storage({"pending_episodes": pending})
+        await agent._load_persistent_state()
+        assert "notif-001" in agent.pending_episodes
+        ep = agent.pending_episodes["notif-001"]
+        assert ep["action"] == 1
+        assert ep["initial_power"] == pytest.approx(500.0)
+
+    @pytest.mark.asyncio
+    async def test_loads_pending_episodes_invalid_state_key_skipped(self):
+        pending = {
+            "notif-bad": {
+                "state_key": "not_a_tuple",
+                "action": 1,
+                "initial_power": 500.0,
+                "timestamp": "2026-02-20T10:00:00",
+                "action_source": "exploit",
+                "opportunity_score": 0.5,
+            }
+        }
+        agent = self._agent_with_storage({"pending_episodes": pending})
+        await agent._load_persistent_state()
+        assert "notif-bad" not in agent.pending_episodes
+
+    @pytest.mark.asyncio
+    async def test_loads_task_streak_last_date_valid(self):
+        agent = self._agent_with_storage({"task_streak_last_date": "2026-02-20"})
+        await agent._load_persistent_state()
+        from datetime import date
+        assert agent.task_streak_last_date == date(2026, 2, 20)
+
+    @pytest.mark.asyncio
+    async def test_loads_task_streak_last_date_invalid_sets_none(self):
+        agent = self._agent_with_storage({"task_streak_last_date": "bad"})
+        await agent._load_persistent_state()
+        assert agent.task_streak_last_date is None
+
+    @pytest.mark.asyncio
+    async def test_loads_weekly_streak_last_week(self):
+        agent = self._agent_with_storage({"weekly_streak_last_week": "2026-02-02"})
+        await agent._load_persistent_state()
+        assert agent.weekly_streak_last_week == "2026-02-02"
+
+    @pytest.mark.asyncio
+    async def test_loads_multiple_fields_at_once(self):
+        """All fields can coexist in a single state dict."""
+        agent = self._agent_with_storage({
+            "phase": "active",
+            "baseline_consumption": 950.0,
+            "anomaly_index": 0.3,
+            "behaviour_index": 0.8,
+            "fatigue_index": 0.2,
+            "shadow_episode_number": 5,
+            "feedback_episode_number": 3,
+            "episode_number": 8,
+            "logged_weeks": ["2026-02-02"],
+            "active_since": "2026-02-15T00:00:00",
+            "task_streak": 4,
+            "weekly_streak": 2,
+        })
+        await agent._load_persistent_state()
+        assert agent.phase == "active"
+        assert agent.baseline_consumption == pytest.approx(950.0)
+        assert agent.anomaly_index == pytest.approx(0.3)
+        assert agent.shadow_episode_number == 5
+        assert agent.active_since is not None
+        assert agent.task_streak == 4
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestStreaks: additional edge cases
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestStreaksEdgeCases:
+    """Edge cases for update_weekly_streak not covered by TestStreaks."""
+
+    @staticmethod
+    def _agent():
+        return make_agent()
+
+    @staticmethod
+    def _week(delta_weeks: int = 0):
+        from datetime import date, timedelta
+        return (date(2026, 2, 2) + timedelta(weeks=delta_weeks)).isoformat()
+
+    def test_weekly_streak_invalid_last_week_format_resets_to_one(self):
+        """If weekly_streak_last_week is not a valid ISO date, the except branch fires."""
+        agent = self._agent()
+        # Set an invalid ISO date string (ISO week format, not date format)
+        agent.weekly_streak_last_week = "2026-W09"
+        agent.weekly_streak = 3
+        # Any new week key that is a valid date triggers the fromisoformat on last_week
+        agent.update_weekly_streak(True, self._week(10))
+        # ValueError fallback: streak resets to 1
+        assert agent.weekly_streak == 1
+
+    def test_weekly_streak_out_of_order_call_ignored(self):
+        """A week key earlier than the current last week (delta < 7) should be ignored."""
+        agent = self._agent()
+        agent.update_weekly_streak(True, self._week(5))
+        assert agent.weekly_streak == 1
+        # Supplying an earlier week should be silently ignored
+        agent.update_weekly_streak(True, self._week(3))
+        assert agent.weekly_streak == 1  # unchanged

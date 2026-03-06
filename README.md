@@ -430,7 +430,7 @@ All data is stored in: `config/green_shift_data/`
 
 ## 🧪 Testing
 
-Green Shift includes currently **569 comprehensive tests** covering AI logic, backup systems, configuration and utility functions.
+Green Shift includes currently **903 comprehensive tests** covering AI logic, backup systems, configuration and utility functions — with **75.6% total code coverage** (≈89% excluding HA-runtime-dependent setup code).
 
 ### Quick Start
 
@@ -438,33 +438,32 @@ Green Shift includes currently **569 comprehensive tests** covering AI logic, ba
 # Install test dependencies
 pip install -r requirements.txt
 
-# Navigate to tests directory
-cd tests/
-
-# Run all tests with coverage
-pytest
+# Run all tests with coverage (from workspace root)
+python3 -m pytest tests/
 
 # Run without coverage (faster for quick checks)
-pytest --no-cov
+python3 -m pytest tests/ --no-cov
 
 # Run specific test file
-pytest test_decision_agent.py -v
+python3 -m pytest tests/test_decision_agent.py -v
 
 # View HTML coverage report
-# After running tests, open htmlcov/index.html in your browser
+# After running tests, open tests/htmlcov/index.html in your browser
 ```
 
 **Coverage is automatically generated** in `tests/htmlcov/` when you run pytest.
 
 **Test Coverage:**
-- ✅ **27 tests** - Backup management
-- ✅ **39 tests** - Config flow & sensor discovery
-- ✅ **68 tests** - Real-time data collection & energy tracking
-- ✅ **177 tests** - AI decision agent & Q-learning
-- ✅ **46 tests** - Helper functions & conversions
-- ✅ **104 tests** - Database operations & persistence
-- ✅ **53 tests** - Task generation & difficulty
-- ✅ **55 tests** - Multilingual support & translations
+- ✅ **36 tests** - Backup management (99%)
+- ✅ **41 tests** - Config flow & sensor discovery (97%)
+- ✅ **69 tests** - Real-time data collection & energy tracking (84%)
+- ✅ **263 tests** - AI decision agent & Q-learning (77%)
+- ✅ **46 tests** - Helper functions & conversions (99%)
+- ✅ **107 tests** - Database operations & persistence (90%)
+- ✅ **80 tests** - Sensor entities (95%)
+- ✅ **36 tests** - Select entities (94%)
+- ✅ **61 tests** - Task generation & difficulty (93%)
+- ✅ **55 tests** - Multilingual support & translations (91%)
 
 ### Pre-Commit Hooks
 

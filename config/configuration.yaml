@@ -33,6 +33,6 @@ input_number: !include input_numbers.yaml
 input_select: !include input_selects.yaml
 input_boolean: !include input_booleans.yaml
 
-automation: !include automations.yaml
-script: !include scripts.yaml
-scene: !include scenes.yaml
+# automation: !include automations.yaml
+# script: !include scripts.yaml
+# scene: !include scenes.yaml

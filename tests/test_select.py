@@ -313,3 +313,93 @@ class TestNotificationSelectSelectOption:
         assert sel._attr_current_option == "n3"
         await sel.async_select_option("n1")
         assert sel._attr_current_option == "n1"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Callback methods: async_added_to_hass and _update_callback
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAreaViewSelectCallbacks:
+
+    @pytest.mark.asyncio
+    async def test_async_added_to_hass_calls_async_on_remove(self):
+        """async_added_to_hass should register a dispatcher listener via async_on_remove."""
+        sel = GreenShiftAreaViewSelect(make_collector(["Kitchen"]))
+        sel.hass = MagicMock()
+        sel.async_on_remove = MagicMock()
+        sel.async_write_ha_state = MagicMock()
+        await sel.async_added_to_hass()
+        assert sel.async_on_remove.called
+
+    @pytest.mark.asyncio
+    async def test_async_added_to_hass_updates_options(self):
+        """async_added_to_hass should call _update_options so initial list is correct."""
+        sel = GreenShiftAreaViewSelect(make_collector(["Bedroom", "Kitchen"]))
+        sel.hass = MagicMock()
+        sel.async_on_remove = MagicMock()
+        sel.async_write_ha_state = MagicMock()
+        await sel.async_added_to_hass()
+        assert "Bedroom" in sel._attr_options
+        assert "Kitchen" in sel._attr_options
+
+    def test_update_callback_writes_ha_state(self):
+        """_update_callback should call async_write_ha_state."""
+        sel = GreenShiftAreaViewSelect(make_collector(["Kitchen"]))
+        sel.async_write_ha_state = MagicMock()
+        sel._update_callback()
+        sel.async_write_ha_state.assert_called_once()
+
+    def test_update_callback_refreshes_options(self):
+        """_update_callback should rebuild the options list."""
+        collector = make_collector(["Old Room"])
+        sel = GreenShiftAreaViewSelect(collector)
+        sel._update_options()
+        assert "Old Room" in sel._attr_options
+
+        sel.async_write_ha_state = MagicMock()
+        collector.get_all_areas.return_value = ["New Room"]
+        sel._update_callback()
+        assert "New Room" in sel._attr_options
+
+
+class TestNotificationSelectCallbacks:
+
+    @pytest.mark.asyncio
+    async def test_async_added_to_hass_calls_async_on_remove(self):
+        """async_added_to_hass should register a dispatcher listener."""
+        sel = GreenShiftNotificationSelect(make_agent([pending_notif("n1")]))
+        sel.hass = MagicMock()
+        sel.async_on_remove = MagicMock()
+        sel.async_write_ha_state = MagicMock()
+        await sel.async_added_to_hass()
+        assert sel.async_on_remove.called
+
+    @pytest.mark.asyncio
+    async def test_async_added_to_hass_updates_options(self):
+        """async_added_to_hass should call _update_options so initial pending list is set."""
+        sel = GreenShiftNotificationSelect(make_agent([pending_notif("n1"), pending_notif("n2")]))
+        sel.hass = MagicMock()
+        sel.async_on_remove = MagicMock()
+        sel.async_write_ha_state = MagicMock()
+        await sel.async_added_to_hass()
+        assert "n1" in sel._attr_options
+        assert "n2" in sel._attr_options
+
+    def test_update_callback_writes_ha_state(self):
+        """_update_callback should call async_write_ha_state."""
+        sel = GreenShiftNotificationSelect(make_agent([pending_notif("n1")]))
+        sel.async_write_ha_state = MagicMock()
+        sel._update_callback()
+        sel.async_write_ha_state.assert_called_once()
+
+    def test_update_callback_refreshes_pending_list(self):
+        """_update_callback rebuilds pending notifications from agent history."""
+        notif = {"notification_id": "n1", "responded": False}
+        sel = GreenShiftNotificationSelect(make_agent([notif]))
+        sel.async_write_ha_state = MagicMock()
+        sel._update_callback()
+        assert "n1" in sel._attr_options
+
+        notif["responded"] = True
+        sel._update_callback()
+        assert sel._attr_options == ["No pending notifications"]
