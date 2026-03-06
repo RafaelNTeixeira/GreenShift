@@ -13,6 +13,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional, Any
+import time as _time
 from .helpers import get_daily_working_hours
 import numpy as np
 import asyncio
@@ -1902,16 +1903,20 @@ class StorageManager:
             """, (date,))
             task_stats = sensor_cursor.fetchone()
 
-            # Get nudge stats from research database
+            # Get nudge stats from research database.
+            # A nudge is only counted as "ignored" once the response window has expired,
+            # preventing late-night nudges from being incorrectly marked as ignored before the user has had a chance to respond.
+            now_ts = _time.time()
+            nudge_response_window_seconds = 24 * 3600 # 24 hours
             research_cursor.execute("""
                 SELECT
                     COUNT(*) as sent,
                     SUM(CASE WHEN accepted = 1 THEN 1 ELSE 0 END) as accepted,
                     SUM(CASE WHEN responded = 1 AND accepted = 0 THEN 1 ELSE 0 END) as dismissed,
-                    SUM(CASE WHEN responded = 0 THEN 1 ELSE 0 END) as ignored
+                    SUM(CASE WHEN responded = 0 AND (? - timestamp) >= ? THEN 1 ELSE 0 END) as ignored
                 FROM research_nudge_log
                 WHERE timestamp >= ? AND timestamp < ?
-            """, (start_ts, end_ts))
+            """, (now_ts, nudge_response_window_seconds, start_ts, end_ts))
             nudge_stats = research_cursor.fetchone()
             if not nudge_stats or nudge_stats[0] is None:
                 nudge_stats = (0, 0, 0, 0)
