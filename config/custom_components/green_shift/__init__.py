@@ -99,8 +99,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Record initial phase if fresh install
     state = await storage.load_state()
     if not state:
-        _LOGGER.debug("Fresh install detected: Recording initial baseline phase")
+        _LOGGER.info("Fresh install detected: saving initial agent state")
         await agent._save_persistent_state()
+
+    if not await storage.has_phase_metadata():
+        _LOGGER.info("No phase metadata found: recording initial baseline phase")
         await storage.record_phase_change(
             phase=PHASE_BASELINE,
             notes="Initial system setup"

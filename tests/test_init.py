@@ -88,7 +88,7 @@ translations_stub.get_phase_transition_template = MagicMock(return_value={
 })
 
 # numpy is required by __init__.py
-import numpy as np  # noqa: E402 – already available in test env
+import numpy as np  # noqa: E402 - already available in test env
 
 # ── Load __init__.py ──────────────────────────────────────────────────────────
 

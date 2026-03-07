@@ -125,7 +125,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - `AreaViewSelect`: option population, current_option, async callbacks, `async_on_remove` unsubscription
 - `NotificationSelect`: pending notification rendering, selection acknowledgment, option refresh
 - `_update_callback` write-state path (sync and async)
-- *Note*: `async_setup_entry` (lines 34–40) requires `hass.data[DOMAIN]` from HA platform loader and cannot be unit-tested.
+- *Note*: `async_setup_entry` (lines 34-40) requires `hass.data[DOMAIN]` from HA platform loader and cannot be unit-tested.
 
 ### `test_sensor.py` - 119 tests, **95%** coverage
 - `HardwareSensors`: normalized_value sanitization, occupancy forwarding, `None`-value skip
@@ -136,7 +136,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - `TasksCompletedSensor`: fetch from task_manager, zero count, state property
 - `WeeklyChallengeSensor`: `_get_target_percentage` (all difficulty levels), baseline early return, active phase progress, active attrs
 - `GreenShiftBaseSensor` / `GreenShiftAISensor` callbacks: `async_added_to_hass`, `async_on_remove`, `_update_callback` create_task dispatch
-- *Note*: Lines 104/111–112 in sensor.py are unreachable dead code (see coverage note above).
+- *Note*: Lines 104/111-112 in sensor.py are unreachable dead code (see coverage note above).
 
 ### `test_storage.py` - 107 tests, **90%** coverage
 - Database initialization (SQLite schema creation)

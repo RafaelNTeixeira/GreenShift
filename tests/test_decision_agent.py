@@ -152,7 +152,7 @@ class TestDiscreteState:
         assert agent._discretize_state()[0] == 1
 
     def test_power_medium_at_baseline(self):
-        """1000 W == baseline (ratio 1.0) -> level 2 (50–150%)."""
+        """1000 W == baseline (ratio 1.0) -> level 2 (50-150%)."""
         agent = make_agent()
         agent.state_vector = _make_state_vector(power=1000.0)
         agent.anomaly_index = 0.0
@@ -1090,7 +1090,7 @@ class TestCalculateRewardWithFeedback:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# _execute_action – mobile push notification
+# _execute_action - mobile push notification
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestExecuteActionMobileNotify:
@@ -1210,7 +1210,7 @@ class TestStreaks:
         from datetime import date, timedelta
         return (date(2026, 2, 2) + timedelta(weeks=delta_weeks)).isoformat()
 
-    # ── task_streak – basic increments ────────────────────────────────────────
+    # ── task_streak - basic increments ────────────────────────────────────────
 
     def test_task_streak_first_success_gives_one(self):
         agent = self._agent()
@@ -1230,7 +1230,7 @@ class TestStreaks:
             agent.update_task_streak(True, self._day(i))
         assert agent.task_streak == 3
 
-    # ── task_streak – gap resets ──────────────────────────────────────────────
+    # ── task_streak - gap resets ──────────────────────────────────────────────
 
     def test_task_streak_gap_resets_to_one(self):
         """Streak breaks when there is a day gap and the next success counts as 1."""
@@ -1247,7 +1247,7 @@ class TestStreaks:
         agent.update_task_streak(True, self._day(7))   # one-week gap
         assert agent.task_streak == 1
 
-    # ── task_streak – idempotency ─────────────────────────────────────────────
+    # ── task_streak - idempotency ─────────────────────────────────────────────
 
     def test_task_streak_same_day_is_idempotent(self):
         agent = self._agent()
@@ -1263,7 +1263,7 @@ class TestStreaks:
             agent.update_task_streak(True, self._day(0))
         assert agent.task_streak == 1
 
-    # ── task_streak – failures ────────────────────────────────────────────────
+    # ── task_streak - failures ────────────────────────────────────────────────
 
     def test_task_streak_failure_resets_to_zero(self):
         agent = self._agent()
@@ -1306,7 +1306,7 @@ class TestStreaks:
         agent.update_task_streak(True, self._day(0))
         assert agent.task_streak == 1
 
-    # ── weekly_streak – basic increments ──────────────────────────────────────
+    # ── weekly_streak - basic increments ──────────────────────────────────────
 
     def test_weekly_streak_first_achieved_gives_one(self):
         agent = self._agent()
@@ -1326,7 +1326,7 @@ class TestStreaks:
             agent.update_weekly_streak(True, self._week(i))
         assert agent.weekly_streak == 3
 
-    # ── weekly_streak – gap resets ────────────────────────────────────────────
+    # ── weekly_streak - gap resets ────────────────────────────────────────────
 
     def test_weekly_streak_gap_resets_to_one(self):
         agent = self._agent()
@@ -1336,7 +1336,7 @@ class TestStreaks:
         assert agent.weekly_streak == 1
         assert agent.weekly_streak_last_week == self._week(2)
 
-    # ── weekly_streak – idempotency ───────────────────────────────────────────
+    # ── weekly_streak - idempotency ───────────────────────────────────────────
 
     def test_weekly_streak_same_week_is_idempotent(self):
         agent = self._agent()
@@ -1344,7 +1344,7 @@ class TestStreaks:
         agent.update_weekly_streak(True, self._week(0))
         assert agent.weekly_streak == 1
 
-    # ── weekly_streak – failures ──────────────────────────────────────────────
+    # ── weekly_streak - failures ──────────────────────────────────────────────
 
     def test_weekly_streak_failure_resets_to_zero(self):
         agent = self._agent()
@@ -1371,7 +1371,7 @@ class TestStreaks:
         assert agent.weekly_streak == 0
         assert agent.weekly_streak_last_week is None
 
-    # ── task_streak – office mode: non-working-day gaps ───────────────────────
+    # ── task_streak - office mode: non-working-day gaps ───────────────────────
 
     def test_task_streak_office_mode_weekend_does_not_break_streak(self):
         """In office mode, a Friday success followed by a Monday success

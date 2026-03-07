@@ -46,7 +46,10 @@ class StorageManager:
         self.state_file = self.config_dir / "state.json"
 
         self._conn = None
-        self._lock = asyncio.Lock()
+        # Per table locks to allow concurrent access to different storage components without blocking each other unnecessarily
+        self._state_lock = asyncio.Lock()        # guards state.json
+        self._db_lock = asyncio.Lock()           # guards sensor_data.db
+        self._research_db_lock = asyncio.Lock()  # guards research_data.db
 
         _LOGGER.info("Storage initialized at: %s", self.config_dir)
         _LOGGER.info("Research database: %s", self.research_db_path)
@@ -502,7 +505,8 @@ class StorageManager:
                 _LOGGER.info("Cleaned up %d global, %d area, %d task, and %d difficulty records",
                              deleted_global, deleted_area, deleted_tasks, deleted_difficulty)
 
-        await self.hass.async_add_executor_job(_cleanup)
+        async with self._db_lock:
+            await self.hass.async_add_executor_job(_cleanup)
 
     async def _cleanup_old_research_data(self):
         """Remove rows older than RESEARCH_RETENTION_DAYS from all research_data.db tables."""
@@ -547,7 +551,8 @@ class StorageManager:
                     deleted_any,
                 )
 
-        await self.hass.async_add_executor_job(_cleanup)
+        async with self._research_db_lock:
+            await self.hass.async_add_executor_job(_cleanup)
 
     async def get_active_phase_savings(self, active_since_date: str, baseline_w: float) -> dict:
         """
@@ -583,7 +588,8 @@ class StorageManager:
             conn.close()
             return rows
 
-        rows = await self.hass.async_add_executor_job(_query)
+        async with self._research_db_lock:
+            rows = await self.hass.async_add_executor_job(_query)
 
         total_savings_kwh = 0.0
         days_with_data = 0
@@ -675,7 +681,8 @@ class StorageManager:
                 if conn:
                     conn.close()
 
-        await self.hass.async_add_executor_job(_insert)
+        async with self._db_lock:
+            await self.hass.async_add_executor_job(_insert)
 
     async def store_area_snapshot(
         self,
@@ -737,7 +744,8 @@ class StorageManager:
                 if conn:
                     conn.close()
 
-        await self.hass.async_add_executor_job(_insert)
+        async with self._db_lock:
+            await self.hass.async_add_executor_job(_insert)
 
     async def get_history(
         self,
@@ -794,7 +802,8 @@ class StorageManager:
             # Convert to (datetime, value) tuples
             return [(datetime.fromtimestamp(ts), val) for ts, val in rows]
 
-        return await self.hass.async_add_executor_job(_query)
+        async with self._db_lock:
+            return await self.hass.async_add_executor_job(_query)
 
     async def get_area_history(
         self,
@@ -861,7 +870,8 @@ class StorageManager:
             # Convert to (datetime, value) tuples
             return [(datetime.fromtimestamp(ts), val) for ts, val in rows]
 
-        return await self.hass.async_add_executor_job(_query)
+        async with self._db_lock:
+            return await self.hass.async_add_executor_job(_query)
 
     async def get_all_areas(self) -> List[str]:
         """
@@ -885,7 +895,8 @@ class StorageManager:
 
             return [row[0] for row in rows]
 
-        return await self.hass.async_add_executor_job(_query)
+        async with self._db_lock:
+            return await self.hass.async_add_executor_job(_query)
 
     async def get_area_stats(
         self,
@@ -962,7 +973,8 @@ class StorageManager:
             # Return in chronological order (oldest first)
             return [row[0] for row in reversed(rows)]
 
-        return await self.hass.async_add_executor_job(_query)
+        async with self._db_lock:
+            return await self.hass.async_add_executor_job(_query)
 
     # ==================== DAILY TASKS (SQLite) ====================
 
@@ -1011,7 +1023,8 @@ class StorageManager:
             conn.close()
             return True
 
-        return await self.hass.async_add_executor_job(_insert)
+        async with self._db_lock:
+            return await self.hass.async_add_executor_job(_insert)
 
     async def get_today_tasks(self) -> List[Dict]:
         """
@@ -1063,7 +1076,8 @@ class StorageManager:
 
             return tasks
 
-        return await self.hass.async_add_executor_job(_query)
+        async with self._db_lock:
+            return await self.hass.async_add_executor_job(_query)
 
     async def get_tasks_for_date(self, target_date) -> List[Dict]:
         """
@@ -1108,7 +1122,8 @@ class StorageManager:
                 for r in rows
             ]
 
-        return await self.hass.async_add_executor_job(_query)
+        async with self._db_lock:
+            return await self.hass.async_add_executor_job(_query)
 
     async def get_total_completed_tasks_count(self) -> int:
         """
@@ -1133,7 +1148,8 @@ class StorageManager:
 
             return count
 
-        return await self.hass.async_add_executor_job(_query)
+        async with self._db_lock:
+            return await self.hass.async_add_executor_job(_query)
 
     async def get_total_completed_tasks_count_alltime(self) -> int:
         """
@@ -1157,7 +1173,8 @@ class StorageManager:
 
             return count
 
-        return await self.hass.async_add_executor_job(_query)
+        async with self._research_db_lock:
+            return await self.hass.async_add_executor_job(_query)
 
     async def mark_task_verified(self, task_id: str, verified: bool = True) -> bool:
         """
@@ -1186,7 +1203,8 @@ class StorageManager:
             conn.close()
             return success
 
-        return await self.hass.async_add_executor_job(_update)
+        async with self._db_lock:
+            return await self.hass.async_add_executor_job(_update)
 
     async def save_task_feedback(self, task_id: str, feedback: str) -> bool:
         """
@@ -1237,7 +1255,8 @@ class StorageManager:
             conn.close()
             return True
 
-        return await self.hass.async_add_executor_job(_update)
+        async with self._db_lock:
+            return await self.hass.async_add_executor_job(_update)
 
     async def delete_today_tasks(self) -> bool:
         """
@@ -1278,7 +1297,9 @@ class StorageManager:
 
             return True
 
-        return await self.hass.async_add_executor_job(_delete)
+        async with self._db_lock:
+            async with self._research_db_lock:
+                return await self.hass.async_add_executor_job(_delete)
 
     async def get_task_difficulty_stats(self, task_type: str) -> Dict:
         """
@@ -1342,7 +1363,8 @@ class StorageManager:
 
             return stats
 
-        return await self.hass.async_add_executor_job(_query)
+        async with self._db_lock:
+            return await self.hass.async_add_executor_job(_query)
 
     # ==================== PERSISTENT STATE (JSON) ====================
 
@@ -1391,7 +1413,7 @@ class StorageManager:
                     temp_file.unlink()
                 raise
 
-        async with self._lock:
+        async with self._state_lock:
             await self.hass.async_add_executor_job(_write)
 
     async def load_state(self) -> Dict[str, Any]:
@@ -1416,10 +1438,23 @@ class StorageManager:
                 _LOGGER.error("Failed to load state: %s", e)
                 return {}
 
-        async with self._lock:
+        async with self._state_lock:
             return await self.hass.async_add_executor_job(_read)
 
     # ==================== RESEARCH DATA (Permanent SQLite) ====================
+
+    async def has_phase_metadata(self) -> bool:
+        """Return True if any rows exist in research_phase_metadata."""
+        def _check():
+            conn = sqlite3.connect(str(self.research_db_path))
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM research_phase_metadata")
+            count = cursor.fetchone()[0]
+            conn.close()
+            return count > 0
+
+        async with self._research_db_lock:
+            return await self.hass.async_add_executor_job(_check)
 
     async def record_phase_change(self, phase: str, baseline_consumption: float = None, baseline_occupancy: float = None, notes: str = None):
         """
@@ -1455,7 +1490,8 @@ class StorageManager:
             conn.close()
             _LOGGER.info("Phase changed to: %s", phase)
 
-        await self.hass.async_add_executor_job(_insert)
+        async with self._research_db_lock:
+            await self.hass.async_add_executor_job(_insert)
 
     async def log_rl_decision(self, episode_data: dict):
         """
@@ -1504,7 +1540,8 @@ class StorageManager:
             conn.commit()
             conn.close()
 
-        await self.hass.async_add_executor_job(_insert)
+        async with self._research_db_lock:
+            await self.hass.async_add_executor_job(_insert)
 
     async def log_nudge_sent(self, nudge_data: dict):
         """
@@ -1541,7 +1578,8 @@ class StorageManager:
             conn.commit()
             conn.close()
 
-        await self.hass.async_add_executor_job(_insert)
+        async with self._research_db_lock:
+            await self.hass.async_add_executor_job(_insert)
 
     async def log_nudge_response(self, notification_id: str, accepted: bool):
         """
@@ -1580,7 +1618,8 @@ class StorageManager:
             conn.commit()
             conn.close()
 
-        await self.hass.async_add_executor_job(_update)
+        async with self._research_db_lock:
+            await self.hass.async_add_executor_job(_update)
 
     async def log_blocked_notification(self, block_data: dict):
         """
@@ -1623,7 +1662,8 @@ class StorageManager:
             conn.commit()
             conn.close()
 
-        await self.hass.async_add_executor_job(_insert)
+        async with self._research_db_lock:
+            await self.hass.async_add_executor_job(_insert)
 
     async def log_task_generation(self, task_data: dict):
         """
@@ -1660,7 +1700,8 @@ class StorageManager:
             conn.commit()
             conn.close()
 
-        await self.hass.async_add_executor_job(_insert)
+        async with self._research_db_lock:
+            await self.hass.async_add_executor_job(_insert)
 
     async def log_task_completion(self, task_id: str, completion_value: float = None):
         """
@@ -1698,7 +1739,8 @@ class StorageManager:
             conn.commit()
             conn.close()
 
-        await self.hass.async_add_executor_job(_update)
+        async with self._research_db_lock:
+            await self.hass.async_add_executor_job(_update)
 
     async def log_task_feedback(self, task_id: str, feedback: str):
         """
@@ -1721,7 +1763,8 @@ class StorageManager:
             conn.commit()
             conn.close()
 
-        await self.hass.async_add_executor_job(_update)
+        async with self._research_db_lock:
+            await self.hass.async_add_executor_job(_update)
 
     async def log_weekly_challenge(self, challenge_data: dict):
         """
@@ -1763,7 +1806,8 @@ class StorageManager:
             conn.commit()
             conn.close()
 
-        await self.hass.async_add_executor_job(_insert)
+        async with self._research_db_lock:
+            await self.hass.async_add_executor_job(_insert)
 
     async def compute_daily_aggregates(self, date: str = None, phase: str = None):
         """
@@ -1978,7 +2022,9 @@ class StorageManager:
 
             _LOGGER.info("Daily aggregates computed for %s", date)
 
-        await self.hass.async_add_executor_job(_compute)
+        async with self._db_lock:
+            async with self._research_db_lock:
+                await self.hass.async_add_executor_job(_compute)
 
     async def compute_area_daily_aggregates(self, date: str = None, phase: str = None):
         """
@@ -2080,7 +2126,9 @@ class StorageManager:
 
             _LOGGER.info("Area daily aggregates computed for %s (%d areas)", date, len(areas))
 
-        await self.hass.async_add_executor_job(_compute)
+        async with self._db_lock:
+            async with self._research_db_lock:
+                await self.hass.async_add_executor_job(_compute)
 
 
     # ==================== CLEANUP ====================
@@ -2127,4 +2175,7 @@ class StorageManager:
 
             _LOGGER.warning("All data reset (sensor DB + research DB + state)")
 
-        await self.hass.async_add_executor_job(_reset)
+        async with self._state_lock:
+            async with self._db_lock:
+                async with self._research_db_lock:
+                    await self.hass.async_add_executor_job(_reset)

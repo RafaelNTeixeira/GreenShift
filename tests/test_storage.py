@@ -1908,3 +1908,152 @@ class TestComputeAggregatesWeather:
         res_conn.close()
 
         assert row is not None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Concurrent access safety (lock regression tests)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestConcurrentAccess:
+    """StorageManager must use asyncio.Lock to serialize access to critical sections of code 
+    that interact with shared resources (state file, main DB, research DB). 
+    This prevents race conditions and data corruption when multiple async calls happen concurrently.
+    """
+
+    @pytest.mark.asyncio
+    async def test_storage_has_three_named_locks(self, storage):
+        """StorageManager must expose exactly three per-resource asyncio.Lock objects."""
+        assert isinstance(storage._state_lock, asyncio.Lock), "_state_lock must be asyncio.Lock"
+        assert isinstance(storage._db_lock, asyncio.Lock), "_db_lock must be asyncio.Lock"
+        assert isinstance(storage._research_db_lock, asyncio.Lock), "_research_db_lock must be asyncio.Lock"
+
+    @pytest.mark.asyncio
+    async def test_legacy_bare_lock_is_gone(self, storage):
+        """The old self._lock must no longer exist; only the three named locks remain."""
+        assert not hasattr(storage, "_lock"), (
+            "Found legacy self._lock - it must be replaced by _state_lock, "
+            "_db_lock, and _research_db_lock to avoid the false sense of security."
+        )
+
+    @pytest.mark.asyncio
+    async def test_concurrent_sensor_writes_all_persist(self, storage):
+        """
+        Fire 50 concurrent store_sensor_snapshot calls via asyncio.gather.
+        Every one must land in the database - no rows dropped due to lock contention.
+        """
+        now = datetime.now()
+        tasks = [
+            storage.store_sensor_snapshot(
+                timestamp=now - timedelta(seconds=i),
+                power=float(i * 10),
+            )
+            for i in range(50)
+        ]
+        await asyncio.gather(*tasks)
+
+        history = await storage.get_history("power")
+        assert len(history) == 50, (
+            f"Expected 50 readings but only {len(history)} survived. "
+            "Concurrent inserts are dropping rows - lock all async_add_executor_job calls."
+        )
+
+    @pytest.mark.asyncio
+    async def test_concurrent_area_writes_all_persist(self, storage):
+        """30 concurrent store_area_snapshot calls must all commit without error."""
+        now = datetime.now()
+        tasks = [
+            storage.store_area_snapshot(
+                timestamp=now - timedelta(seconds=i),
+                area_name="ConcurrentRoom",
+                power=float(i),
+            )
+            for i in range(30)
+        ]
+        await asyncio.gather(*tasks)
+
+        history = await storage.get_area_history("ConcurrentRoom", "power")
+        assert len(history) == 30, (
+            f"Expected 30 area readings but got {len(history)}."
+        )
+
+    @pytest.mark.asyncio
+    async def test_concurrent_research_writes_all_persist(self, storage):
+        """20 concurrent log_rl_decision calls must all insert without raising."""
+        tasks = [
+            storage.log_rl_decision({
+                "episode": i,
+                "phase": "active",
+                "state_vector": [0.1],
+                "action": 1,
+                "reward": 0.5,
+            })
+            for i in range(20)
+        ]
+        await asyncio.gather(*tasks)
+
+        conn = sqlite3.connect(storage.research_db_path)
+        count = conn.execute("SELECT COUNT(*) FROM research_rl_episodes").fetchone()[0]
+        conn.close()
+        assert count == 20, (
+            f"Expected 20 RL episodes but got {count}. "
+            "Concurrent research writes are colliding - _research_db_lock must guard all research DB calls."
+        )
+
+    @pytest.mark.asyncio
+    async def test_interleaved_snapshot_and_aggregation_no_data_loss(self, storage):
+        """
+        A daily aggregation running while snapshot inserts are in flight must not
+        cause any insert to be silently dropped.
+        """
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+
+        # Mix: 20 snapshot inserts + 5 aggregation runs all at once.
+        insert_tasks = [
+            storage.store_sensor_snapshot(
+                timestamp=now - timedelta(seconds=i),
+                power=float(i * 5),
+                within_working_hours=True,
+            )
+            for i in range(20)
+        ]
+        agg_tasks = [
+            storage.compute_daily_aggregates(date=date_str, phase="active")
+            for _ in range(5)
+        ]
+
+        await asyncio.gather(*insert_tasks, *agg_tasks)
+
+        history = await storage.get_history("power")
+        assert len(history) == 20, (
+            f"Expected 20 snapshots after concurrent aggregation but got {len(history)}. "
+            "Heavy aggregation must not discard concurrent fast inserts."
+        )
+
+    @pytest.mark.asyncio
+    async def test_reset_all_data_acquires_state_lock(self, storage):
+        """
+        reset_all_data deletes state.json inside the executor job.  If _state_lock
+        is not held, a concurrent save_state/load_state can race with the unlink().
+        Verify that _state_lock is included in the locking hierarchy (outermost).
+        """
+        # Write some state so the file exists before reset.
+        await storage.save_state({"phase": "active", "test": True})
+        assert storage.state_file.exists()
+
+        # Simulate a concurrent save racing with reset_all_data.
+        # Both coroutines are launched together; _state_lock must serialise them.
+        await asyncio.gather(
+            storage.reset_all_data(),
+            storage.save_state({"phase": "post_reset"}),
+        )
+
+        # After both complete the state file must be in a consistent state:
+        # either the post-reset save won (file with valid JSON) or reset won
+        # (file absent).  What must never happen is a corrupt / partially-written
+        # file that crashes load_state.
+        loaded = await storage.load_state()
+        assert isinstance(loaded, dict), (
+            "load_state must return a dict even after a concurrent reset; "
+            "likely _state_lock was not held during reset_all_data."
+        )
