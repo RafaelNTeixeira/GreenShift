@@ -2166,3 +2166,165 @@ class TestAutoFeedbackOnGeneration:
         tm.storage.save_task_feedback.assert_called_once_with("y5", "too_hard")
         tm.storage.log_task_feedback.assert_not_called()
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Temperature Task : climate-aware difficulty scaling (HDD/CDD)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _make_tm_with_outdoor_temp(outdoor_temp: float) -> "TaskManager":
+    """Create a TaskManager with a weather entity returning the given outdoor temperature."""
+    from datetime import datetime as real_dt
+
+    hass = MagicMock()
+    weather_state = MagicMock()
+    weather_state.attributes = {"temperature": outdoor_temp}
+    weather_state.state = "sunny"
+    hass.states.get = MagicMock(return_value=weather_state)
+
+    collector = MagicMock()
+    base_time = real_dt(2026, 6, 15, 12, 0, 0)
+    collector.get_temperature_history = AsyncMock(
+        return_value=[(base_time + timedelta(hours=i), 22.0) for i in range(50)]
+    )
+    collector.get_power_history = AsyncMock(
+        return_value=[(base_time + timedelta(hours=i), 500.0) for i in range(50)]
+    )
+
+    storage = AsyncMock()
+    storage.get_today_tasks = AsyncMock(return_value=[])
+    storage.get_tasks_for_date = AsyncMock(return_value=[])
+    storage.save_daily_tasks = AsyncMock()
+    storage.log_task_generation = AsyncMock()
+    storage.get_task_difficulty_stats = AsyncMock(return_value=None)
+
+    agent = MagicMock()
+    agent.phase = "active"
+
+    tm_mod.should_ai_be_active = MagicMock(return_value=True)
+    tm_mod.get_language = AsyncMock(return_value="en")
+    tm_mod.get_working_days_from_config = MagicMock(return_value=list(range(7)))
+
+    config = {"weather_entity": "weather.home", "environment_mode": "home"}
+
+    return TaskManager(
+        hass=hass,
+        sensors={"power": ["sensor.p1"], "temperature": ["sensor.t1"]},
+        data_collector=collector,
+        storage=storage,
+        decision_agent=agent,
+        config_data=config,
+    )
+
+
+class TestTemperatureTaskClimateScale:
+    """climate_scale correctly reduces temperature task difficulty in extreme weather."""
+
+    def _hot(self, temp: float):
+        return _make_tm_with_outdoor_temp(temp)
+
+    def _cold(self, temp: float):
+        return _make_tm_with_outdoor_temp(temp)
+
+    # ── hot season ────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_hot_weather_task_type_is_temperature_increase(self):
+        """Hot outdoor temperature produces a temperature_increase task."""
+        tm = self._hot(28.0)
+        task = await tm._generate_temperature_task()
+        assert task is not None
+        assert task["task_type"] == "temperature_increase"
+
+    @pytest.mark.asyncio
+    async def test_normal_hot_climate_scale_near_one(self):
+        """Mild hot weather (1 °C above threshold) -> climate_scale ≈ 0.94."""
+        tm = self._hot(25.0)  # excess = 25 - 24 = 1
+        task = await tm._generate_temperature_task()
+        assert task is not None
+        expected_scale = max(0.5, 1.0 - 1.0 / 16.0)  # ≈ 0.9375
+        assert task["climate_scale"] == pytest.approx(expected_scale, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_extreme_hot_climate_scale_capped_at_half(self):
+        """At 40 °C the climate_scale floor (0.5) is hit: excess = 16."""
+        tm = self._hot(40.0)  # excess = 40 - 24 = 16 -> max(0.5, 1 - 16/16) = 0.5
+        task = await tm._generate_temperature_task()
+        assert task is not None
+        assert task["climate_scale"] == pytest.approx(0.5)
+
+    @pytest.mark.asyncio
+    async def test_beyond_extreme_hot_still_capped(self):
+        """Temperatures > 40 °C must not produce a scale below 0.5."""
+        tm = self._hot(55.0)
+        task = await tm._generate_temperature_task()
+        assert task is not None
+        assert task["climate_scale"] == pytest.approx(0.5)
+
+    @pytest.mark.asyncio
+    async def test_hot_cdd_degree_day_value(self):
+        """CDD in task metadata = outdoor_temp - BASE_TEMPERATURE (18 °C)."""
+        tm = self._hot(28.0)  # CDD = 28 - 18 = 10
+        task = await tm._generate_temperature_task()
+        assert task is not None
+        assert task["degree_day_value"] == pytest.approx(10.0)
+
+    # ── cold season ───────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_cold_weather_task_type_is_temperature_reduction(self):
+        """Cold outdoor temperature produces a temperature_reduction task."""
+        tm = self._cold(10.0)
+        task = await tm._generate_temperature_task()
+        assert task is not None
+        assert task["task_type"] == "temperature_reduction"
+
+    @pytest.mark.asyncio
+    async def test_mild_cold_climate_scale_near_one(self):
+        """Mild cold (14 °C, 1 °C below threshold 16 °C) -> climate_scale ≈ 0.9."""
+        tm = self._cold(14.0)  # excess = 16 - 14 = 2
+        task = await tm._generate_temperature_task()
+        assert task is not None
+        expected_scale = max(0.5, 1.0 - 2.0 / 20.0)  # 0.9
+        assert task["climate_scale"] == pytest.approx(expected_scale, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_extreme_cold_climate_scale_capped_at_half(self):
+        """At -2 °C excess = 20 -> climate_scale floor (0.5) is hit."""
+        tm = self._cold(-2.0)  # excess = 18 - (-2) = 20 -> max(0.5, 1-20/20) = 0.5
+        task = await tm._generate_temperature_task()
+        assert task is not None
+        assert task["climate_scale"] == pytest.approx(0.5)
+
+    @pytest.mark.asyncio
+    async def test_cold_hdd_degree_day_value(self):
+        """HDD in task metadata = BASE_TEMPERATURE (18 °C) - outdoor_temp."""
+        tm = self._cold(8.0)  # HDD = 18 - 8 = 10
+        task = await tm._generate_temperature_task()
+        assert task is not None
+        assert task["degree_day_value"] == pytest.approx(10.0)
+
+    # ── effect on target ──────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_extreme_heat_produces_smaller_adjustment_than_mild_heat(self):
+        """Extreme heat -> climate_scale 0.5 -> target deviation halved vs mild heat."""
+        tm_mild = self._hot(25.0)    # scale ≈ 0.94
+        tm_extreme = self._hot(40.0)  # scale = 0.5
+
+        task_mild = await tm_mild._generate_temperature_task()
+        task_extreme = await tm_extreme._generate_temperature_task()
+
+        assert task_mild is not None and task_extreme is not None
+        delta_mild = abs(task_mild["target_value"] - task_mild["baseline_value"])
+        delta_extreme = abs(task_extreme["target_value"] - task_extreme["baseline_value"])
+        assert delta_extreme < delta_mild
+
+    # ── neutral zone ──────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_neutral_outdoor_temp_returns_none(self):
+        """Temperature between thresholds (e.g. 21 °C) produces no task."""
+        tm = _make_tm_with_outdoor_temp(21.0)
+        task = await tm._generate_temperature_task()
+        assert task is None
+

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from homeassistant.core import HomeAssistant
 
-from .const import TASK_GENERATION_TIME, ENVIRONMENT_OFFICE, OUTDOOR_COLD_TEMP_THRESHOLD, OUTDOOR_HOT_TEMP_THRESHOLD
+from .const import TASK_GENERATION_TIME, ENVIRONMENT_OFFICE, OUTDOOR_COLD_TEMP_THRESHOLD, OUTDOOR_HOT_TEMP_THRESHOLD, BASE_TEMPERATURE
 from .translations_runtime import get_language, get_task_templates, get_difficulty_display, get_verification_reason_templates
 from .helpers import should_ai_be_active, get_working_days_from_config
 
@@ -231,9 +231,30 @@ class TaskManager:
         temps = [temp for _, temp in temp_history]
         baseline_temp = np.mean(temps)
 
-        # Adjustment magnitude: 0.5 °C (easy) up to 1.5 °C (hard) 
+        # Climate correction: when outdoor conditions are extreme (far above/below the season threshold), users have little control over their indoor climate.
+        # Scaling the task target down avoids labelling weather-driven task failures as "lack of effort".
+        #
+        # climate_scale [0.5, 1.0]:
+        #   - 1.0 at the season threshold (normal seasonal conditions)
+        #   - 0.5 when the outdoor excess exceeds 16 °C above/below the threshold
+        climate_scale = 1.0
+        if is_hot_outside:
+            excess = outdoor_temp - OUTDOOR_HOT_TEMP_THRESHOLD # if its hot outside, excess is positive for extreme heat
+            climate_scale = max(0.5, 1.0 - excess / 16.0)
+        elif is_cold_outside:
+            excess = OUTDOOR_COLD_TEMP_THRESHOLD - outdoor_temp # if it is cold outside, excess is positive for extreme cold
+            climate_scale = max(0.5, 1.0 - excess / 20.0)
+
+        # Degree-day value for research metadata (HDD for cold, CDD for hot)
+        degree_day_value = round(
+            max(0.0, outdoor_temp - BASE_TEMPERATURE) if is_hot_outside
+            else max(0.0, BASE_TEMPERATURE - outdoor_temp),
+            1,
+        )
+
+        # Adjustment magnitude: 0.5 °C (easy) up to 1.5 °C (hard), reduced during extreme weather
         base_adjustment = 1.0  # °C at normal difficulty
-        adjustment = base_adjustment * self.difficulty_multipliers[difficulty]
+        adjustment = base_adjustment * self.difficulty_multipliers[difficulty] * climate_scale
 
         # Get user's language and templates
         language = await get_language(self.hass)
@@ -246,7 +267,7 @@ class TaskManager:
             return {
                 "task_id": f"temp_{datetime.now().strftime('%Y%m%d')}",
                 "task_type": "temperature_increase",
-                "title": template["title"].format(increase=adjustment),
+                "title": template["title"].format(increase=round(adjustment, 1)),
                 "description": template["description"].format(
                     target_temp=target_temp,
                     baseline_temp=round(baseline_temp, 1),
@@ -257,6 +278,8 @@ class TaskManager:
                 "difficulty_level": difficulty,
                 "difficulty_display": get_difficulty_display(difficulty, language),
                 "area_name": None,
+                "climate_scale": round(climate_scale, 3),
+                "degree_day_value": degree_day_value,
             }
         else:
             # Heating season: ask user to lower heating setpoint
@@ -265,7 +288,7 @@ class TaskManager:
             return {
                 "task_id": f"temp_{datetime.now().strftime('%Y%m%d')}",
                 "task_type": "temperature_reduction",
-                "title": template["title"].format(reduction=adjustment),
+                "title": template["title"].format(reduction=round(adjustment, 1)),
                 "description": template["description"].format(
                     target_temp=target_temp,
                     baseline_temp=round(baseline_temp, 1),
@@ -276,6 +299,8 @@ class TaskManager:
                 "difficulty_level": difficulty,
                 "difficulty_display": get_difficulty_display(difficulty, language),
                 "area_name": None,
+                "climate_scale": round(climate_scale, 3),
+                "degree_day_value": degree_day_value,
             }
 
     async def _generate_power_reduction_task(self) -> Optional[Dict]:

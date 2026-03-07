@@ -43,9 +43,18 @@ KEEP_SHUTDOWN_BACKUPS = 3  # Keep last N shutdown backups (prevents accumulation
 RESEARCH_RETENTION_DAYS = 120  # Keep research data for 120 days (4 months)
 NOTIFICATION_HISTORY_LIMIT = 100 # Keep last N notifications in JSON state
 
+# Weather-related constants
+BASE_TEMPERATURE = 18.0
+WEATHER_ENTITIES = [
+    "weather.home",
+    "weather.forecast_home",
+    "sensor.outdoor_temperature",
+    "sensor.outside_temperature",
+    "sensor.outdoor_temp"
+]
 # Temperature task tuning
 OUTDOOR_HOT_TEMP_THRESHOLD = 24.0  # °C - above this the system suggests raising AC setpoint (cooling season)
-OUTDOOR_COLD_TEMP_THRESHOLD = 18.0  # °C - below this the system suggests lowering heating setpoint (heating season)
+OUTDOOR_COLD_TEMP_THRESHOLD = 16.0  # °C - below this the system suggests lowering heating setpoint (heating season)
 
 # Sensor categories and keywords for auto-discovery
 SENSOR_MAPPING = {
@@ -128,15 +137,5 @@ GAMMA = 0.95
 # Default Q-value for unseen state-action pairs
 # 0.3 is a moderate optimistic initial value that encourages exploration of new actions without being too high to cause excessive optimism.
 Q_INIT = 0.3
-
-# Weather-related constants
-BASE_TEMPERATURE = 18.0
-WEATHER_ENTITIES = [
-    "weather.home",
-    "weather.forecast_home",
-    "sensor.outdoor_temperature",
-    "sensor.outside_temperature",
-    "sensor.outdoor_temp"
-]
 
 CO2_FACTOR = 0.1 # kg CO2/kWh as of early 2026 for Portugal

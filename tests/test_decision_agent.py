@@ -3670,3 +3670,194 @@ class TestStreaksEdgeCases:
         # Supplying an earlier week should be silently ignored
         agent.update_weekly_streak(True, self._week(3))
         assert agent.weekly_streak == 1  # unchanged
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Expired pending episodes : logged with neutral reward before deletion
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _make_agent_for_expiry():
+    """Return an agent with all process_ai_model sub-methods mocked out."""
+    agent = make_agent()
+    # Mock all async sub-methods called by process_ai_model
+    agent._update_anomaly_index = AsyncMock()
+    agent._update_area_anomalies = AsyncMock()
+    agent._update_behaviour_index = MagicMock()
+    agent._update_fatigue_index = AsyncMock()
+    agent._build_state_vector = AsyncMock()
+    agent._update_action_mask = AsyncMock()
+    agent._decide_action = AsyncMock()
+    agent._shadow_decide_action = AsyncMock()
+    agent._save_persistent_state = AsyncMock()
+    agent._log_rl_episode = AsyncMock()
+    return agent
+
+
+class TestExpiredEpisodeLogging:
+    """Pending episodes older than 24 h must be logged with action_source='expired'
+    and a neutral reward (0.0) before they are removed from the pending dict."""
+
+    @pytest.mark.asyncio
+    async def test_expired_episode_removed_from_pending(self):
+        """An episode older than 24 h must be removed from pending_episodes."""
+        agent = _make_agent_for_expiry()
+        state_key = (2, 1, 0, 0, 2, 1)
+        agent.pending_episodes["old_notif"] = {
+            "state_key": state_key,
+            "action": 1,
+            "initial_power": 600.0,
+            "timestamp": datetime.now() - timedelta(hours=25),
+            "action_source": "explore",
+            "opportunity_score": 0.7,
+        }
+
+        await agent.process_ai_model()
+
+        assert "old_notif" not in agent.pending_episodes
+
+    @pytest.mark.asyncio
+    async def test_expired_episode_calls_log_with_expired_source(self):
+        """_log_rl_episode must be called once with action_source='expired'."""
+        agent = _make_agent_for_expiry()
+        state_key = (2, 1, 0, 0, 2, 1)
+        agent.pending_episodes["old_notif"] = {
+            "state_key": state_key,
+            "action": 1,
+            "initial_power": 600.0,
+            "timestamp": datetime.now() - timedelta(hours=25),
+            "action_source": "explore",
+            "opportunity_score": 0.7,
+        }
+
+        await agent.process_ai_model()
+
+        all_calls = agent._log_rl_episode.call_args_list
+        expired_calls = [
+            c for c in all_calls
+            if (len(c.args) > 3 and c.args[3] == "expired")
+            or c.kwargs.get("action_source") == "expired"
+        ]
+        assert len(expired_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_expired_episode_logged_with_zero_reward(self):
+        """The expired episode must be logged with reward=0.0."""
+        agent = _make_agent_for_expiry()
+        state_key = (2, 1, 0, 0, 2, 1)
+        agent.pending_episodes["old_notif"] = {
+            "state_key": state_key,
+            "action": 1,
+            "initial_power": 600.0,
+            "timestamp": datetime.now() - timedelta(hours=25),
+            "action_source": "explore",
+            "opportunity_score": 0.7,
+        }
+
+        await agent.process_ai_model()
+
+        all_calls = agent._log_rl_episode.call_args_list
+        expired_call = next(
+            c for c in all_calls
+            if (len(c.args) > 3 and c.args[3] == "expired")
+            or c.kwargs.get("action_source") == "expired"
+        )
+        reward = expired_call.args[2]
+        assert reward == pytest.approx(0.0)
+
+    @pytest.mark.asyncio
+    async def test_expired_episode_accepted_is_none(self):
+        """The expired episode must be logged with accepted=None (no user feedback)."""
+        agent = _make_agent_for_expiry()
+        state_key = (2, 1, 0, 0, 2, 1)
+        agent.pending_episodes["old_notif"] = {
+            "state_key": state_key,
+            "action": 1,
+            "initial_power": 600.0,
+            "timestamp": datetime.now() - timedelta(hours=25),
+            "action_source": "explore",
+            "opportunity_score": 0.7,
+        }
+
+        await agent.process_ai_model()
+
+        all_calls = agent._log_rl_episode.call_args_list
+        expired_call = next(
+            c for c in all_calls
+            if (len(c.args) > 3 and c.args[3] == "expired")
+            or c.kwargs.get("action_source") == "expired"
+        )
+        assert expired_call.kwargs.get("accepted") is None
+
+    @pytest.mark.asyncio
+    async def test_expired_episode_q_table_updated_toward_zero(self):
+        """Q(s, a) must move toward 0.0 (neutral reward, γ=0) for expired episodes."""
+        agent = _make_agent_for_expiry()
+        state_key = (2, 1, 0, 0, 2, 1)
+        action = 1
+        initial_q = 0.6
+        agent.q_table[state_key] = {a: da_mod.Q_INIT for a in da_mod.ACTIONS.values()}
+        agent.q_table[state_key][action] = initial_q
+
+        agent.pending_episodes["old_notif"] = {
+            "state_key": state_key,
+            "action": action,
+            "initial_power": 600.0,
+            "timestamp": datetime.now() - timedelta(hours=25),
+            "action_source": "explore",
+            "opportunity_score": 0.7,
+        }
+
+        await agent.process_ai_model()
+
+        lr = agent.learning_rate
+        expected_q = initial_q + lr * (0.0 - initial_q)
+        assert agent.q_table[state_key][action] == pytest.approx(expected_q)
+
+    @pytest.mark.asyncio
+    async def test_recent_episode_not_expired(self):
+        """An episode only 1 h old must NOT be logged as expired or removed."""
+        agent = _make_agent_for_expiry()
+        state_key = (2, 1, 0, 0, 2, 1)
+        agent.pending_episodes["recent_notif"] = {
+            "state_key": state_key,
+            "action": 1,
+            "initial_power": 600.0,
+            "timestamp": datetime.now() - timedelta(hours=1),
+            "action_source": "explore",
+            "opportunity_score": 0.5,
+        }
+
+        await agent.process_ai_model()
+
+        # Still in pending
+        assert "recent_notif" in agent.pending_episodes
+        # No expired call
+        for c in agent._log_rl_episode.call_args_list:
+            source = c.args[3] if len(c.args) > 3 else c.kwargs.get("action_source")
+            assert source != "expired"
+
+    @pytest.mark.asyncio
+    async def test_multiple_expired_episodes_all_logged(self):
+        """When several episodes expire simultaneously, each gets a separate log call."""
+        agent = _make_agent_for_expiry()
+        state_key = (2, 1, 0, 0, 2, 1)
+        old_ts = datetime.now() - timedelta(hours=26)
+        for i in range(3):
+            agent.pending_episodes[f"old_{i}"] = {
+                "state_key": state_key,
+                "action": 1,
+                "initial_power": 500.0,
+                "timestamp": old_ts,
+                "action_source": "explore",
+                "opportunity_score": 0.4,
+            }
+
+        await agent.process_ai_model()
+
+        expired_calls = [
+            c for c in agent._log_rl_episode.call_args_list
+            if (len(c.args) > 3 and c.args[3] == "expired")
+            or c.kwargs.get("action_source") == "expired"
+        ]
+        assert len(expired_calls) == 3
+        for i in range(3):
+            assert f"old_{i}" not in agent.pending_episodes

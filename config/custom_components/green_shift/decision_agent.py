@@ -470,8 +470,17 @@ class DecisionAgent:
                        if (_now_expire - v["timestamp"]) > _expiry]
         if expired_ids:
             for k in expired_ids:
-                del self.pending_episodes[k]
-            _LOGGER.info("Expired %d stale pending episode(s) (>24 h old)", len(expired_ids))
+                ep = self.pending_episodes.pop(k)
+                # Apply a neutral reward for expired episodes to reflect that we can no longer learn from them, but without skewing the Q-table toward notifications or noops.
+                state_key = ep["state_key"]
+                action = ep["action"]
+                if state_key not in self.q_table:
+                    self.q_table[state_key] = {a: Q_INIT for a in ACTIONS.values()}
+                current_q = self.q_table[state_key].get(action, Q_INIT)
+                self.q_table[state_key][action] = current_q + self.learning_rate * (0.0 - current_q)
+                self.episode_number += 1
+                await self._log_rl_episode( state_key, action, 0.0, "expired", opportunity_score=ep.get("opportunity_score"), accepted=None)
+            _LOGGER.info("Expired %d stale pending episode(s) (>24 h old) - logged with neutral reward", len(expired_ids))
 
         # Pre-fetch 1-hour power history once per cycle and cache it.
         # _update_anomaly_index() and _update_action_mask() both need the same data: sharing the result eliminates one redundant DB query per cycle.

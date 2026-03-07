@@ -147,8 +147,18 @@ ha core restart
 4. Follow the configuration wizard:
    - Configure currency and environment settings
    - Select your sensors (energy, power, temperature, etc.)
-   - **Optional**: Select a weather entity for Heating Degree Days analysis
+   - **Optional**: Select a weather entity for Heating/Cooling Degree Days analysis (see note below)
    - Assign areas to sensors
+
+> **Weather Entity (optional but recommended)**
+>
+> Providing a weather entity (e.g. `weather.home`) unlocks several improvements:
+>
+> - **Climate-aware task difficulty**: on extremely hot or cold days the temperature tasks are automatically scaled down so users are not penalised for conditions they cannot control.
+> - **Degree-day research data**: daily HDD/CDD values are recorded alongside consumption data for richer analysis.
+>
+> The integration searches common weather entity names automatically, but you can select any `weather.*` or `sensor.*` (outdoor temperature) entity during setup.
+> If you skip this field the integration works normally: weather-dependent features are simply disabled.
 
 ✅ **That's it!** The integration will now start collecting baseline data.
 
