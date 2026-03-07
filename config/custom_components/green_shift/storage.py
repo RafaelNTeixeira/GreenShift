@@ -1338,7 +1338,7 @@ class StorageManager:
                 elif stats['too_hard_count'] > stats['too_easy_count'] * 2:
                     stats['suggested_adjustment'] = -1  # Decrease difficulty
 
-            _LOGGER.debug("Difficulty stats for task type '%s': %s", task_type, stats)
+            # _LOGGER.debug("Difficulty stats for task type '%s': %s", task_type, stats)
 
             return stats
 

@@ -102,10 +102,9 @@ class TaskManager:
                         saved = await self.storage.save_task_feedback(task['task_id'], auto_feedback)
                         if saved:
                             await self.storage.log_task_feedback(task['task_id'], auto_feedback)
-                            _LOGGER.debug(
-                                "Auto-submitted difficulty feedback '%s' for task %s (verified=%s)",
-                                auto_feedback, task['task_id'], task['verified']
-                            )
+                            # _LOGGER.debug("Auto-submitted difficulty feedback '%s' for task %s (verified=%s)",
+                            #     auto_feedback, task['task_id'], task['verified']
+                            # )
 
         # Check if tasks already exist for today
         existing_tasks = await self.storage.get_today_tasks()

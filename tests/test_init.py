@@ -103,6 +103,7 @@ init_spec.loader.exec_module(init_mod)
 async_discover_sensors = init_mod.async_discover_sensors
 sync_helper_entities = init_mod.sync_helper_entities
 trigger_phase_transition_notification = init_mod.trigger_phase_transition_notification
+async_setup_services = init_mod.async_setup_services
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -488,3 +489,127 @@ class TestTriggerPhaseTransitionNotification:
 
         payload = hass.services.async_call.call_args.args[2]
         assert "Living Room" in payload["message"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# restore_backup service: in-memory reload after restore
+# ─────────────────────────────────────────────────────────────────────────────
+
+DOMAIN = "green_shift"
+
+
+def _build_services_hass(backup_success: bool, include_agent: bool = True):
+    """Build a minimal hass mock suitable for calling async_setup_services."""
+    hass = MagicMock()
+
+    # Capture registered service handlers so tests can call them directly.
+    registered_handlers = {}
+
+    def _register(domain, name, handler):
+        registered_handlers[name] = handler
+
+    hass.services.async_register = _register
+    hass.services.async_call = AsyncMock()
+
+    backup_manager_mock = MagicMock()
+    backup_manager_mock.restore_from_backup = AsyncMock(return_value=backup_success)
+    backup_manager_mock.create_backup = AsyncMock(return_value=True)
+    backup_manager_mock.list_backups = MagicMock(return_value=[])
+
+    agent_mock = MagicMock()
+    agent_mock._load_persistent_state = AsyncMock()
+
+    task_manager_mock = MagicMock()
+    task_manager_mock.generate_daily_tasks = AsyncMock(return_value=[])
+    task_manager_mock.verify_tasks = AsyncMock(return_value={})
+
+    storage_mock = MagicMock()
+    storage_mock.load_state = AsyncMock(return_value={})
+    storage_mock.save_state = AsyncMock()
+    storage_mock.get_today_tasks = AsyncMock(return_value=[])
+    storage_mock.get_task_by_index = AsyncMock(return_value=None)
+    storage_mock.record_task_feedback = AsyncMock()
+    storage_mock.record_rl_episode = AsyncMock()
+    storage_mock._cleanup_old_research_data = AsyncMock()
+
+    data = {
+        DOMAIN: {
+            "backup_manager": backup_manager_mock,
+            "task_manager": task_manager_mock,
+            "storage": storage_mock,
+            "notification_select": MagicMock(),
+        }
+    }
+    if include_agent:
+        data[DOMAIN]["agent"] = agent_mock
+
+    hass.data = data
+    return hass, registered_handlers, backup_manager_mock, agent_mock
+
+
+class TestRestoreBackupService:
+    """Verify that restore_backup reloads in-memory agent state after a successful restore."""
+
+    @pytest.mark.asyncio
+    async def test_agent_state_reloaded_after_successful_restore(self):
+        """_load_persistent_state must be awaited when restore succeeds."""
+        hass, handlers, _, agent_mock = _build_services_hass(backup_success=True)
+        await async_setup_services(hass)
+
+        call = MagicMock()
+        call.data = {"backup_name": "auto/20260218_100000"}
+        await handlers["restore_backup"](call)
+
+        agent_mock._load_persistent_state.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_agent_state_not_reloaded_after_failed_restore(self):
+        """_load_persistent_state must NOT be called when restore fails."""
+        hass, handlers, _, agent_mock = _build_services_hass(backup_success=False)
+        await async_setup_services(hass)
+
+        call = MagicMock()
+        call.data = {"backup_name": "auto/20260218_100000"}
+        await handlers["restore_backup"](call)
+
+        agent_mock._load_persistent_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_restore_succeeds_without_agent_in_hass_data(self):
+        """If agent is not present the restore must still complete without raising."""
+        hass, handlers, backup_manager_mock, _ = _build_services_hass(
+            backup_success=True, include_agent=False
+        )
+        await async_setup_services(hass)
+
+        call = MagicMock()
+        call.data = {"backup_name": "auto/20260218_100000"}
+        # Must not raise
+        await handlers["restore_backup"](call)
+        backup_manager_mock.restore_from_backup.assert_awaited_once_with("auto/20260218_100000")
+
+    @pytest.mark.asyncio
+    async def test_restore_returns_early_when_no_backup_name(self):
+        """Missing backup_name must return early without calling restore."""
+        hass, handlers, backup_manager_mock, agent_mock = _build_services_hass(backup_success=True)
+        await async_setup_services(hass)
+
+        call = MagicMock()
+        call.data = {}  # no backup_name
+        await handlers["restore_backup"](call)
+
+        backup_manager_mock.restore_from_backup.assert_not_called()
+        agent_mock._load_persistent_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_restore_returns_early_when_no_backup_manager(self):
+        """Missing backup_manager must return early without calling restore."""
+        hass, handlers, _, agent_mock = _build_services_hass(backup_success=True)
+        del hass.data[DOMAIN]["backup_manager"]
+        await async_setup_services(hass)
+
+        call = MagicMock()
+        call.data = {"backup_name": "auto/20260218_100000"}
+        await handlers["restore_backup"](call)
+
+        agent_mock._load_persistent_state.assert_not_called()
