@@ -841,11 +841,20 @@ async def async_setup_services(hass: HomeAssistant):
         success = await backup_manager.restore_from_backup(backup_name)
 
         if success:
-            # Reload in-memory AI state so the restored state.json is not overwritten by the stale in-memory Q-table on the next save cycle.
+            # Reload agent in-memory state so the restored state.json is not overwritten by the stale in-memory Q-table on the next periodic save cycle.
             agent = hass.data[DOMAIN].get("agent")
             if agent:
                 await agent._load_persistent_state()
-                _LOGGER.info("Backup restored and in-memory AI state reloaded successfully.")
+                _LOGGER.info("Backup restored: agent state reloaded")
+
+            # Reload collector midnight points so the UI reflects the restored data immediately without waiting for the next midnight collection.
+            collector = hass.data[DOMAIN].get("collector")
+            if collector:
+                await collector._load_persistent_data()
+                _LOGGER.info("Backup restored: collector midnight points reloaded")
+
+            if agent or collector:
+                _LOGGER.info("Backup restored and all in-memory state reloaded from: %s", backup_name)
             else:
                 _LOGGER.info("Backup restored successfully. Please restart Home Assistant.")
         else:
