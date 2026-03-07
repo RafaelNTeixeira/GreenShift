@@ -2160,6 +2160,9 @@ class DecisionAgent:
                 if days_elapsed >= 7:
                     week_key = week_ptr.isoformat()
                     if week_key not in self._logged_weeks and self.storage:
+                        # Mark as logged immediately,before any await,to prevent a concurrent second call from entering this block again
+                        # and calling update_weekly_streak() twice for the same week.
+                        self._logged_weeks.add(week_key)
                         _LOGGER.info("Detected unlogged completed week (%s). Logging now before transitioning.", week_key)
                         week_start_dt = datetime.combine(week_ptr, datetime.min.time())
                         week_end_dt = week_start_dt + timedelta(days=7)
@@ -2196,7 +2199,6 @@ class DecisionAgent:
                                 'savings_percentage': old_savings_pct,
                                 'achieved': old_success,
                             })
-                            self._logged_weeks.add(week_key)
                             self.update_weekly_streak(old_success, week_key)
                             _LOGGER.info(
                                 "Logged missed weekly challenge: week=%s, success=%s, savings=%.1f%%",

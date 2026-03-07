@@ -440,7 +440,7 @@ All data is stored in: `config/green_shift_data/`
 
 ## 🧪 Testing
 
-Green Shift includes currently **903 comprehensive tests** covering AI logic, backup systems, configuration and utility functions — with **75.6% total code coverage** (≈89% excluding HA-runtime-dependent setup code).
+Green Shift includes currently **925 comprehensive tests** covering AI logic, backup systems, configuration and utility functions — with **75.8% total code coverage** (≈89% excluding HA-runtime-dependent setup code).
 
 ### Quick Start
 

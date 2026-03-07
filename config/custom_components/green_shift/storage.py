@@ -2021,6 +2021,17 @@ class StorageManager:
                 research_conn.close()
                 return
 
+            # Resolve phase from research_phase_metadata if not explicitly provided
+            resolved_phase = phase
+            if resolved_phase is None:
+                research_cursor.execute("""
+                    SELECT phase FROM research_phase_metadata
+                    WHERE end_timestamp IS NULL
+                    ORDER BY start_timestamp DESC LIMIT 1
+                """)
+                phase_row = research_cursor.fetchone()
+                resolved_phase = phase_row[0] if phase_row else "baseline"
+
             # For each area, compute daily statistics
             for area_name in areas:
                 # Get environmental and energy metrics for this area
@@ -2057,7 +2068,7 @@ class StorageManager:
                      total_occupied_hours, occupancy_percentage)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    date, area_name, phase,
+                    date, area_name, resolved_phase,
                     area_stats[0], area_stats[1], area_stats[2],  # power metrics
                     area_stats[3], area_stats[4], area_stats[5],  # environmental metrics
                     occupied_hours, occupancy_percentage
