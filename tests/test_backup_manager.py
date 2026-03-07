@@ -374,3 +374,238 @@ class TestErrorPaths:
             result = bm.list_backups()
 
         assert result == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Data isolation: two backups with different data, restore one -> exact match
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestRestoreDataIsolation:
+    """
+    Core correctness tests: after restoring a specific backup the live files must
+    contain exactly the data that was in that backup — no contamination from
+    the other backup or from the current (live) state.
+    """
+
+    # ── Helpers ──────────────────────────────────────────────────────────────
+
+    def _create_db_with_marker(self, path: Path, marker: str) -> None:
+        """Create a minimal SQLite DB containing a single identifiable row."""
+        conn = sqlite3.connect(str(path))
+        conn.execute("CREATE TABLE IF NOT EXISTS backup_marker (value TEXT)")
+        conn.execute("DELETE FROM backup_marker")
+        conn.execute("INSERT INTO backup_marker VALUES (?)", (marker,))
+        conn.commit()
+        conn.close()
+
+    def _read_marker(self, path: Path) -> str:
+        """Return the marker value stored in a restored DB, or None if absent."""
+        conn = sqlite3.connect(str(path))
+        row = conn.execute("SELECT value FROM backup_marker").fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    # ── Core round-trip: restore A does not contain B's data ─────────────────
+
+    @pytest.mark.asyncio
+    async def test_restore_backup_a_excludes_backup_b_data(self, bm, data_dir):
+        """Restoring backup A after B has been written must yield A's data."""
+        # ── Backup A ─────────────────────────────────────────────────────────
+        self._create_db_with_marker(data_dir / "sensor_data.db", "sensor_A")
+        self._create_db_with_marker(data_dir / "research_data.db", "research_A")
+        (data_dir / "state.json").write_text('{"phase": "baseline", "snapshot": "A"}')
+        assert await bm.create_backup("manual") is True
+        backup_a = "manual/" + list(bm.manual_dir.iterdir())[0].name
+
+        # ── Overwrite live files with B's content ────────────────────────────
+        (data_dir / "sensor_data.db").unlink()
+        (data_dir / "research_data.db").unlink()
+        self._create_db_with_marker(data_dir / "sensor_data.db", "sensor_B")
+        self._create_db_with_marker(data_dir / "research_data.db", "research_B")
+        (data_dir / "state.json").write_text('{"phase": "active", "snapshot": "B"}')
+
+        # ── Restore A ────────────────────────────────────────────────────────
+        assert await bm.restore_from_backup(backup_a) is True
+
+        # ── Verify live data == A (not B) ─────────────────────────────────────
+        assert self._read_marker(data_dir / "sensor_data.db") == "sensor_A"
+        assert self._read_marker(data_dir / "research_data.db") == "research_A"
+        state_text = (data_dir / "state.json").read_text()
+        assert '"snapshot": "A"' in state_text
+        assert '"snapshot": "B"' not in state_text
+
+    @pytest.mark.asyncio
+    async def test_restore_backup_b_excludes_backup_a_data(self, bm, data_dir):
+        """Restoring backup B must yield B's data even though A was created first."""
+        # ── Backup A (manual dir) ─────────────────────────────────────────────
+        self._create_db_with_marker(data_dir / "sensor_data.db", "sensor_A")
+        (data_dir / "state.json").write_text('{"snapshot": "A"}')
+        await bm.create_backup("manual")
+
+        # ── Backup B (auto dir) ───────────────────────────────────────────────
+        (data_dir / "sensor_data.db").unlink()
+        self._create_db_with_marker(data_dir / "sensor_data.db", "sensor_B")
+        (data_dir / "state.json").write_text('{"snapshot": "B"}')
+        assert await bm.create_backup("auto") is True
+        backup_b = "auto/" + list(bm.auto_dir.iterdir())[0].name
+
+        # ── Overwrite live with "C" (simulate time passing) ───────────────────
+        (data_dir / "sensor_data.db").unlink()
+        self._create_db_with_marker(data_dir / "sensor_data.db", "sensor_C")
+        (data_dir / "state.json").write_text('{"snapshot": "C"}')
+
+        # ── Restore B ────────────────────────────────────────────────────────
+        assert await bm.restore_from_backup(backup_b) is True
+
+        assert self._read_marker(data_dir / "sensor_data.db") == "sensor_B"
+        state_text = (data_dir / "state.json").read_text()
+        assert '"snapshot": "B"' in state_text
+        assert '"snapshot": "A"' not in state_text
+        assert '"snapshot": "C"' not in state_text
+
+    # ── Two-backup round-trip: swap between A and B, then back ───────────────
+
+    @pytest.mark.asyncio
+    async def test_alternating_restores_always_match_their_backup(self, bm, data_dir):
+        """
+        Create A and B in different type dirs, then restore A -> B -> A.
+        Each restore must yield exactly the data from that backup.
+        """
+        # ── Backup A (manual) ────────────────────────────────────────────────
+        self._create_db_with_marker(data_dir / "sensor_data.db", "epoch_1")
+        self._create_db_with_marker(data_dir / "research_data.db", "r_epoch_1")
+        (data_dir / "state.json").write_text('{"epoch": 1}')
+        await bm.create_backup("manual")
+        backup_a = "manual/" + list(bm.manual_dir.iterdir())[0].name
+
+        # ── Backup B (auto) ───────────────────────────────────────────────────
+        (data_dir / "sensor_data.db").unlink()
+        (data_dir / "research_data.db").unlink()
+        self._create_db_with_marker(data_dir / "sensor_data.db", "epoch_2")
+        self._create_db_with_marker(data_dir / "research_data.db", "r_epoch_2")
+        (data_dir / "state.json").write_text('{"epoch": 2}')
+        await bm.create_backup("auto")
+        backup_b = "auto/" + list(bm.auto_dir.iterdir())[0].name
+
+        # ── Restore A ────────────────────────────────────────────────────────
+        assert await bm.restore_from_backup(backup_a) is True
+        assert self._read_marker(data_dir / "sensor_data.db") == "epoch_1"
+        assert self._read_marker(data_dir / "research_data.db") == "r_epoch_1"
+        assert '"epoch": 1' in (data_dir / "state.json").read_text()
+
+        # ── Restore B ────────────────────────────────────────────────────────
+        assert await bm.restore_from_backup(backup_b) is True
+        assert self._read_marker(data_dir / "sensor_data.db") == "epoch_2"
+        assert self._read_marker(data_dir / "research_data.db") == "r_epoch_2"
+        assert '"epoch": 2' in (data_dir / "state.json").read_text()
+
+        # ── Restore A again ───────────────────────────────────────────────────
+        assert await bm.restore_from_backup(backup_a) is True
+        assert self._read_marker(data_dir / "sensor_data.db") == "epoch_1"
+        assert self._read_marker(data_dir / "research_data.db") == "r_epoch_1"
+        assert '"epoch": 1' in (data_dir / "state.json").read_text()
+
+    # ── Cross-DB isolation ────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_restore_does_not_mix_sensor_and_research_db_data(self, bm, data_dir):
+        """sensor_data.db and research_data.db must each restore their own content."""
+        self._create_db_with_marker(data_dir / "sensor_data.db", "sensor_ALPHA")
+        self._create_db_with_marker(data_dir / "research_data.db", "research_ALPHA")
+        await bm.create_backup("manual")
+        backup_name = "manual/" + list(bm.manual_dir.iterdir())[0].name
+
+        # Overwrite live with different content
+        (data_dir / "sensor_data.db").unlink()
+        (data_dir / "research_data.db").unlink()
+        self._create_db_with_marker(data_dir / "sensor_data.db", "sensor_BETA")
+        self._create_db_with_marker(data_dir / "research_data.db", "research_BETA")
+
+        assert await bm.restore_from_backup(backup_name) is True
+
+        assert self._read_marker(data_dir / "sensor_data.db") == "sensor_ALPHA"
+        assert self._read_marker(data_dir / "research_data.db") == "research_ALPHA"
+        # Make sure they weren't swapped
+        assert self._read_marker(data_dir / "sensor_data.db") != "research_ALPHA"
+        assert self._read_marker(data_dir / "research_data.db") != "sensor_ALPHA"
+
+    # ── WAL / SHM cleanup ────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_stale_sensor_wal_and_shm_deleted_after_restore(self, bm, data_dir):
+        """Stale -wal and -shm files for sensor_data.db are removed after restore."""
+        self._create_db_with_marker(data_dir / "sensor_data.db", "marker")
+        await bm.create_backup("auto")
+        backup_name = "auto/" + list(bm.auto_dir.iterdir())[0].name
+
+        # Plant stale WAL/SHM companion files
+        wal = Path(str(bm.db_path) + "-wal")
+        shm = Path(str(bm.db_path) + "-shm")
+        wal.write_bytes(b"stale wal bytes")
+        shm.write_bytes(b"stale shm bytes")
+
+        assert await bm.restore_from_backup(backup_name) is True
+
+        assert not wal.exists(), "-wal file was not removed after restore"
+        assert not shm.exists(), "-shm file was not removed after restore"
+
+    @pytest.mark.asyncio
+    async def test_stale_research_wal_and_shm_deleted_after_restore(self, bm, data_dir):
+        """Stale -wal and -shm files for research_data.db are removed after restore."""
+        self._create_db_with_marker(data_dir / "research_data.db", "research_marker")
+        await bm.create_backup("auto")
+        backup_name = "auto/" + list(bm.auto_dir.iterdir())[0].name
+
+        wal = Path(str(bm.research_db_path) + "-wal")
+        shm = Path(str(bm.research_db_path) + "-shm")
+        wal.write_bytes(b"stale wal bytes")
+        shm.write_bytes(b"stale shm bytes")
+
+        assert await bm.restore_from_backup(backup_name) is True
+
+        assert not wal.exists(), "research -wal file was not removed after restore"
+        assert not shm.exists(), "research -shm file was not removed after restore"
+
+    @pytest.mark.asyncio
+    async def test_restore_succeeds_when_no_wal_files_present(self, bm, data_dir):
+        """Restore must succeed cleanly when no WAL/SHM files exist."""
+        self._create_db_with_marker(data_dir / "sensor_data.db", "clean_marker")
+        await bm.create_backup("auto")
+        backup_name = "auto/" + list(bm.auto_dir.iterdir())[0].name
+
+        # Ensure no WAL files exist
+        for suffix in ("-wal", "-shm"):
+            f = Path(str(bm.db_path) + suffix)
+            assert not f.exists()
+
+        assert await bm.restore_from_backup(backup_name) is True
+        assert self._read_marker(data_dir / "sensor_data.db") == "clean_marker"
+
+    # ── Pre-restore safety backup captures the live state ────────────────────
+
+    @pytest.mark.asyncio
+    async def test_pre_restore_backup_captures_overwritten_state(self, bm, data_dir):
+        """The pre_restore backup created before overwriting must hold the pre-restore data."""
+        # Backup A
+        self._create_db_with_marker(data_dir / "sensor_data.db", "to_restore")
+        (data_dir / "state.json").write_text('{"snapshot": "target"}')
+        await bm.create_backup("manual")
+        backup_a = "manual/" + list(bm.manual_dir.iterdir())[0].name
+
+        # Change live data
+        (data_dir / "sensor_data.db").unlink()
+        self._create_db_with_marker(data_dir / "sensor_data.db", "current_live")
+        (data_dir / "state.json").write_text('{"snapshot": "live"}')
+
+        # Restore A — this should first snapshot the live state into pre_restore
+        assert await bm.restore_from_backup(backup_a) is True
+
+        # Pre-restore dir must have exactly one entry (the safety snapshot)
+        pre_restore_entries = list(bm.pre_restore_dir.iterdir())
+        assert len(pre_restore_entries) == 1
+        pre_restore_state = pre_restore_entries[0] / "state.json"
+        assert pre_restore_state.exists()
+        assert '"snapshot": "live"' in pre_restore_state.read_text()
+
+        # And the live state is now what was in the backup
+        assert '"snapshot": "target"' in (data_dir / "state.json").read_text()

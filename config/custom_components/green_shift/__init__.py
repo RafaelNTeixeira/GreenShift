@@ -838,7 +838,15 @@ async def async_setup_services(hass: HomeAssistant):
             return
 
         _LOGGER.warning("Restoring from backup: %s - This will overwrite current data!", backup_name)
-        success = await backup_manager.restore_from_backup(backup_name)
+
+        # Hold both storage locks during restore to prevent any concurrent access while files are being replaced
+        storage = hass.data[DOMAIN].get("storage")
+        if storage:
+            async with storage._db_lock:
+                async with storage._research_db_lock:
+                    success = await backup_manager.restore_from_backup(backup_name)
+        else:
+            success = await backup_manager.restore_from_backup(backup_name)
 
         if success:
             # Reload agent in-memory state so the restored state.json is not overwritten by the stale in-memory Q-table on the next periodic save cycle.

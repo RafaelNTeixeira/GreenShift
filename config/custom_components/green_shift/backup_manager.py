@@ -246,11 +246,20 @@ class BackupManager:
                 # Restore databases
                 if backup_sensor_db.exists():
                     shutil.copy2(str(backup_sensor_db), str(self.db_path))
-                    _LOGGER.info("Restored sensor database from backup")
+                    # Delete any stale WAL files that might cause issues after restore
+                    for _suffix in ("-wal", "-shm"):
+                        _f = Path(str(self.db_path) + _suffix)
+                        if _f.exists():
+                            _f.unlink()
+                    _LOGGER.info("Restored sensor database from backup (stale WAL cleared)")
 
                 if backup_research_db.exists():
                     shutil.copy2(str(backup_research_db), str(self.research_db_path))
-                    _LOGGER.info("Restored research database from backup")
+                    for _suffix in ("-wal", "-shm"):
+                        _f = Path(str(self.research_db_path) + _suffix)
+                        if _f.exists():
+                            _f.unlink()
+                    _LOGGER.info("Restored research database from backup (stale WAL cleared)")
 
                 if backup_state.exists():
                     shutil.copy2(str(backup_state), str(self.state_file))
