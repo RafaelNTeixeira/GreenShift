@@ -82,6 +82,14 @@ class DataCollector:
         if self.storage:
             await self._load_persistent_data()
 
+        # If we don't have valid midnight points loaded from storage, seed them from the current state of the energy sensors to avoid a big jump in daily energy after a restart that spanned midnight.
+        if not self._energy_midnight_points and self.sensors.get("energy"):
+            _LOGGER.info(
+                "No valid midnight energy points in storage; seeding from current HA state "
+                "to avoid inflated/zeroed daily energy after a restart that spanned midnight."
+            )
+            self.update_midnight_points()
+
         await self._setup_area_grouping()
         await self._setup_power_monitoring()
         await self._setup_energy_monitoring()

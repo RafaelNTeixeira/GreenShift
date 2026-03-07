@@ -516,7 +516,7 @@ class TestMidnightPointsDateGuard:
         dc = make_collector(storage=storage)
         await dc._load_persistent_data()
 
-        # Must be empty — will be re-initialised from first energy change event
+        # Must be empty - will be re-initialised from first energy change event
         assert dc._energy_midnight_points == {}
 
     @pytest.mark.asyncio
@@ -1127,3 +1127,138 @@ class TestHistoryDelegation:
 
         call_kwargs = storage.get_area_history.call_args[1]
         assert call_kwargs.get("working_hours_only") is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# setup() midnight-points seeding
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSetupMidnightSeeding:
+    """
+    When HA restarts after the midnight reset callback was missed (e.g. power cut),
+    _load_persistent_data discards the stale midnight points.
+    setup() must then immediately seed them from HA's state machine rather than
+    waiting for the first sensor state-change event (which may never come if sensors
+    are not updating).
+    """
+
+    def _make_dc_with_ha_state(self, storage, energy_val=99.0):
+        """Helper that returns a DataCollector whose hass.states.get returns a valid energy state."""
+        hass = MagicMock()
+        hass.async_create_task = MagicMock()
+
+        state_mock = MagicMock()
+        state_mock.state = str(energy_val)
+        state_mock.attributes = {"unit_of_measurement": "kWh"}
+        hass.states.get = MagicMock(return_value=state_mock)
+
+        dc_mod.get_normalized_value = MagicMock(return_value=(energy_val, "kWh"))
+
+        return DataCollector(hass, {"energy": ["sensor.e1"]}, None, None, storage)
+
+    @pytest.mark.asyncio
+    async def test_seeds_midnight_points_from_ha_state_when_stored_date_is_stale(self):
+        """
+        If midnight points were stored yesterday (stale), setup() must call
+        update_midnight_points() immediately to seed from HA's state machine.
+        """
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={
+            "energy_midnight_points": {"sensor.e1": 50.0},
+            "energy_midnight_points_date": yesterday,
+        })
+        storage.save_state = AsyncMock()
+
+        dc = self._make_dc_with_ha_state(storage, energy_val=75.0)
+
+        # Patch the sub-setup methods so we only test the seeding logic
+        dc._setup_area_grouping = AsyncMock()
+        dc._setup_power_monitoring = AsyncMock()
+        dc._setup_energy_monitoring = AsyncMock()
+        dc._setup_environment_monitoring = AsyncMock()
+
+        await dc.setup()
+
+        # Stale points were discarded, then seeded from HA state machine
+        assert "sensor.e1" in dc._energy_midnight_points
+        assert dc._energy_midnight_points["sensor.e1"] == pytest.approx(75.0)
+        # async_create_task must have been called to persist the seeded baseline
+        assert dc.hass.async_create_task.called
+
+    @pytest.mark.asyncio
+    async def test_seeds_midnight_points_on_first_run_no_state_stored(self):
+        """
+        On a fresh install (no stored state), setup() must seed midnight points
+        from HA's state machine.
+        """
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={})  # completely empty state
+        storage.save_state = AsyncMock()
+
+        dc = self._make_dc_with_ha_state(storage, energy_val=30.0)
+        dc._setup_area_grouping = AsyncMock()
+        dc._setup_power_monitoring = AsyncMock()
+        dc._setup_energy_monitoring = AsyncMock()
+        dc._setup_environment_monitoring = AsyncMock()
+
+        await dc.setup()
+
+        assert dc._energy_midnight_points.get("sensor.e1") == pytest.approx(30.0)
+        assert dc.hass.async_create_task.called
+
+    @pytest.mark.asyncio
+    async def test_does_not_overwrite_valid_today_midnight_points(self):
+        """
+        If today's midnight points were loaded successfully, setup() must NOT
+        call update_midnight_points() and must keep the loaded values unchanged.
+        """
+        today = datetime.now().strftime("%Y-%m-%d")
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={
+            "energy_midnight_points": {"sensor.e1": 42.0},
+            "energy_midnight_points_date": today,
+        })
+        storage.save_state = AsyncMock()
+
+        hass = MagicMock()
+        hass.async_create_task = MagicMock()
+        hass.states.get = MagicMock(return_value=None)  # HA should NOT be queried
+
+        dc = DataCollector(hass, {"energy": ["sensor.e1"]}, None, None, storage)
+        dc._setup_area_grouping = AsyncMock()
+        dc._setup_power_monitoring = AsyncMock()
+        dc._setup_energy_monitoring = AsyncMock()
+        dc._setup_environment_monitoring = AsyncMock()
+
+        await dc.setup()
+
+        # Loaded points must be preserved unchanged
+        assert dc._energy_midnight_points == {"sensor.e1": 42.0}
+        # No new async task should have been created for midnight-point saving
+        hass.async_create_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_seeding_when_no_energy_sensors_configured(self):
+        """
+        If no energy sensors are configured, setup() must not call
+        update_midnight_points() even when midnight points are empty.
+        """
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={})
+        storage.save_state = AsyncMock()
+
+        hass = MagicMock()
+        hass.async_create_task = MagicMock()
+
+        dc = DataCollector(hass, {"power": ["sensor.p1"]}, None, None, storage)  # no energy sensors
+        dc._setup_area_grouping = AsyncMock()
+        dc._setup_power_monitoring = AsyncMock()
+        dc._setup_energy_monitoring = AsyncMock()
+        dc._setup_environment_monitoring = AsyncMock()
+
+        await dc.setup()
+
+        # No energy sensors → no seeding attempt
+        assert dc._energy_midnight_points == {}
+        hass.async_create_task.assert_not_called()
