@@ -47,7 +47,8 @@ coverage.xml
 .hypothesis/
 
 # Personal/development files
-commands.MD
+commands.md
 export_research.py
 populate_test_data.py
 test_research_db.py
+lab_setup.md

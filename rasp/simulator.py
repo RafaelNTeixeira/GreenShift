@@ -8,8 +8,11 @@ import random
 ENVIRONMENT_SELECTION = 1
 
 # --- CONFIGURATION ---
-BROKER_IP = "127.0.0.1"
+#BROKER_IP = "127.0.0.1" # Use this for local testing on the same machine
+BROKER_IP = "192.168.137.206" # Use this for running in Raspberry Pi the pc's IP address
 PORT = 1883
+#USERNAME = "greenshift" # Turn this on for running in Raspberry Pi with authentication enabled on the broker
+#PASSWORD = "greenshift" # Turn this on for running in Raspberry Pi with authentication enabled on the broker
 
 # Device Metadata Templates
 HUB_BASE = {
@@ -108,6 +111,7 @@ current_values = {}
 
 # --- MQTT SETUP ---
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
+#client.username_pw_set(USERNAME, PASSWORD) # Uncomment the above line for running in Raspberry Pi with authentication enabled on the broker
 
 def clear_legacy_configs():
     """Wipes all possible old discovery topics to ensure a clean registry in HA."""
