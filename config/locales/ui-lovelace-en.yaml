@@ -1064,25 +1064,27 @@ views:
 
               # --- TOTAL IMPACT GLANCE ---
               - type: glance
-                title: 🌟 Lifetime Impact
+                title: 📊 Estimated Savings (Active Phase)
                 columns: 3
                 entities:
                   - entity: sensor.accumulated_savings
-                    name: 💰 Money Saved
+                    name: 💰 Est. Money Saved
                   - entity: sensor.co2_saved
-                    name: 🌱 CO₂ Avoided
+                    name: 🌱 Est. CO₂ Avoided
                   - entity: sensor.weekly_challenge_progress
                     name: 🎯 Current Goal
 
               # --- "DID YOU KNOW?" CONTEXT ---
               - type: markdown
                 content: |
-                  ### 🌍 Your Real-World Impact
+                  ### 🌍 Estimated Real-World Impact
                   {% set trees = state_attr('sensor.co2_saved', 'trees') | default(0) %}
                   {% set flights = state_attr('sensor.co2_saved', 'flights') | default(0) %}
                   {% set km = state_attr('sensor.co2_saved', 'car_km') | default(0) %}
 
-                  Your savings so far are equivalent to:
+                  *These are estimates based on the difference between your learned baseline and current consumption since the active phase began.*
+
+                  If sustained, your current reduction would be equivalent to:
                   * 🌲 Planting **{{ trees }} mature trees**
                   * ✈️ Offsetting **{{ flights }} short-haul flights**
                   * 🚗 Avoiding **{{ km }} km** driven in a gas car

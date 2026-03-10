@@ -1039,25 +1039,27 @@ views:
 
               # --- RESUMO DE IMPACTO TOTAL ---
               - type: glance
-                title: 🌟 Impacto Total
+                title: 📊 Poupança Estimada (Fase Ativa)
                 columns: 3
                 entities:
                   - entity: sensor.accumulated_savings
-                    name: 💰 Dinheiro Poupado
+                    name: 💰 Poupança Est.
                   - entity: sensor.co2_saved
-                    name: 🌱 CO₂ Evitado
+                    name: 🌱 CO₂ Est. Evitado
                   - entity: sensor.weekly_challenge_progress
                     name: 🎯 Meta Atual
 
               # --- CONTEXTO "SABIA QUE?" ---
               - type: markdown
                 content: |
-                  ### 🌍 O Seu Impacto no Mundo Real
+                  ### 🌍 Impacto Estimado no Mundo Real
                   {% set trees = state_attr('sensor.co2_saved', 'trees') | default(0) %}
                   {% set flights = state_attr('sensor.co2_saved', 'flights') | default(0) %}
                   {% set km = state_attr('sensor.co2_saved', 'car_km') | default(0) %}
 
-                  As suas poupanças até agora equivalem a:
+                  *Estes são valores estimados com base na diferença entre a sua baseline aprendida e o consumo atual desde o início da fase ativa.*
+
+                  Se mantida, a sua redução atual seria equivalente a:
                   * 🌲 Plantar **{{ trees }} árvores maduras**
                   * ✈️ Compensar **{{ flights }} voos de curta distância**
                   * 🚗 Evitar **{{ km }} km** conduzidos num carro a gasolina
