@@ -4,7 +4,7 @@ energy_saving_target:
   min: 0
   max: 30
   step: 5
-  mode: slider
+  mode: box
   icon: mdi:target
 
 electricity_price:
