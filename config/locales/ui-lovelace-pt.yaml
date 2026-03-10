@@ -419,6 +419,8 @@ views:
                             data:
                               task_index: 0
                               feedback: too_easy
+                            confirmation:
+                              text: "😊 Feedback registado: Muito Fácil! A próxima tarefa será um pouco mais difícil."
                           entity: sensor.daily_tasks
                           show_state: false
 
@@ -432,6 +434,8 @@ views:
                             data:
                               task_index: 0
                               feedback: just_right
+                            confirmation:
+                              text: "😐 Feedback registado: Adequada! A dificuldade permanecerá igual."
                           entity: sensor.daily_tasks
                           show_state: false
 
@@ -445,6 +449,8 @@ views:
                             data:
                               task_index: 0
                               feedback: too_hard
+                            confirmation:
+                              text: "😰 Feedback registado: Muito Difícil! A próxima tarefa será um pouco mais fácil."
                           entity: sensor.daily_tasks
                           show_state: false
 
@@ -501,6 +507,8 @@ views:
                             data:
                               task_index: 1
                               feedback: too_easy
+                            confirmation:
+                              text: "😊 Feedback registado: Muito Fácil! A próxima tarefa será um pouco mais difícil."
                           entity: sensor.daily_tasks
                           show_state: false
 
@@ -514,6 +522,8 @@ views:
                             data:
                               task_index: 1
                               feedback: just_right
+                            confirmation:
+                              text: "😐 Feedback registado: Adequada! A dificuldade permanecerá igual."
                           entity: sensor.daily_tasks
                           show_state: false
 
@@ -527,6 +537,8 @@ views:
                             data:
                               task_index: 1
                               feedback: too_hard
+                            confirmation:
+                              text: "😰 Feedback registado: Muito Difícil! A próxima tarefa será um pouco mais fácil."
                           entity: sensor.daily_tasks
                           show_state: false
 
@@ -583,6 +595,8 @@ views:
                             data:
                               task_index: 2
                               feedback: too_easy
+                            confirmation:
+                              text: "😊 Feedback registado: Muito Fácil! A próxima tarefa será um pouco mais difícil."
                           entity: sensor.daily_tasks
                           show_state: false
 
@@ -596,6 +610,8 @@ views:
                             data:
                               task_index: 2
                               feedback: just_right
+                            confirmation:
+                              text: "😐 Feedback registado: Adequada! A dificuldade permanecerá igual."
                           entity: sensor.daily_tasks
                           show_state: false
 
@@ -609,6 +625,8 @@ views:
                             data:
                               task_index: 2
                               feedback: too_hard
+                            confirmation:
+                              text: "😰 Feedback registado: Muito Difícil! A próxima tarefa será um pouco mais fácil."
                           entity: sensor.daily_tasks
                           show_state: false
 
