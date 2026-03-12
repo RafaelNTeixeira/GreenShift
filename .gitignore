@@ -52,3 +52,4 @@ export_research.py
 populate_test_data.py
 test_research_db.py
 lab_setup.md
+lab_setup_old.md

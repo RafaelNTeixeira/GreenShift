@@ -9,7 +9,7 @@ ENVIRONMENT_SELECTION = 1
 
 # --- CONFIGURATION ---
 #BROKER_IP = "127.0.0.1" # Use this for local testing on the same machine
-BROKER_IP = "192.168.137.206" # Use this for running in Raspberry Pi the pc's IP address
+BROKER_IP = "core-mosquitto" # Use this for running the script in Home Assistant terminal with the broker running as a service in the same Docker network
 PORT = 1883
 USERNAME = "greenshift" # Turn this on for running in Raspberry Pi with authentication enabled on the broker
 PASSWORD = "greenshift" # Turn this on for running in Raspberry Pi with authentication enabled on the broker
