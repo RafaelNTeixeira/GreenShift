@@ -1040,14 +1040,12 @@ views:
               # --- RESUMO DE IMPACTO TOTAL ---
               - type: glance
                 title: 📊 Poupança Estimada (Fase Ativa)
-                columns: 3
+                columns: 2
                 entities:
                   - entity: sensor.accumulated_savings
                     name: 💰 Poupança Est.
                   - entity: sensor.co2_saved
                     name: 🌱 CO₂ Est. Evitado
-                  - entity: sensor.weekly_challenge_progress
-                    name: 🎯 Meta Atual
 
               # --- CONTEXTO "SABIA QUE?" ---
               - type: markdown

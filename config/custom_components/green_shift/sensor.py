@@ -509,6 +509,11 @@ class CO2SavedSensor(GreenShiftAISensor):
         self._attr_native_value = 0
         self._attr_extra_state_attributes = {}
 
+    @property
+    def unit_of_measurement(self):
+        """Unit of measurement is fixed to kg for CO2 emissions."""
+        return "kg"
+
     async def _async_update_state(self):
         """Fetch data asynchronously and calculate CO2 saved.
 

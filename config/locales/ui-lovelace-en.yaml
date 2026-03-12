@@ -1065,14 +1065,12 @@ views:
               # --- TOTAL IMPACT GLANCE ---
               - type: glance
                 title: 📊 Estimated Savings (Active Phase)
-                columns: 3
+                columns: 2
                 entities:
                   - entity: sensor.accumulated_savings
                     name: 💰 Est. Money Saved
                   - entity: sensor.co2_saved
                     name: 🌱 Est. CO₂ Avoided
-                  - entity: sensor.weekly_challenge_progress
-                    name: 🎯 Current Goal
 
               # --- "DID YOU KNOW?" CONTEXT ---
               - type: markdown
