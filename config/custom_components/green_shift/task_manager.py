@@ -204,6 +204,17 @@ class TaskManager:
                 except (TypeError, ValueError):
                     outdoor_temp = None
 
+        # Fallback: use outdoor temperature sensor
+        if outdoor_temp is None:
+            outdoor_temp_sensor = self.config_data.get("outdoor_temp_sensor")
+            if outdoor_temp_sensor:
+                sensor_state = self.hass.states.get(outdoor_temp_sensor)
+                if sensor_state and sensor_state.state not in ("unavailable", "unknown", None):
+                    try:
+                        outdoor_temp = float(sensor_state.state)
+                    except (TypeError, ValueError):
+                        outdoor_temp = None
+
         is_hot_outside = outdoor_temp is not None and outdoor_temp > OUTDOOR_HOT_TEMP_THRESHOLD
         is_cold_outside = outdoor_temp is not None and outdoor_temp <= OUTDOOR_COLD_TEMP_THRESHOLD
 

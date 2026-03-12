@@ -997,3 +997,88 @@ class TestAreaAssignmentEdgeCases:
 
         assert result["type"] == "form"
         assert result["step_id"] == "area_assignment"
+
+
+# ============================================================================
+# Outdoor Temperature Sensor Field
+# ============================================================================
+
+class TestOutdoorTempSensorField:
+    """Tests for the outdoor_temp_sensor field added to sensor_confirmation."""
+
+    async def test_outdoor_temp_sensor_saved_when_provided(self, config_flow):
+        """outdoor_temp_sensor is persisted in flow data when user provides it."""
+        user_input = {
+            "outdoor_temp_sensor": "sensor.outside_temp",
+            "confirmed_energy": [],
+            "confirmed_power": [],
+            "confirmed_temp": [],
+            "confirmed_hum": [],
+            "confirmed_lux": [],
+            "confirmed_occ": [],
+        }
+
+        await config_flow.async_step_sensor_confirmation(user_input)
+
+        assert config_flow.data["outdoor_temp_sensor"] == "sensor.outside_temp"
+
+    async def test_outdoor_temp_sensor_is_none_when_not_provided(self, config_flow):
+        """outdoor_temp_sensor defaults to None when the user leaves it empty."""
+        user_input = {
+            "confirmed_energy": [],
+            "confirmed_power": [],
+            "confirmed_temp": [],
+            "confirmed_hum": [],
+            "confirmed_lux": [],
+            "confirmed_occ": [],
+        }
+
+        await config_flow.async_step_sensor_confirmation(user_input)
+
+        assert config_flow.data.get("outdoor_temp_sensor") is None
+
+    async def test_outdoor_temp_sensor_field_appears_in_form(self, config_flow, discovered_sensors):
+        """The sensor_confirmation form is shown without error even when no sensors are cached."""
+        config_flow.discovered_cache = discovered_sensors
+        config_flow.hass.states.get = MagicMock(return_value=None)
+
+        result = await config_flow.async_step_sensor_confirmation()
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "sensor_confirmation"
+
+    async def test_outdoor_temp_sensor_independent_of_weather_entity(self, config_flow):
+        """outdoor_temp_sensor and weather_entity can both be set independently."""
+        user_input = {
+            "weather_entity": "weather.home",
+            "outdoor_temp_sensor": "sensor.balcony_temp",
+            "confirmed_energy": [],
+            "confirmed_power": [],
+            "confirmed_temp": [],
+            "confirmed_hum": [],
+            "confirmed_lux": [],
+            "confirmed_occ": [],
+        }
+
+        await config_flow.async_step_sensor_confirmation(user_input)
+
+        assert config_flow.data["weather_entity"] == "weather.home"
+        assert config_flow.data["outdoor_temp_sensor"] == "sensor.balcony_temp"
+
+    async def test_outdoor_temp_sensor_not_added_to_indoor_temperature_list(self, config_flow):
+        """outdoor_temp_sensor must NOT be injected into the indoor temperature sensor list."""
+        user_input = {
+            "outdoor_temp_sensor": "sensor.outside_temp",
+            "confirmed_energy": [],
+            "confirmed_power": [],
+            "confirmed_temp": ["sensor.living_room_temp"],
+            "confirmed_hum": [],
+            "confirmed_lux": [],
+            "confirmed_occ": [],
+        }
+
+        await config_flow.async_step_sensor_confirmation(user_input)
+
+        indoor_temps = config_flow.data["discovered_sensors"]["temperature"]
+        assert "sensor.outside_temp" not in indoor_temps
+        assert "sensor.living_room_temp" in indoor_temps

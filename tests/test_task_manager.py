@@ -2328,3 +2328,179 @@ class TestTemperatureTaskClimateScale:
         task = await tm._generate_temperature_task()
         assert task is None
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# outdoor_temp_sensor: WiFi-offline fallback for temperature task generation
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _make_tm_with_sensor_fallback(
+    weather_available: bool,
+    sensor_temp,
+    sensor_state_str: str = None,
+) -> "TaskManager":
+    """Create TaskManager where weather_entity is absent/unavailable and
+    outdoor_temp_sensor provides the outdoor temperature via its state."""
+    from datetime import datetime as real_dt
+
+    hass = MagicMock()
+
+    def _states_get(entity_id):
+        if entity_id == "weather.home":
+            if not weather_available:
+                return None  # entity not present
+            st = MagicMock()
+            st.attributes = {"temperature": 30.0}  # hot
+            st.state = "sunny"
+            return st
+        if entity_id == "sensor.outdoor_physical":
+            if sensor_temp is None:
+                return None
+            st = MagicMock()
+            raw = sensor_state_str if sensor_state_str is not None else str(sensor_temp)
+            st.state = raw
+            st.attributes = {"unit_of_measurement": "°C"}
+            return st
+        return None
+
+    hass.states.get = MagicMock(side_effect=_states_get)
+
+    collector = MagicMock()
+    base_time = real_dt(2026, 6, 15, 12, 0, 0)
+    collector.get_temperature_history = AsyncMock(
+        return_value=[(base_time + timedelta(hours=i), 22.0) for i in range(50)]
+    )
+    collector.get_power_history = AsyncMock(
+        return_value=[(base_time + timedelta(hours=i), 500.0) for i in range(50)]
+    )
+
+    storage = AsyncMock()
+    storage.get_today_tasks = AsyncMock(return_value=[])
+    storage.get_tasks_for_date = AsyncMock(return_value=[])
+    storage.save_daily_tasks = AsyncMock()
+    storage.log_task_generation = AsyncMock()
+    storage.get_task_difficulty_stats = AsyncMock(return_value=None)
+
+    agent = MagicMock()
+    agent.phase = "active"
+
+    tm_mod.should_ai_be_active = MagicMock(return_value=True)
+    tm_mod.get_language = AsyncMock(return_value="en")
+    tm_mod.get_working_days_from_config = MagicMock(return_value=list(range(7)))
+
+    config = {
+        "weather_entity": "weather.home" if weather_available else None,
+        "outdoor_temp_sensor": "sensor.outdoor_physical",
+        "environment_mode": "home",
+    }
+
+    return TaskManager(
+        hass=hass,
+        sensors={"power": ["sensor.p1"], "temperature": ["sensor.t1"]},
+        data_collector=collector,
+        storage=storage,
+        decision_agent=agent,
+        config_data=config,
+    )
+
+
+class TestOutdoorTempSensorFallback:
+    """outdoor_temp_sensor acts as local fallback when WiFi/weather-API is unavailable."""
+
+    @pytest.mark.asyncio
+    async def test_weather_entity_used_when_available(self):
+        """When weather_entity is present and returns a temperature, it is used (hot season)."""
+        tm = _make_tm_with_sensor_fallback(weather_available=True, sensor_temp=5.0)
+        task = await tm._generate_temperature_task()
+        # weather.home returns 30 °C (hot) -> task_type is temperature_increase
+        assert task is not None
+        assert task["task_type"] == "temperature_increase"
+
+    @pytest.mark.asyncio
+    async def test_outdoor_sensor_fallback_when_weather_entity_unavailable(self):
+        """When weather_entity is None, outdoor_temp_sensor reading is used instead."""
+        # sensor_temp=5.0 is cold (<= 16 °C threshold) -> temperature_reduction task
+        tm = _make_tm_with_sensor_fallback(weather_available=False, sensor_temp=5.0)
+        task = await tm._generate_temperature_task()
+        assert task is not None
+        assert task["task_type"] == "temperature_reduction"
+
+    @pytest.mark.asyncio
+    async def test_outdoor_sensor_hot_triggers_temperature_increase_task(self):
+        """A hot reading from the physical sensor also triggers temperature_increase."""
+        tm = _make_tm_with_sensor_fallback(weather_available=False, sensor_temp=28.0)
+        task = await tm._generate_temperature_task()
+        assert task is not None
+        assert task["task_type"] == "temperature_increase"
+
+    @pytest.mark.asyncio
+    async def test_outdoor_sensor_neutral_temperature_returns_none(self):
+        """A neutral physical sensor reading (between thresholds) produces no task."""
+        tm = _make_tm_with_sensor_fallback(weather_available=False, sensor_temp=20.0)
+        task = await tm._generate_temperature_task()
+        assert task is None
+
+    @pytest.mark.asyncio
+    async def test_outdoor_sensor_unavailable_state_produces_no_task(self):
+        """If the physical sensor state is 'unavailable', outdoor_temp stays None -> no task."""
+        tm = _make_tm_with_sensor_fallback(
+            weather_available=False,
+            sensor_temp=5.0,
+            sensor_state_str="unavailable",
+        )
+        task = await tm._generate_temperature_task()
+        assert task is None
+
+    @pytest.mark.asyncio
+    async def test_outdoor_sensor_unknown_state_produces_no_task(self):
+        """If the physical sensor state is 'unknown', outdoor_temp stays None -> no task."""
+        tm = _make_tm_with_sensor_fallback(
+            weather_available=False,
+            sensor_temp=5.0,
+            sensor_state_str="unknown",
+        )
+        task = await tm._generate_temperature_task()
+        assert task is None
+
+    @pytest.mark.asyncio
+    async def test_outdoor_sensor_not_configured_and_no_weather_entity(self):
+        """Both outdoor_temp_sensor and weather_entity absent -> no temperature task."""
+        from datetime import datetime as real_dt
+
+        hass = MagicMock()
+        hass.states.get = MagicMock(return_value=None)
+
+        collector = MagicMock()
+        base_time = real_dt(2026, 6, 15, 12, 0, 0)
+        collector.get_temperature_history = AsyncMock(
+            return_value=[(base_time + timedelta(hours=i), 22.0) for i in range(50)]
+        )
+
+        storage = AsyncMock()
+        storage.get_today_tasks = AsyncMock(return_value=[])
+        storage.get_tasks_for_date = AsyncMock(return_value=[])
+        storage.save_daily_tasks = AsyncMock()
+        storage.log_task_generation = AsyncMock()
+        storage.get_task_difficulty_stats = AsyncMock(return_value=None)
+
+        agent = MagicMock()
+        agent.phase = "active"
+
+        tm_mod.should_ai_be_active = MagicMock(return_value=True)
+        tm_mod.get_language = AsyncMock(return_value="en")
+        tm_mod.get_working_days_from_config = MagicMock(return_value=list(range(7)))
+
+        # Neither weather_entity nor outdoor_temp_sensor configured
+        config = {"environment_mode": "home"}
+
+        tm = TaskManager(
+            hass=hass,
+            sensors={"power": ["sensor.p1"], "temperature": ["sensor.t1"]},
+            data_collector=collector,
+            storage=storage,
+            decision_agent=agent,
+            config_data=config,
+        )
+
+        task = await tm._generate_temperature_task()
+        assert task is None
+

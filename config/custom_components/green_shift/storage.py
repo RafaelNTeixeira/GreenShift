@@ -1835,6 +1835,10 @@ class StorageManager:
         configured_weather = (self.config_data or {}).get("weather_entity")
         if configured_weather:
             weather_entities.append(configured_weather)
+        # Add physical outdoor sensor as fallback
+        outdoor_temp_sensor = (self.config_data or {}).get("outdoor_temp_sensor")
+        if outdoor_temp_sensor and outdoor_temp_sensor not in weather_entities:
+            weather_entities.append(outdoor_temp_sensor)
         weather_entities.extend(WEATHER_ENTITIES)
         
         for entity_id in weather_entities:

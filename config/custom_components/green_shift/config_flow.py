@@ -227,10 +227,12 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             main_energy = user_input.get("main_total_energy_sensor") # Identify main energy sensor
             main_power = user_input.get("main_total_power_sensor") # Identify main power sensor
             weather_entity = user_input.get("weather_entity") # Identify weather entity
+            outdoor_temp_sensor = user_input.get("outdoor_temp_sensor") # Physical outdoor temperature sensor 
 
             self.data["main_total_energy_sensor"] = main_energy
             self.data["main_total_power_sensor"] = main_power
             self.data["weather_entity"] = weather_entity
+            self.data["outdoor_temp_sensor"] = outdoor_temp_sensor
 
             confirmed_energy = user_input.get("confirmed_energy", [])
             confirmed_power = user_input.get("confirmed_power", [])
@@ -269,6 +271,21 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Schema with everything as Optional to allow users to skip
         data_schema = vol.Schema({
+            # Weather provider for outdoor temperature analysis
+            vol.Optional(
+                "weather_entity",
+                description={"suggested_value": weather_list[0] if weather_list else None}
+            ): EntitySelector(
+                EntitySelectorConfig(domain="weather", multiple=False)
+            ),
+
+            # Physical outdoor temperature sensor (used as fallback when WiFi/weather API is unavailable)
+            vol.Optional(
+                "outdoor_temp_sensor",
+            ): EntitySelector(
+                EntitySelectorConfig(domain="sensor", device_class="temperature", multiple=False)
+            ),
+
             # Main energy sensor (Suggested highest current reading)
             vol.Optional(
                 "main_total_energy_sensor",
@@ -280,14 +297,6 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "main_total_power_sensor",
                 description={"suggested_value": sorted_power[0] if sorted_power else None}
             ): EntitySelector(EntitySelectorConfig(domain="sensor", device_class="power")),
-
-            # Weather provider for outdoor temperature analysis
-            vol.Optional(
-                "weather_entity",
-                description={"suggested_value": weather_list[0] if weather_list else None}
-            ): EntitySelector(
-                EntitySelectorConfig(domain="weather", multiple=False)
-            ),
 
             # Other energy sensors (Optional/Multiple)
             vol.Optional("confirmed_energy", default=sorted_energy): EntitySelector(
