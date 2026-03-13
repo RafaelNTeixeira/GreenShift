@@ -235,6 +235,13 @@ class DecisionAgent:
             self.feedback_episode_number = state["feedback_episode_number"]
             _LOGGER.info("Loaded feedback episode number: %d", self.feedback_episode_number)
 
+        # Load exploration rate 
+        if "epsilon" in state:
+            try:
+                self.epsilon = float(state["epsilon"])
+            except (ValueError, TypeError):
+                self.epsilon = INITIAL_EPSILON
+
         # Load episode number (active phase RL episodes, includes noops)
         if "episode_number" in state:
             self.episode_number = state["episode_number"]
@@ -330,6 +337,7 @@ class DecisionAgent:
             "q_table": serializable_q_table,
             "shadow_episode_number": self.shadow_episode_number,
             "feedback_episode_number": self.feedback_episode_number,
+            "epsilon": float(self.epsilon),
             "episode_number": self.episode_number,
             "logged_weeks": list(self._logged_weeks),
             "active_since": self.active_since.isoformat() if self.active_since else None,

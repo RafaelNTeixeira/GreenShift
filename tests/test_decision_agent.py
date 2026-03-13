@@ -2102,6 +2102,28 @@ class TestDecideActionPendingEpisode:
         assert pending["initial_power"] == 500.0
         agent._save_persistent_state.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_exploitation_branch_initializes_q_table_and_uses_best_actions(self):
+        agent = make_agent()
+        agent.action_mask = {a: False for a in ACTIONS.values()}
+        agent.action_mask[ACTIONS["noop"]] = True
+        agent.last_notification_time = None
+        agent.notification_count_today = 0
+        agent.epsilon = 0.0
+        agent.q_table = {}
+        agent._calculate_opportunity_score = AsyncMock(return_value=0.2)
+        agent._check_cooldown_with_opportunity = AsyncMock(return_value=(True, None, None))
+        agent._discretize_state = MagicMock(return_value=(2, 0, 0, 0, 1, 1))
+        agent._log_rl_episode = AsyncMock()
+
+        with patch.object(da_mod.random, "random", return_value=0.9), patch.object(
+            da_mod.random, "choice", side_effect=lambda options: options[0]
+        ):
+            await agent._decide_action()
+
+        assert (2, 0, 0, 0, 1, 1) in agent.q_table
+        agent._log_rl_episode.assert_awaited_once()
+
 
 class TestNotificationContextHelpers:
 
@@ -2479,6 +2501,24 @@ class TestLoadPersistentState:
         await agent._load_persistent_state()
         assert agent.notification_count_today == 4
 
+    @pytest.mark.asyncio
+    async def test_loads_epsilon_from_state(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={"epsilon": 0.05})
+        agent.storage = storage
+        await agent._load_persistent_state()
+        assert agent.epsilon == pytest.approx(0.05)
+
+    @pytest.mark.asyncio
+    async def test_invalid_epsilon_falls_back_to_initial(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={"epsilon": "invalid"})
+        agent.storage = storage
+        await agent._load_persistent_state()
+        assert agent.epsilon == pytest.approx(da_mod.INITIAL_EPSILON)
+
 
 class TestSavePersistentState:
 
@@ -2515,6 +2555,24 @@ class TestSavePersistentState:
         await agent._save_persistent_state()
         # String key should appear in serialised q_table
         assert str((1, 0, 0, 0, 0, 0)) in saved.get("q_table", {})
+
+    @pytest.mark.asyncio
+    async def test_epsilon_is_persisted_in_saved_state(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={})
+        saved = {}
+
+        async def capture_save(state):
+            saved.update(state)
+
+        storage.save_state = AsyncMock(side_effect=capture_save)
+        agent.storage = storage
+        agent.epsilon = 0.05
+
+        await agent._save_persistent_state()
+
+        assert saved.get("epsilon") == pytest.approx(0.05)
 
     def test_feedback_episode_number_survives_save_load_roundtrip(self):
         """feedback_episode_number must be included in the persisted state."""
