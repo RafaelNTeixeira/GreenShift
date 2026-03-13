@@ -14,7 +14,8 @@ import types
 import pathlib
 import importlib.util
 import pytest
-from datetime import datetime
+from datetime import datetime, timedelta
+import sqlite3
 from unittest.mock import MagicMock, AsyncMock, patch
 
 # -- Minimal HA stubs ---------------------------------------------------------
@@ -775,6 +776,8 @@ class TestSetupAndUnloadEntry:
     async def test_async_setup_entry_initializes_and_runs_callbacks(self):
         hass = MagicMock()
         hass.data = {}
+        hass.services = MagicMock()
+        hass.services.async_call = AsyncMock()
         hass.config = MagicMock()
         hass.config.path = MagicMock(return_value="/tmp/green_shift_data")
         hass.config_entries = MagicMock()
@@ -916,3 +919,425 @@ class TestSetupAndUnloadEntry:
         backup_manager.create_backup.assert_awaited_once_with(backup_type="shutdown")
         storage.close.assert_awaited_once()
         assert const_mod.DOMAIN not in hass.data
+
+
+class TestInitAdditionalCoverage:
+
+    @pytest.mark.asyncio
+    async def test_discover_reads_class_and_unit_from_state_attributes(self):
+        entity = _make_entity("sensor.fallback", device_class=None, unit=None)
+        hass = _build_hass([entity])
+        state = MagicMock()
+        state.attributes = {"device_class": "temperature", "unit_of_measurement": "°C"}
+        hass.states.get = MagicMock(return_value=state)
+
+        result = await async_discover_sensors(hass)
+
+        assert "sensor.fallback" in result["temperature"]
+
+    @pytest.mark.asyncio
+    async def test_trigger_phase_transition_pt_branch(self):
+        hass = MagicMock()
+        hass.services.async_call = AsyncMock()
+        collector = MagicMock()
+        collector.calculate_baseline_summary = AsyncMock(return_value={
+            "avg_daily_kwh": 3.0,
+            "peak_time": "10:00",
+            "top_area": "Sala",
+            "target": 12,
+            "impact": {"co2_kg": 1.0, "trees": 0.1, "flights": 0.01},
+        })
+
+        with patch.object(init_mod, "get_language", AsyncMock(return_value="pt")):
+            await trigger_phase_transition_notification(hass, MagicMock(), collector)
+
+        payload = hass.services.async_call.call_args.args[2]
+        assert "Área Principal" in payload["message"]
+
+    @pytest.mark.asyncio
+    async def test_submit_task_feedback_missing_fields_and_other_error_branches(self):
+        hass, handlers, _, _ = _build_services_hass(backup_success=True)
+        storage = hass.data[DOMAIN]["storage"]
+        await async_setup_services(hass)
+
+        await handlers["submit_task_feedback"](MagicMock(data={}))
+
+        storage.get_today_tasks = AsyncMock(return_value=[])
+        storage.save_task_feedback = AsyncMock(return_value=True)
+        await handlers["submit_task_feedback"](MagicMock(data={"task_index": 1, "feedback": "just_right"}))
+
+        storage.get_today_tasks = AsyncMock(return_value=[{"task_id": None}])
+        await handlers["submit_task_feedback"](MagicMock(data={"task_index": 0, "feedback": "just_right"}))
+
+        storage.get_today_tasks = AsyncMock(return_value=[{"task_id": "t-1"}])
+        storage.save_task_feedback = AsyncMock(return_value=False)
+        await handlers["submit_task_feedback"](MagicMock(data={"task_index": 0, "feedback": "just_right"}))
+
+        storage.log_task_feedback.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_force_notification_keeps_new_time_when_notification_sent(self):
+        hass, handlers, _, agent_mock = _build_services_hass(backup_success=True)
+        original_time = datetime(2025, 1, 1)
+        agent_mock.last_notification_time = original_time
+        agent_mock.notification_history = ["x"]
+
+        async def _decide():
+            agent_mock.last_notification_time = datetime.now()
+
+        agent_mock._decide_action = AsyncMock(side_effect=_decide)
+        await async_setup_services(hass)
+
+        await handlers["force_notification"](MagicMock(data={}))
+
+        assert agent_mock.last_notification_time != original_time
+
+    @pytest.mark.asyncio
+    async def test_debug_services_inject_inspect_q_and_q_learning(self, tmp_path):
+        hass, handlers, _, agent_mock = _build_services_hass(backup_success=True)
+        storage = hass.data[DOMAIN]["storage"]
+        collector = MagicMock()
+        hass.data[DOMAIN]["collector"] = collector
+        storage.store_sensor_snapshot = AsyncMock()
+
+        class _ToggleContainsDict(dict):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._contains_calls = 0
+
+            def __contains__(self, key):
+                self._contains_calls += 1
+                if self._contains_calls == 1:
+                    return True
+                if self._contains_calls == 2:
+                    return False
+                return super().__contains__(key)
+
+        state_key = (1, 1, 1, 1, 1, 1)
+        agent_mock.q_table = {
+            state_key: {0: 0.5, 1: 0.2},
+            (2, 1, 0, 0, 3, 1): {0: 0.1, 1: 0.3},
+        }
+        agent_mock._discretize_state = MagicMock(return_value=(2, 2, 2, 0, 2, 0))
+        agent_mock.learning_rate = 0.1
+        agent_mock.episode_number = 1
+        agent_mock.shadow_episode_number = 2
+        agent_mock.epsilon = 0.1
+
+        await async_setup_services(hass)
+
+        with patch.object(init_mod, "UPDATE_INTERVAL_SECONDS", 3600):
+            await handlers["inject_test_data"](MagicMock(data={"hours": 30}))
+        with patch.object(init_mod, "UPDATE_INTERVAL_SECONDS", 1):
+            await handlers["inject_test_data"](MagicMock(data={"hours": 2.8}))
+
+        agent_mock._discretize_state = MagicMock(return_value=state_key)
+        await handlers["inspect_q_table"](MagicMock(data={}))
+
+        agent_mock.q_table = {}
+        agent_mock._discretize_state = MagicMock(return_value=(2, 2, 2, 0, 2, 0))
+        await handlers["inspect_q_table"](MagicMock(data={}))
+
+        agent_mock._discretize_state = MagicMock(return_value=state_key)
+        agent_mock.q_table = {}
+        await handlers["test_q_learning"](MagicMock(data={}))
+
+        agent_mock.q_table = _ToggleContainsDict({state_key: {0: 0.5, 1: 0.2}})
+        await handlers["test_q_learning"](MagicMock(data={}))
+
+        assert storage.store_sensor_snapshot.await_count >= 1
+        assert agent_mock.q_table[state_key][1] != 0.2
+
+    @pytest.mark.asyncio
+    async def test_backup_service_failure_and_restore_no_storage_with_collector(self):
+        hass, handlers, backup_manager_mock, agent_mock = _build_services_hass(backup_success=True)
+        backup_manager_mock.create_backup = AsyncMock(return_value=True)
+        hass.data[DOMAIN]["storage"] = None
+        collector = MagicMock()
+        collector._load_persistent_data = AsyncMock()
+        hass.data[DOMAIN]["collector"] = collector
+        await async_setup_services(hass)
+
+        await handlers["create_backup"](MagicMock(data={}))
+        backup_manager_mock.create_backup = AsyncMock(return_value=False)
+        await handlers["create_backup"](MagicMock(data={}))
+        await handlers["restore_backup"](MagicMock(data={"backup_name": "auto/20260218_100000"}))
+
+        backup_manager_mock.restore_from_backup.assert_awaited_once()
+        agent_mock._load_persistent_state.assert_awaited_once()
+        collector._load_persistent_data.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_list_backups_and_missing_manager_branch(self):
+        hass, handlers, backup_manager_mock, _ = _build_services_hass(backup_success=True)
+        backup_manager_mock.list_backups = MagicMock(return_value=["a", "b"])
+        await async_setup_services(hass)
+
+        await handlers["list_backups"](MagicMock(data={}))
+        backup_manager_mock.list_backups.assert_called_once()
+
+        del hass.data[DOMAIN]["backup_manager"]
+        await handlers["list_backups"](MagicMock(data={}))
+
+    @pytest.mark.asyncio
+    async def test_data_retention_all_modes(self, tmp_path):
+        hass, handlers, _, agent_mock = _build_services_hass(backup_success=True)
+        storage = hass.data[DOMAIN]["storage"]
+        db_path = tmp_path / "research.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "CREATE TABLE research_rl_episodes (timestamp REAL, phase TEXT, state_vector TEXT, action INTEGER, reward REAL, opportunity_score REAL, action_source TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO research_rl_episodes VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (datetime.now().timestamp(), "active", "0", 0, 0.0, 0.0, "seed"),
+        )
+        conn.commit()
+        conn.close()
+
+        storage.research_db_path = db_path
+        storage.load_state = AsyncMock(return_value={"notification_history": [], "last_rl_cleanup": datetime.now().isoformat()})
+        storage.save_state = AsyncMock()
+        storage._cleanup_old_research_data = AsyncMock()
+        agent_mock.notification_history = []
+        agent_mock._save_persistent_state = AsyncMock()
+
+        async def _exec_job(fn):
+            return fn()
+
+        hass.async_add_executor_job = AsyncMock(side_effect=_exec_job)
+
+        await async_setup_services(hass)
+
+        await handlers["test_data_retention"](MagicMock(data={"test_type": "status"}))
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("DELETE FROM research_rl_episodes")
+        conn.commit()
+        conn.close()
+        await handlers["test_data_retention"](MagicMock(data={"test_type": "status"}))
+        storage.load_state = AsyncMock(return_value={})
+        await handlers["test_data_retention"](MagicMock(data={"test_type": "status"}))
+        await handlers["test_data_retention"](MagicMock(data={"test_type": "inject_notifications", "count": 3}))
+        await handlers["test_data_retention"](MagicMock(data={"test_type": "inject_old_episodes", "months": 1, "episodes_per_day": 1}))
+        await handlers["test_data_retention"](MagicMock(data={"test_type": "set_overdue_cleanup", "hours_ago": 2}))
+        await handlers["test_data_retention"](MagicMock(data={"test_type": "run_cleanup"}))
+
+        assert storage._cleanup_old_research_data.await_count >= 1
+        assert storage.save_state.await_count >= 2
+
+    @pytest.mark.asyncio
+    async def test_setup_entry_additional_startup_branches(self):
+        hass = MagicMock()
+        hass.data = {}
+        hass.services = MagicMock()
+        hass.services.async_call = AsyncMock()
+        hass.config = MagicMock()
+        hass.config.path = MagicMock(return_value="/tmp/green_shift_data")
+        hass.config_entries = MagicMock()
+        hass.config_entries.async_forward_entry_setups = AsyncMock()
+        hass.config_entries.async_update_entry = MagicMock()
+
+        entry = MagicMock()
+        entry.data = {
+            "discovered_sensors": {"power": ["sensor.main_power"]},
+            "main_total_energy_sensor": "sensor.total_energy",
+            "main_total_power_sensor": "sensor.main_power",
+            "environment_mode": "office",
+            "energy_saving_target": 15,
+            "electricity_price": 0.22,
+            "currency": "EUR",
+        }
+
+        storage = MagicMock()
+        storage.setup = AsyncMock()
+        overdue = (datetime.now() - timedelta(hours=30)).isoformat()
+        storage.load_state = AsyncMock(
+            side_effect=[
+                {"some": "state"},
+                {"last_rl_cleanup": overdue},
+                {"last_sensor_cleanup": overdue},
+                {},
+                {},
+                {},
+                {},
+            ]
+        )
+        storage.has_phase_metadata = AsyncMock(return_value=True)
+        storage.record_phase_change = AsyncMock()
+        storage.compute_daily_aggregates = AsyncMock(side_effect=Exception("agg"))
+        storage.compute_area_daily_aggregates = AsyncMock(side_effect=Exception("agg"))
+        storage._cleanup_old_research_data = AsyncMock(side_effect=Exception("cleanup"))
+        storage.save_state = AsyncMock()
+        storage._cleanup_old_data = AsyncMock(side_effect=Exception("cleanup"))
+        storage.get_today_tasks = AsyncMock(return_value=[])
+
+        collector = MagicMock()
+        collector.setup = AsyncMock()
+        collector.get_power_history = AsyncMock(return_value=[(datetime.now(), 1000.0)] * 20)
+        collector.calculate_baseline_summary = AsyncMock(return_value={
+            "avg_daily_kwh": 2.5,
+            "peak_time": "10:00",
+            "top_area": "Office",
+            "target": 15,
+            "impact": {"co2_kg": 0.8, "trees": 0.1, "flights": 0.01},
+        })
+
+        agent = MagicMock()
+        agent.setup = AsyncMock()
+        agent._save_persistent_state = AsyncMock()
+        agent.calculate_area_baselines = AsyncMock()
+        agent.process_ai_model = AsyncMock()
+        agent.phase = const_mod.PHASE_ACTIVE
+        agent.start_date = datetime.now() - timedelta(days=20)
+        agent.baseline_consumption = 1000.0
+        agent.storage = storage
+
+        task_manager = MagicMock()
+        task_manager.generate_daily_tasks = AsyncMock(return_value=[])
+        task_manager.verify_tasks = AsyncMock(return_value={"ok": False})
+
+        backup_manager = MagicMock()
+        backup_manager.create_backup = AsyncMock(side_effect=[None, False])
+        backup_manager.cleanup_old_backups = AsyncMock(side_effect=Exception("backup"))
+
+        callbacks = {}
+
+        def _capture_interval(_hass, cb, _delta):
+            callbacks[cb.__name__] = cb
+            return lambda: None
+
+        def _capture_change(_hass, _entities, cb):
+            callbacks[cb.__name__] = cb
+            return lambda: None
+
+        def _capture_time(_hass, cb, **_kwargs):
+            callbacks[cb.__name__] = cb
+            return lambda: None
+
+        with patch.object(init_mod, "StorageManager", return_value=storage), patch.object(
+            init_mod, "DataCollector", return_value=collector
+        ), patch.object(init_mod, "DecisionAgent", return_value=agent), patch.object(
+            init_mod, "TaskManager", return_value=task_manager
+        ), patch.object(init_mod, "BackupManager", return_value=backup_manager), patch.object(
+            init_mod, "async_setup_services", AsyncMock()
+        ), patch.object(init_mod, "async_track_time_interval", side_effect=_capture_interval), patch.object(
+            init_mod, "async_track_state_change_event", side_effect=_capture_change
+        ), patch.object(init_mod, "async_track_time_change", side_effect=_capture_time):
+            ok = await async_setup_entry(hass, entry)
+
+        assert ok is True
+
+        agent.phase = const_mod.PHASE_BASELINE
+        agent.start_date = datetime.now() - timedelta(days=20)
+        await callbacks["update_agent_ai_model"](None)
+        await callbacks["target_changed"](MagicMock(data={"new_state": MagicMock(state="bad")}) )
+        await callbacks["electricity_price_changed"](MagicMock(data={"new_state": MagicMock(state="bad")}) )
+
+        agent.phase = const_mod.PHASE_BASELINE
+        await callbacks["generate_daily_tasks_callback"](None)
+        await callbacks["verify_tasks_callback"](None)
+        await callbacks["daily_aggregation_callback"](None)
+        await callbacks["auto_backup_callback"](None)
+        backup_manager.create_backup = AsyncMock(side_effect=Exception("backup"))
+        await callbacks["auto_backup_callback"](None)
+        await callbacks["rl_cleanup_callback"](None)
+        await callbacks["sensor_data_cleanup_callback"](None)
+
+        task_manager.generate_daily_tasks.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_async_unload_entry_logs_errors_when_save_or_backup_fails(self):
+        entry = MagicMock()
+        hass = MagicMock()
+        hass.config_entries = MagicMock()
+        hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+        hass.services = MagicMock()
+        hass.services.async_remove = MagicMock()
+
+        storage = MagicMock()
+        storage.close = AsyncMock()
+
+        agent = MagicMock()
+        agent.storage = storage
+        agent._save_persistent_state = AsyncMock(side_effect=Exception("save"))
+
+        backup_manager = MagicMock()
+        backup_manager.create_backup = AsyncMock(side_effect=Exception("backup"))
+
+        hass.data = {
+            const_mod.DOMAIN: {
+                "agent": agent,
+                "backup_manager": backup_manager,
+                "storage": storage,
+                "update_listener": lambda: None,
+            }
+        }
+
+        ok = await async_unload_entry(hass, entry)
+
+        assert ok is True
+        storage.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_setup_entry_startup_cleanup_parse_errors(self):
+        hass = MagicMock()
+        hass.data = {}
+        hass.config = MagicMock()
+        hass.config.path = MagicMock(return_value="/tmp/green_shift_data")
+        hass.config_entries = MagicMock()
+        hass.config_entries.async_forward_entry_setups = AsyncMock()
+        hass.config_entries.async_update_entry = MagicMock()
+
+        entry = MagicMock()
+        entry.data = {
+            "discovered_sensors": {"power": ["sensor.main_power"]},
+            "main_total_energy_sensor": "sensor.total_energy",
+            "main_total_power_sensor": "sensor.main_power",
+            "environment_mode": "home",
+            "energy_saving_target": 15,
+            "electricity_price": 0.22,
+            "currency": "EUR",
+        }
+
+        storage = MagicMock()
+        storage.setup = AsyncMock()
+        storage.load_state = AsyncMock(side_effect=[{"ready": True}, {"last_rl_cleanup": "bad"}, {"last_sensor_cleanup": "bad"}])
+        storage.has_phase_metadata = AsyncMock(return_value=True)
+        storage.record_phase_change = AsyncMock()
+        storage.save_state = AsyncMock()
+        storage.get_today_tasks = AsyncMock(return_value=[{"id": "t1"}])
+
+        collector = MagicMock()
+        collector.setup = AsyncMock()
+        collector.get_power_history = AsyncMock(return_value=[])
+
+        agent = MagicMock()
+        agent.setup = AsyncMock()
+        agent.process_ai_model = AsyncMock()
+        agent.calculate_area_baselines = AsyncMock()
+        agent._save_persistent_state = AsyncMock()
+        agent.phase = const_mod.PHASE_ACTIVE
+        agent.start_date = datetime.now()
+        agent.baseline_consumption = 500.0
+        agent.storage = storage
+
+        task_manager = MagicMock()
+        task_manager.generate_daily_tasks = AsyncMock(return_value=[])
+        task_manager.verify_tasks = AsyncMock(return_value={"ok": True})
+
+        backup_manager = MagicMock()
+        backup_manager.create_backup = AsyncMock(return_value=True)
+        backup_manager.cleanup_old_backups = AsyncMock(return_value=None)
+
+        with patch.object(init_mod, "StorageManager", return_value=storage), patch.object(
+            init_mod, "DataCollector", return_value=collector
+        ), patch.object(init_mod, "DecisionAgent", return_value=agent), patch.object(
+            init_mod, "TaskManager", return_value=task_manager
+        ), patch.object(init_mod, "BackupManager", return_value=backup_manager), patch.object(
+            init_mod, "async_setup_services", AsyncMock()
+        ), patch.object(init_mod, "async_track_time_interval", return_value=lambda: None), patch.object(
+            init_mod, "async_track_state_change_event", return_value=lambda: None
+        ), patch.object(init_mod, "async_track_time_change", return_value=lambda: None):
+            ok = await async_setup_entry(hass, entry)
+
+        assert ok is True

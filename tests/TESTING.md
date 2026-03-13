@@ -4,9 +4,7 @@ Green Shift includes a comprehensive test suite covering core functionality and 
 
 ## Coverage Summary
 
-**1097 tests** across 11 modules - total measured coverage **93.02%**.
-
-> **Note on `__init__.py`:** The main integration setup file requires a live Home Assistant runtime for its service registration, event bus subscriptions and platform setup. This means that full coverage is not expected.
+**1108 tests** across 11 modules - total measured coverage **100%**.
 
 | Module | Tests | Coverage | Notes |
 |--------|-------|----------|-------|
@@ -15,7 +13,7 @@ Green Shift includes a comprehensive test suite covering core functionality and 
 | `test_data_collector.py` | 97 | **100%** | Real-time monitoring, energy tracking |
 | `test_decision_agent.py` | 320 | **100%** | AI model, Q-learning, fatigue tracking, engagement persistence, state persistence, action masking |
 | `test_helpers.py` | 47 | **100%** | Utility functions, conversions, entity/area resolution, working hours |
-| `test_init.py` | 44 | **57%** | |
+| `test_init.py` | 55 | **100%** | Integration setup/services/unload/discovery and callback/runtime edge paths |
 | `test_select.py` | 37 | **100%** | |
 | `test_sensor.py` | 129 | **100%** | |
 | `test_storage.py` | 131 | **100%** | Database operations, data persistence, retention |
@@ -84,7 +82,6 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Area-based data aggregation
 - Working hours filtering
 - Sensor cache management
-- *Note*: setup-phase callbacks that fire on HA startup cannot be exercised without the HA event loop.
 
 ### `test_decision_agent.py` - 320 tests, **100%** coverage
 - State discretization (power bins, indices)
@@ -114,18 +111,19 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Friendly name resolution (attribute, registry, entity_id fallback)
 - Daily working hours calculation (standard, custom, midnight-crossing, malformed config)
 
-### `test_init.py` - 44 tests, **57%** coverage
+### `test_init.py` - 55 tests, **100%** coverage
 - Service registration mocks
 - Entry setup/teardown
 - Event bus subscription hooks
 - `restore_backup` service: in-memory reload after restore
-- *Note*: service/setup/unload unit coverage was expanded, while runtime-only Home Assistant paths remain.
+- Setup callbacks and phase-transition runtime branches
+- Backup/cleanup success, failure and exception branches
+- Unload error handlers and shutdown backup/state persistence paths
 
 ### `test_select.py` - 37 tests, **100%** coverage
 - `AreaViewSelect`: option population, current_option, async callbacks, `async_on_remove` unsubscription
 - `NotificationSelect`: pending notification rendering, selection acknowledgment, option refresh
 - `_update_callback` write-state path (sync and async)
-- *Note*: `async_setup_entry` (lines 34-40) requires `hass.data[DOMAIN]` from HA platform loader and cannot be unit-tested.
 
 ### `test_sensor.py` - 129 tests, **100%** coverage
 - `HardwareSensors`: normalized_value sanitization, occupancy forwarding, `None`-value skip
@@ -136,7 +134,6 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - `TasksCompletedSensor`: fetch from task_manager, zero count, state property
 - `WeeklyChallengeSensor`: `_get_target_percentage` (all difficulty levels), baseline early return, active phase progress, active attrs
 - `GreenShiftBaseSensor` / `GreenShiftAISensor` callbacks: `async_added_to_hass`, `async_on_remove`, `_update_callback` create_task dispatch
-- *Note*: Lines 104/111-112 in sensor.py are unreachable dead code (see coverage note above).
 
 ### `test_storage.py` - 131 tests, **100%** coverage
 - Database initialization (SQLite schema creation)
@@ -146,7 +143,6 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Task persistence (create, complete, fetch pending)
 - Data retention and cleanup (age-based pruning)
 - State file operations (JSON read/write, corrupt-file recovery)
-- *Note*: Remaining low-level DB runtime edge behavior is now covered through targeted tests.
 
 ### `test_task_manager.py` - 126 tests, **100%** coverage
 - Task generation with sensor constraints
