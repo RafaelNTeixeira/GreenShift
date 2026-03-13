@@ -24,7 +24,7 @@ import pathlib
 import importlib.util
 import pytest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 
 # ── Minimal HA stubs ─────────────────────────────────────────────────────────
 
@@ -1249,3 +1249,149 @@ class TestWeeklyChallengeSensor:
         assert attrs["status"] == "on_track"
         assert attrs["days_in_week"] == 3
         assert attrs["goal"] == pytest.approx(15.0)
+
+
+class TestSensorAdditionalCoverage:
+
+    @pytest.mark.asyncio
+    async def test_sensor_async_setup_entry_adds_entities(self):
+        hass = MagicMock()
+        hass.data = {
+            const_mod.DOMAIN: {
+                "agent": make_agent(),
+                "collector": make_collector(),
+                "storage": AsyncMock(),
+                "discovered_sensors": {"power": ["sensor.p1"]},
+                "task_manager": MagicMock(),
+            }
+        }
+        async_add_entities = MagicMock()
+        config_entry = MagicMock()
+        config_entry.data = {}
+
+        await sensor_mod.async_setup_entry(hass, config_entry, async_add_entities)
+        async_add_entities.assert_called_once()
+        assert len(async_add_entities.call_args.args[0]) == 17
+
+    @pytest.mark.asyncio
+    async def test_base_sensor_async_update_and_write_path(self):
+        class DummyBase(sensor_mod.GreenShiftBaseSensor):
+            async def _async_update_state(self):
+                self.updated = True
+
+        sensor = DummyBase()
+        sensor.updated = False
+        sensor.async_write_ha_state = MagicMock()
+        await sensor._async_update_and_write()
+        assert sensor.updated is True
+        sensor.async_write_ha_state.assert_called_once()
+
+    def test_base_sensor_update_callback_async_path(self):
+        class DummyBase(sensor_mod.GreenShiftBaseSensor):
+            async def _async_update_state(self):
+                return None
+
+        sensor = DummyBase()
+        sensor.hass = MagicMock()
+        sensor._update_callback()
+        sensor.hass.async_create_task.assert_called_once()
+
+    def test_static_unit_properties(self):
+        assert EnergyBaselineSensor(make_agent()).unit_of_measurement == "W"
+        assert CurrentConsumptionSensor(make_collector()).unit_of_measurement == "W"
+        assert DailyCO2EstimateSensor(make_hass(), make_collector()).unit_of_measurement == "kg"
+        assert CO2SavedSensor(make_agent(), make_collector(), AsyncMock()).unit_of_measurement == "kg"
+
+    @pytest.mark.asyncio
+    async def test_savings_active_invalid_price_uses_default(self):
+        active_since = datetime(2026, 2, 1)
+        agent = make_agent(phase="active", active_since=active_since, baseline_consumption=1000.0)
+        storage = AsyncMock()
+        storage.get_active_phase_savings = AsyncMock(return_value={
+            "days_with_data": 1,
+            "total_savings_kwh": 2.0,
+            "overall_avg_power_w": 900.0,
+        })
+        collector = make_collector(power=700.0)
+        collector.get_current_state = MagicMock(return_value={"power": 700.0})
+        sensor = SavingsAccumulatedSensor(agent, collector, storage)
+        sensor.hass = make_hass({"input_number.electricity_price": "not-a-number"})
+
+        await sensor._async_update_state()
+        assert sensor._attr_native_value == pytest.approx(0.5, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_savings_provisional_with_nonpositive_baseline(self):
+        active_since = datetime(2026, 2, 1)
+        agent = make_agent(phase="active", active_since=active_since, baseline_consumption=0.0)
+        storage = AsyncMock()
+        storage.get_active_phase_savings = AsyncMock(return_value={
+            "days_with_data": 0,
+            "total_savings_kwh": 0.0,
+            "overall_avg_power_w": 0.0,
+        })
+        collector = make_collector(power=700.0)
+        collector.get_current_state = MagicMock(return_value={"power": 700.0})
+        sensor = SavingsAccumulatedSensor(agent, collector, storage)
+        sensor.hass = make_hass({})
+
+        await sensor._async_update_state()
+        assert sensor._attr_extra_state_attributes["saving_watts"] == 0
+
+    @pytest.mark.asyncio
+    async def test_co2_saved_provisional_with_nonpositive_baseline(self):
+        active_since = datetime(2026, 2, 1)
+        agent = make_agent(phase="active", active_since=active_since, baseline_consumption=0.0)
+        storage = AsyncMock()
+        storage.get_active_phase_savings = AsyncMock(return_value={
+            "days_with_data": 0,
+            "total_savings_kwh": 0.0,
+            "overall_avg_power_w": 0.0,
+        })
+        collector = make_collector(power=700.0)
+        collector.get_current_state = MagicMock(return_value={"power": 700.0})
+        sensor = CO2SavedSensor(agent, collector, storage)
+        sensor.hass = make_hass({})
+
+        await sensor._async_update_state()
+        assert sensor._attr_native_value == 0
+        assert sensor._attr_extra_state_attributes["trees"] == 0
+
+    @pytest.mark.asyncio
+    async def test_daily_tasks_async_update_callback_and_load(self):
+        storage = AsyncMock()
+        storage.get_today_tasks = AsyncMock(return_value=[make_task("t1")])
+        sensor = DailyTasksSensor(storage)
+        sensor.hass = MagicMock()
+        sensor.async_write_ha_state = MagicMock()
+
+        await sensor.async_added_to_hass()
+        assert sensor.state == 1
+
+        sensor.hass.async_create_task.reset_mock()
+
+        sensor._update_callback()
+        sensor.hass.async_create_task.assert_called_once()
+
+        await sensor._async_update_and_write()
+        sensor.async_write_ha_state.assert_called_once()
+
+    def test_active_notifications_invalid_timestamp_sets_unknown(self):
+        agent = make_agent(notification_history=[{
+            "notification_id": "n1",
+            "action_type": "specific",
+            "timestamp": "not-an-iso-date",
+            "responded": False,
+        }])
+        sensor = ActiveNotificationsSensor(agent)
+        attrs = sensor.extra_state_attributes
+        assert attrs["notifications"][0]["time_ago"] == "Unknown"
+
+    def test_get_time_ago_handles_naive_timestamp_when_now_is_tz_aware(self):
+        sensor = ActiveNotificationsSensor(make_agent())
+        with patch.object(sensor_mod, "datetime") as mock_dt:
+            aware_now = datetime.now(timezone.utc)
+            mock_dt.now.return_value = aware_now
+            naive_ts = datetime.now() - timedelta(minutes=5)
+            result = sensor._get_time_ago(naive_ts)
+        assert result.endswith("ago")

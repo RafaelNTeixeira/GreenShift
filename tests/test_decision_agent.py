@@ -1951,6 +1951,223 @@ class TestShadowRewardCache:
         assert isinstance(result, float)
 
 
+class TestShadowDecideAction:
+
+    @pytest.mark.asyncio
+    async def test_shadow_decide_returns_when_inactive(self):
+        agent = make_agent(config_data={"environment_mode": "office"})
+        agent.action_mask = {a: True for a in ACTIONS.values()}
+        agent._shadow_update_q_table = AsyncMock()
+
+        original = helpers_stub.should_ai_be_active.return_value
+        helpers_stub.should_ai_be_active.return_value = False
+        try:
+            await agent._shadow_decide_action()
+        finally:
+            helpers_stub.should_ai_be_active.return_value = original
+
+        agent._shadow_update_q_table.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_shadow_decide_no_available_actions_returns(self):
+        agent = make_agent()
+        agent.action_mask = {a: False for a in ACTIONS.values()}
+        agent._shadow_update_q_table = AsyncMock()
+
+        await agent._shadow_decide_action()
+
+        agent._shadow_update_q_table.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_shadow_decide_noop_path_updates_and_logs(self):
+        agent = make_agent()
+        agent.action_mask = {a: False for a in ACTIONS.values()}
+        agent.action_mask[ACTIONS["noop"]] = True
+        agent._compute_noop_reward = MagicMock(return_value=0.4)
+        agent._shadow_update_q_table = AsyncMock()
+        agent._log_rl_episode = AsyncMock()
+
+        with patch.object(da_mod.random, "random", return_value=0.0), patch.object(
+            da_mod.random, "choice", return_value=ACTIONS["noop"]
+        ):
+            await agent._shadow_decide_action()
+
+        agent._shadow_update_q_table.assert_awaited_once()
+        agent._log_rl_episode.assert_awaited_once()
+        assert agent.shadow_episode_number == 1
+
+    @pytest.mark.asyncio
+    async def test_shadow_decide_non_noop_path_updates_and_logs(self):
+        agent = make_agent()
+        agent.action_mask = {a: False for a in ACTIONS.values()}
+        agent.action_mask[ACTIONS["specific"]] = True
+        agent._calculate_shadow_reward = AsyncMock(return_value=0.7)
+        agent._shadow_update_q_table = AsyncMock()
+        agent._log_rl_episode = AsyncMock()
+
+        with patch.object(da_mod.random, "random", return_value=0.0), patch.object(
+            da_mod.random, "choice", return_value=ACTIONS["specific"]
+        ):
+            await agent._shadow_decide_action()
+
+        agent._calculate_shadow_reward.assert_awaited_once_with(ACTIONS["specific"])
+        agent._shadow_update_q_table.assert_awaited_once()
+        agent._log_rl_episode.assert_awaited_once()
+        assert agent.shadow_episode_number == 1
+
+
+class TestShadowRewardBranches:
+
+    @pytest.mark.asyncio
+    async def test_shadow_reward_returns_zero_with_insufficient_data(self):
+        agent = make_agent()
+        agent._cached_power_h1 = [(None, 500.0)] * 5
+        reward = await agent._calculate_shadow_reward(ACTIONS["specific"])
+        assert reward == 0.0
+
+    @pytest.mark.asyncio
+    async def test_shadow_reward_anomaly_branch_uses_area_boost(self):
+        agent = make_agent()
+        agent._cached_power_h1 = [(None, 500.0)] * 20
+        agent.anomaly_index = 0.5
+        agent.area_anomalies = {"Kitchen": {"temperature": 0.6}}
+
+        reward = await agent._calculate_shadow_reward(ACTIONS["anomaly"])
+
+        assert reward > 0.0
+
+    @pytest.mark.asyncio
+    async def test_shadow_reward_normative_branch_without_baseline(self):
+        agent = make_agent()
+        agent._cached_power_h1 = [(None, 900.0)] * 20
+        agent.baseline_consumption = 0.0
+
+        reward = await agent._calculate_shadow_reward(ACTIONS["normative"])
+
+        assert reward > 0.0
+
+
+class TestDecideActionPendingEpisode:
+
+    @pytest.mark.asyncio
+    async def test_non_noop_action_stores_pending_episode_and_saves_state(self):
+        agent = make_agent()
+        agent.action_mask = {a: False for a in ACTIONS.values()}
+        agent.action_mask[ACTIONS["specific"]] = True
+        agent.last_notification_time = None
+        agent.notification_count_today = 0
+        agent._process_count = 2
+        agent._calculate_opportunity_score = AsyncMock(return_value=0.3)
+        agent._check_cooldown_with_opportunity = AsyncMock(return_value=(True, 10.0, 20.0))
+        agent._discretize_state = MagicMock(return_value=(1, 0, 0, 0, 1, 1))
+        agent._execute_action = AsyncMock(return_value="notif_123")
+        agent._save_persistent_state = AsyncMock()
+        agent._log_rl_decision = AsyncMock()
+        agent.storage = AsyncMock()
+
+        with patch.object(da_mod.random, "random", return_value=0.0), patch.object(
+            da_mod.random, "choice", return_value=ACTIONS["specific"]
+        ):
+            await agent._decide_action()
+
+        assert "notif_123" in agent.pending_episodes
+        pending = agent.pending_episodes["notif_123"]
+        assert pending["action"] == ACTIONS["specific"]
+        assert pending["initial_power"] == 500.0
+        agent._save_persistent_state.assert_awaited_once()
+
+
+class TestNotificationContextHelpers:
+
+    @pytest.mark.asyncio
+    async def test_gather_notification_context_daylight_waste(self):
+        agent = make_agent()
+        agent.baseline_consumption = 500.0
+        agent.data_collector.get_current_state = MagicMock(
+            return_value={
+                "power": 900.0,
+                "temperature": 23.5,
+                "illuminance": 450,
+                "occupancy": True,
+            }
+        )
+        agent.data_collector.get_area_state = MagicMock(return_value={"temperature": 24})
+        agent._find_top_consumer = AsyncMock(return_value=("Heater", 700.0))
+        agent._find_highest_anomaly_area = AsyncMock(return_value=("Office", "temperature"))
+
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 18, 10, 0, 0)
+            context = await agent._gather_notification_context("specific")
+
+        assert context["device_name"] == "Heater"
+        assert context["area_name"] == "Office"
+        assert context["is_daylight_waste"] is True
+        assert context["is_away_mode"] is False
+
+    @pytest.mark.asyncio
+    async def test_gather_notification_context_away_mode_at_night(self):
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.data_collector.get_current_state = MagicMock(
+            return_value={
+                "power": 500.0,
+                "temperature": 21.0,
+                "illuminance": 50,
+                "occupancy": False,
+            }
+        )
+        agent.data_collector.get_area_state = MagicMock(return_value={})
+        agent._find_top_consumer = AsyncMock(return_value=(None, 0.0))
+        agent._find_highest_anomaly_area = AsyncMock(return_value=(None, None))
+
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 18, 22, 0, 0)
+            context = await agent._gather_notification_context("normative")
+
+        assert context["is_away_mode"] is True
+        assert context["is_nighttime"] is True
+        assert context["area_name"] == "Living room"
+
+    @pytest.mark.asyncio
+    async def test_find_top_consumer_ignores_main_and_invalid_states(self):
+        agent = make_agent()
+        agent.sensors = {"power": ["sensor.main", "sensor.a", "sensor.bad"]}
+        agent.data_collector.main_power_sensor = "sensor.main"
+
+        state_good = MagicMock(state="120")
+        state_bad = MagicMock(state="unknown")
+
+        def _get_state(entity_id):
+            if entity_id == "sensor.a":
+                return state_good
+            if entity_id == "sensor.bad":
+                return state_bad
+            return None
+
+        agent.hass.states.get = MagicMock(side_effect=_get_state)
+
+        with patch.object(da_mod, "get_normalized_value", return_value=(120.0, "W")), patch.object(
+            da_mod, "get_friendly_name", return_value="Device A"
+        ):
+            name, power = await agent._find_top_consumer()
+
+        assert name == "Device A"
+        assert power == 120.0
+
+    @pytest.mark.asyncio
+    async def test_find_highest_anomaly_area_returns_max_metric(self):
+        agent = make_agent()
+        agent.area_anomalies = {
+            "Living": {"temperature": 0.2, "power": 0.1},
+            "Kitchen": {"humidity": 0.8},
+        }
+
+        area, metric = await agent._find_highest_anomaly_area()
+
+        assert area == "Kitchen"
+        assert metric == "humidity"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Cooldown-block logging throttle
 # ─────────────────────────────────────────────────────────────────────────────

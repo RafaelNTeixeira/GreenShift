@@ -84,6 +84,25 @@ GreenShiftAreaViewSelect = select_mod.GreenShiftAreaViewSelect
 GreenShiftNotificationSelect = select_mod.GreenShiftNotificationSelect
 
 
+class TestSelectSetupEntry:
+
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_adds_both_select_entities(self):
+        hass = MagicMock()
+        collector = make_collector(["Kitchen"])
+        agent = make_agent([pending_notif("n1")])
+        hass.data = {const_mod.DOMAIN: {"collector": collector, "agent": agent}}
+        async_add_entities = MagicMock()
+
+        await select_mod.async_setup_entry(hass, MagicMock(), async_add_entities)
+
+        async_add_entities.assert_called_once()
+        entities = async_add_entities.call_args.args[0]
+        assert len(entities) == 2
+        assert isinstance(entities[0], GreenShiftAreaViewSelect)
+        assert isinstance(entities[1], GreenShiftNotificationSelect)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────

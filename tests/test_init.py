@@ -14,6 +14,7 @@ import types
 import pathlib
 import importlib.util
 import pytest
+from datetime import datetime
 from unittest.mock import MagicMock, AsyncMock, patch
 
 # ── Minimal HA stubs ─────────────────────────────────────────────────────────
@@ -104,6 +105,8 @@ async_discover_sensors = init_mod.async_discover_sensors
 sync_helper_entities = init_mod.sync_helper_entities
 trigger_phase_transition_notification = init_mod.trigger_phase_transition_notification
 async_setup_services = init_mod.async_setup_services
+async_setup_entry = init_mod.async_setup_entry
+async_unload_entry = init_mod.async_unload_entry
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -613,3 +616,248 @@ class TestRestoreBackupService:
         await handlers["restore_backup"](call)
 
         agent_mock._load_persistent_state.assert_not_called()
+
+
+class TestServiceHandlers:
+
+    @pytest.mark.asyncio
+    async def test_submit_task_feedback_success_path(self):
+        hass, handlers, _, _ = _build_services_hass(backup_success=True)
+        storage = hass.data[DOMAIN]["storage"]
+        storage.get_today_tasks = AsyncMock(return_value=[{"task_id": "t-1"}])
+        storage.save_task_feedback = AsyncMock(return_value=True)
+        storage.log_task_feedback = AsyncMock()
+
+        await async_setup_services(hass)
+        dispatcher_stub.async_dispatcher_send.reset_mock()
+
+        call = MagicMock()
+        call.data = {"task_index": 0, "feedback": "just_right"}
+        await handlers["submit_task_feedback"](call)
+
+        storage.save_task_feedback.assert_awaited_once_with("t-1", "just_right")
+        storage.log_task_feedback.assert_awaited_once_with("t-1", "just_right")
+        assert dispatcher_stub.async_dispatcher_send.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_submit_task_feedback_invalid_feedback_returns_early(self):
+        hass, handlers, _, _ = _build_services_hass(backup_success=True)
+        storage = hass.data[DOMAIN]["storage"]
+        storage.get_today_tasks = AsyncMock(return_value=[{"task_id": "t-1"}])
+        storage.save_task_feedback = AsyncMock(return_value=True)
+
+        await async_setup_services(hass)
+
+        call = MagicMock()
+        call.data = {"task_index": 0, "feedback": "invalid"}
+        await handlers["submit_task_feedback"](call)
+
+        storage.save_task_feedback.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_respond_to_selection_accept_calls_agent(self):
+        hass, handlers, _, agent_mock = _build_services_hass(backup_success=True)
+        hass.states = MagicMock()
+        hass.states.get = MagicMock(return_value=MagicMock(state="notif_001"))
+        agent_mock._handle_notification_feedback = AsyncMock()
+
+        await async_setup_services(hass)
+        dispatcher_stub.async_dispatcher_send.reset_mock()
+
+        call = MagicMock()
+        call.data = {"decision": "accept"}
+        await handlers["respond_to_selection"](call)
+
+        agent_mock._handle_notification_feedback.assert_awaited_once_with("notif_001", accepted=True)
+        assert dispatcher_stub.async_dispatcher_send.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_respond_to_selection_ignores_unknown_selector(self):
+        hass, handlers, _, agent_mock = _build_services_hass(backup_success=True)
+        hass.states = MagicMock()
+        hass.states.get = MagicMock(return_value=MagicMock(state="unknown"))
+        agent_mock._handle_notification_feedback = AsyncMock()
+
+        await async_setup_services(hass)
+
+        call = MagicMock()
+        call.data = {"decision": "reject"}
+        await handlers["respond_to_selection"](call)
+
+        agent_mock._handle_notification_feedback.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_force_notification_restores_original_time_when_no_send(self):
+        hass, handlers, _, agent_mock = _build_services_hass(backup_success=True)
+        original_time = object()
+        agent_mock.last_notification_time = original_time
+        agent_mock.notification_history = []
+        agent_mock._decide_action = AsyncMock()
+
+        await async_setup_services(hass)
+
+        call = MagicMock()
+        call.data = {}
+        await handlers["force_notification"](call)
+
+        assert agent_mock.last_notification_time is original_time
+
+    @pytest.mark.asyncio
+    async def test_create_backup_returns_when_manager_missing(self):
+        hass, handlers, _, _ = _build_services_hass(backup_success=True)
+        del hass.data[DOMAIN]["backup_manager"]
+
+        await async_setup_services(hass)
+
+        call = MagicMock()
+        call.data = {}
+        await handlers["create_backup"](call)
+
+
+class TestSetupAndUnloadEntry:
+
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_initializes_and_runs_callbacks(self):
+        hass = MagicMock()
+        hass.data = {}
+        hass.config = MagicMock()
+        hass.config.path = MagicMock(return_value="/tmp/green_shift_data")
+        hass.config_entries = MagicMock()
+        hass.config_entries.async_forward_entry_setups = AsyncMock()
+        hass.config_entries.async_update_entry = MagicMock()
+
+        entry = MagicMock()
+        entry.data = {
+            "discovered_sensors": {"power": ["sensor.main_power"]},
+            "main_total_energy_sensor": "sensor.total_energy",
+            "main_total_power_sensor": "sensor.main_power",
+            "environment_mode": "home",
+            "energy_saving_target": 15,
+            "electricity_price": 0.22,
+            "currency": "EUR",
+        }
+
+        storage = MagicMock()
+        storage.setup = AsyncMock()
+        storage.load_state = AsyncMock(return_value={})
+        storage.has_phase_metadata = AsyncMock(return_value=False)
+        storage.record_phase_change = AsyncMock()
+        storage.compute_daily_aggregates = AsyncMock()
+        storage.compute_area_daily_aggregates = AsyncMock()
+        storage._cleanup_old_research_data = AsyncMock()
+        storage.save_state = AsyncMock()
+        storage._cleanup_old_data = AsyncMock()
+        storage.get_today_tasks = AsyncMock(return_value=[])
+        storage.close = AsyncMock()
+
+        collector = MagicMock()
+        collector.setup = AsyncMock()
+        collector.get_power_history = AsyncMock(return_value=[(datetime.now(), 800.0)] * 20)
+        collector._load_persistent_data = AsyncMock()
+
+        agent = MagicMock()
+        agent.setup = AsyncMock()
+        agent._save_persistent_state = AsyncMock()
+        agent.calculate_area_baselines = AsyncMock()
+        agent.process_ai_model = AsyncMock()
+        agent.phase = const_mod.PHASE_BASELINE
+        agent.start_date = datetime.now()
+        agent.baseline_consumption = 900.0
+        agent.storage = storage
+        agent.notification_history = []
+        agent.last_notification_time = None
+
+        task_manager = MagicMock()
+        task_manager.generate_daily_tasks = AsyncMock(return_value=[{"id": "t1"}])
+        task_manager.verify_tasks = AsyncMock(return_value={"ok": True})
+
+        backup_manager = MagicMock()
+        backup_manager.create_backup = AsyncMock(return_value=True)
+        backup_manager.cleanup_old_backups = AsyncMock()
+
+        callbacks = {}
+
+        def _capture_interval(_hass, cb, _delta):
+            callbacks[cb.__name__] = cb
+            return lambda: None
+
+        def _capture_change(_hass, _entities, cb):
+            callbacks[cb.__name__] = cb
+            return lambda: None
+
+        def _capture_time(_hass, cb, **_kwargs):
+            callbacks[cb.__name__] = cb
+            return lambda: None
+
+        with patch.object(init_mod, "StorageManager", return_value=storage), patch.object(
+            init_mod, "DataCollector", return_value=collector
+        ), patch.object(init_mod, "DecisionAgent", return_value=agent), patch.object(
+            init_mod, "TaskManager", return_value=task_manager
+        ), patch.object(init_mod, "BackupManager", return_value=backup_manager), patch.object(
+            init_mod, "async_setup_services", AsyncMock()
+        ), patch.object(init_mod, "async_track_time_interval", side_effect=_capture_interval), patch.object(
+            init_mod, "async_track_state_change_event", side_effect=_capture_change
+        ), patch.object(init_mod, "async_track_time_change", side_effect=_capture_time):
+            ok = await async_setup_entry(hass, entry)
+
+        assert ok is True
+        assert const_mod.DOMAIN in hass.data
+        backup_manager.create_backup.assert_awaited_once_with(backup_type="startup")
+        storage.record_phase_change.assert_awaited()
+
+        # Exercise registered callbacks once to cover runtime paths.
+        await callbacks["update_agent_ai_model"](None)
+        await callbacks["target_changed"](MagicMock(data={"new_state": MagicMock(state="18")}) )
+        await callbacks["electricity_price_changed"](MagicMock(data={"new_state": MagicMock(state="0.3")}) )
+
+        agent.phase = const_mod.PHASE_ACTIVE
+        await callbacks["generate_daily_tasks_callback"](None)
+        await callbacks["verify_tasks_callback"](None)
+        await callbacks["daily_aggregation_callback"](None)
+        await callbacks["auto_backup_callback"](None)
+        await callbacks["rl_cleanup_callback"](None)
+        await callbacks["sensor_data_cleanup_callback"](None)
+
+    @pytest.mark.asyncio
+    async def test_async_unload_entry_cleans_up_and_removes_domain(self):
+        entry = MagicMock()
+        hass = MagicMock()
+        hass.config_entries = MagicMock()
+        hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+        hass.services = MagicMock()
+        hass.services.async_remove = MagicMock()
+
+        storage = MagicMock()
+        storage.close = AsyncMock()
+
+        agent = MagicMock()
+        agent.storage = storage
+        agent._save_persistent_state = AsyncMock()
+
+        backup_manager = MagicMock()
+        backup_manager.create_backup = AsyncMock(return_value=True)
+
+        hass.data = {
+            const_mod.DOMAIN: {
+                "agent": agent,
+                "backup_manager": backup_manager,
+                "storage": storage,
+                "update_listener": lambda: None,
+                "target_listener": lambda: None,
+                "price_listener": lambda: None,
+                "task_generation_listener": lambda: None,
+                "task_verification_listener": lambda: None,
+                "daily_aggregation_listener": lambda: None,
+                "auto_backup_listener": lambda: None,
+                "rl_cleanup_listener": lambda: None,
+                "sensor_cleanup_listener": lambda: None,
+            }
+        }
+
+        ok = await async_unload_entry(hass, entry)
+
+        assert ok is True
+        agent._save_persistent_state.assert_awaited_once()
+        backup_manager.create_backup.assert_awaited_once_with(backup_type="shutdown")
+        storage.close.assert_awaited_once()
+        assert const_mod.DOMAIN not in hass.data

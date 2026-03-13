@@ -26,7 +26,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 
 # ── Minimal HA stubs ────────────────────────────────────────────────────────
 for mod_name in [
@@ -392,6 +392,26 @@ class TestGetAreaHistory:
         )
         assert len(result) == 1
         assert result[0][1] == 100.0
+
+    @pytest.mark.asyncio
+    async def test_get_history_non_working_hours_filter_false(self, storage):
+        now = datetime.now()
+        await storage.store_sensor_snapshot(now, power=100.0, within_working_hours=True)
+        await storage.store_sensor_snapshot(now, power=200.0, within_working_hours=False)
+
+        result = await storage.get_history("power", hours=1, working_hours_only=False)
+        assert len(result) == 1
+        assert result[0][1] == 200.0
+
+    @pytest.mark.asyncio
+    async def test_get_area_history_non_working_hours_filter_false(self, storage):
+        now = datetime.now()
+        await storage.store_area_snapshot(now, "Office", power=100.0, within_working_hours=True)
+        await storage.store_area_snapshot(now, "Office", power=200.0, within_working_hours=False)
+
+        result = await storage.get_area_history("Office", "power", hours=1, working_hours_only=False)
+        assert len(result) == 1
+        assert result[0][1] == 200.0
 
 
 class TestMetricWhitelist:
@@ -1250,6 +1270,321 @@ class TestGetTasksForDate:
         result = await storage.get_tasks_for_date("2026-01-10")
         assert len(result) == 1
         assert result[0]["task_id"] == "t_jan"
+
+
+class TestStorageErrorAndStateBranches:
+
+    @pytest.mark.asyncio
+    async def test_store_sensor_snapshot_handles_insert_exception(self, storage):
+        with patch.object(storage_mod.sqlite3, "connect", side_effect=RuntimeError("db down")):
+            await storage.store_sensor_snapshot(timestamp=datetime.now(), power=123.0)
+
+    @pytest.mark.asyncio
+    async def test_store_sensor_snapshot_rolls_back_when_insert_fails(self, storage):
+        class BadCursor:
+            def execute(self, *args, **kwargs):
+                raise RuntimeError("insert fail")
+
+        class BadConn:
+            def __init__(self):
+                self.rolled_back = False
+                self.closed = False
+
+            def cursor(self):
+                return BadCursor()
+
+            def commit(self):
+                return None
+
+            def rollback(self):
+                self.rolled_back = True
+
+            def close(self):
+                self.closed = True
+
+        conn = BadConn()
+        with patch.object(storage_mod.sqlite3, "connect", return_value=conn):
+            await storage.store_sensor_snapshot(timestamp=datetime.now(), power=1.0)
+        assert conn.rolled_back is True
+        assert conn.closed is True
+
+    @pytest.mark.asyncio
+    async def test_store_area_snapshot_handles_insert_exception(self, storage):
+        with patch.object(storage_mod.sqlite3, "connect", side_effect=RuntimeError("db down")):
+            await storage.store_area_snapshot(timestamp=datetime.now(), area_name="Office", power=123.0)
+
+    @pytest.mark.asyncio
+    async def test_store_area_snapshot_rolls_back_when_insert_fails(self, storage):
+        class BadCursor:
+            def execute(self, *args, **kwargs):
+                raise RuntimeError("insert fail")
+
+        class BadConn:
+            def __init__(self):
+                self.rolled_back = False
+                self.closed = False
+
+            def cursor(self):
+                return BadCursor()
+
+            def commit(self):
+                return None
+
+            def rollback(self):
+                self.rolled_back = True
+
+            def close(self):
+                self.closed = True
+
+        conn = BadConn()
+        with patch.object(storage_mod.sqlite3, "connect", return_value=conn):
+            await storage.store_area_snapshot(timestamp=datetime.now(), area_name="Office", power=1.0)
+        assert conn.rolled_back is True
+        assert conn.closed is True
+
+    @pytest.mark.asyncio
+    async def test_save_daily_tasks_returns_false_on_individual_task_error(self, storage):
+        bad_task = {
+            "task_id": "bad_task",
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "task_type": "power_reduction",
+            "title": "Bad",
+            # Missing description triggers KeyError in save loop
+        }
+        result = await storage.save_daily_tasks([bad_task])
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_save_state_cleans_temp_file_when_write_fails(self, storage):
+        temp_path = storage.state_file.with_suffix('.tmp')
+        temp_path.write_text("partial")
+
+        with patch.object(storage_mod.json, "dump", side_effect=RuntimeError("write fail")):
+            with pytest.raises(RuntimeError):
+                await storage.save_state({"k": "v"})
+
+        assert not temp_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_load_state_returns_empty_on_invalid_json(self, storage):
+        storage.state_file.write_text("{bad json")
+        result = await storage.load_state()
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_has_phase_metadata_true_and_false(self, storage):
+        assert await storage.has_phase_metadata() is False
+
+        conn = sqlite3.connect(storage.research_db_path)
+        conn.execute(
+            "INSERT INTO research_phase_metadata (phase, start_timestamp) VALUES (?, ?)",
+            ("baseline", datetime.now().timestamp()),
+        )
+        conn.commit()
+        conn.close()
+
+        assert await storage.has_phase_metadata() is True
+
+    @pytest.mark.asyncio
+    async def test_compute_daily_aggregates_default_date_branch(self, storage):
+        await storage.compute_daily_aggregates(date=None, phase="active")
+
+    @pytest.mark.asyncio
+    async def test_compute_daily_aggregates_weather_sensor_parse_and_exception_paths(self, storage):
+        storage.config_data = {
+            "outdoor_temp_sensor": "sensor.outdoor_bad",
+            "weather_entity": "sensor.raises",
+        }
+
+        now_ts = datetime.now().timestamp()
+        conn = sqlite3.connect(storage.db_path)
+        conn.execute(
+            "INSERT INTO sensor_history (timestamp, power, within_working_hours) VALUES (?, ?, ?)",
+            (now_ts, 500.0, 1),
+        )
+        conn.commit()
+        conn.close()
+
+        bad_temp_state = MagicMock()
+        bad_temp_state.state = "not-a-number"
+        bad_temp_state.attributes = {}
+
+        def get_state(entity_id):
+            if entity_id == "sensor.raises":
+                raise RuntimeError("boom")
+            if entity_id == "sensor.outdoor_bad":
+                return bad_temp_state
+            return None
+
+        storage.hass.states.get = MagicMock(side_effect=get_state)
+        await storage.compute_daily_aggregates(date=None, phase="active")
+
+    @pytest.mark.asyncio
+    async def test_compute_daily_aggregates_nudge_stats_none_fallback(self, storage):
+        date_str = "2026-03-20"
+        ts = datetime(2026, 3, 20, 12, 0, 0).timestamp()
+
+        conn = sqlite3.connect(storage.db_path)
+        conn.execute(
+            "INSERT INTO sensor_history (timestamp, power, within_working_hours) VALUES (?, ?, ?)",
+            (ts, 600.0, 1),
+        )
+        conn.commit()
+        conn.close()
+
+        storage.hass.states.get = MagicMock(return_value=None)
+
+        real_connect = storage_mod.sqlite3.connect
+
+        class ConnProxy:
+            def __init__(self, conn):
+                self._conn = conn
+
+            def cursor(self):
+                real_cursor = self._conn.cursor()
+
+                class CursorProxy:
+                    def __init__(self, cur):
+                        self._cur = cur
+                        self._last_sql = ""
+
+                    def execute(self, sql, params=()):
+                        self._last_sql = sql
+                        return self._cur.execute(sql, params)
+
+                    def fetchone(self):
+                        if "FROM research_nudge_log" in self._last_sql:
+                            return (None, None, None, None)
+                        return self._cur.fetchone()
+
+                    def fetchall(self):
+                        return self._cur.fetchall()
+
+                return CursorProxy(real_cursor)
+
+            def commit(self):
+                return self._conn.commit()
+
+            def close(self):
+                return self._conn.close()
+
+            def rollback(self):
+                return self._conn.rollback()
+
+        def connect_proxy(path):
+            return ConnProxy(real_connect(path))
+
+        with patch.object(storage_mod.sqlite3, "connect", side_effect=connect_proxy):
+            await storage.compute_daily_aggregates(date=date_str, phase="active")
+
+        rconn = sqlite3.connect(storage.research_db_path)
+        row = rconn.execute(
+            "SELECT nudges_sent, nudges_accepted, nudges_dismissed, nudges_ignored FROM research_daily_aggregates WHERE date = ?",
+            (date_str,),
+        ).fetchone()
+        rconn.close()
+        assert row is not None
+
+    @pytest.mark.asyncio
+    async def test_compute_area_daily_aggregates_skips_area_when_total_readings_zero(self, storage):
+        date_str = "2026-03-22"
+        ts = datetime(2026, 3, 22, 9, 0, 0).timestamp()
+
+        conn = sqlite3.connect(storage.db_path)
+        conn.execute(
+            "INSERT INTO area_sensor_history (timestamp, area_name, power, occupancy) VALUES (?, ?, ?, ?)",
+            (ts, "Office", 200.0, 1),
+        )
+        conn.commit()
+        conn.close()
+
+        real_connect = storage_mod.sqlite3.connect
+
+        class ConnProxy:
+            def __init__(self, conn):
+                self._conn = conn
+
+            def cursor(self):
+                real_cursor = self._conn.cursor()
+
+                class CursorProxy:
+                    def __init__(self, cur):
+                        self._cur = cur
+                        self._last_sql = ""
+
+                    def execute(self, sql, params=()):
+                        self._last_sql = sql
+                        return self._cur.execute(sql, params)
+
+                    def fetchone(self):
+                        if "AVG(power) as avg_power" in self._last_sql:
+                            return (0, 0, 0, 0, 0, 0, 0, 0)
+                        return self._cur.fetchone()
+
+                    def fetchall(self):
+                        return self._cur.fetchall()
+
+                return CursorProxy(real_cursor)
+
+            def commit(self):
+                return self._conn.commit()
+
+            def close(self):
+                return self._conn.close()
+
+            def rollback(self):
+                return self._conn.rollback()
+
+        def connect_proxy(path):
+            return ConnProxy(real_connect(path))
+
+        with patch.object(storage_mod.sqlite3, "connect", side_effect=connect_proxy):
+            await storage.compute_area_daily_aggregates(date=date_str, phase="active")
+
+    @pytest.mark.asyncio
+    async def test_compute_area_daily_aggregates_no_areas_early_return(self, storage):
+        # No area rows inserted for today, should hit early return branch.
+        await storage.compute_area_daily_aggregates(date=None, phase="active")
+
+    @pytest.mark.asyncio
+    async def test_compute_area_daily_aggregates_phase_fallback_to_baseline(self, storage):
+        date_str = "2026-03-15"
+        ts = datetime(2026, 3, 15, 10, 0, 0).timestamp()
+
+        conn = sqlite3.connect(storage.db_path)
+        conn.execute(
+            "INSERT INTO area_sensor_history (timestamp, area_name, power, occupancy) VALUES (?, ?, ?, ?)",
+            (ts, "Office", 300.0, 1),
+        )
+        conn.commit()
+        conn.close()
+
+        await storage.compute_area_daily_aggregates(date=date_str, phase=None)
+
+        rconn = sqlite3.connect(storage.research_db_path)
+        row = rconn.execute(
+            "SELECT phase FROM research_area_daily_stats WHERE date = ? AND area_name = ?",
+            (date_str, "Office"),
+        ).fetchone()
+        rconn.close()
+
+        assert row is not None
+        assert row[0] == "baseline"
+
+    @pytest.mark.asyncio
+    async def test_close_closes_existing_connection(self, storage):
+        class DummyConn:
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        dummy = DummyConn()
+        storage._conn = dummy
+
+        await storage.close()
+        assert dummy.closed is True
 
 
 # ─────────────────────────────────────────────────────────────────────────────

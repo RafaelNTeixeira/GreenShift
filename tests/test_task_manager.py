@@ -1298,6 +1298,337 @@ class TestVerifySingleTaskTemperature:
 
         assert verified == False
 
+
+class TestTaskManagerAdditionalCoverage:
+
+    @pytest.mark.asyncio
+    async def test_generate_daily_tasks_ignores_generator_exception(self):
+        tm = make_task_manager()
+        tm.storage.get_today_tasks = AsyncMock(return_value=[])
+        tm.storage.get_tasks_for_date = AsyncMock(return_value=[])
+
+        good_task = {
+            "task_id": "ok1",
+            "task_type": "power_reduction",
+            "title": "T",
+            "description": "D",
+            "target_value": 300,
+            "baseline_value": 400,
+            "difficulty_level": 3,
+        }
+
+        async def bad_gen():
+            raise RuntimeError("boom")
+
+        async def good_gen():
+            return good_task.copy()
+
+        with patch.object(tm_mod.np.random, "choice", return_value=[bad_gen, good_gen]):
+            tasks = await tm.generate_daily_tasks()
+
+        assert len(tasks) == 1
+        assert tasks[0]["task_id"] == "ok1"
+
+    @pytest.mark.asyncio
+    async def test_generate_temperature_task_weather_and_sensor_parse_failures(self):
+        tm = make_task_manager(sensors={"temperature": ["sensor.temp_1"]})
+        tm.config_data = {
+            "weather_entity": "weather.home",
+            "outdoor_temp_sensor": "sensor.outdoor_temp",
+        }
+
+        weather_state = MagicMock()
+        weather_state.attributes = {"temperature": "not-a-float"}
+        sensor_state = MagicMock()
+        sensor_state.state = "also-bad"
+
+        def get_state(entity_id):
+            if entity_id == "weather.home":
+                return weather_state
+            if entity_id == "sensor.outdoor_temp":
+                return sensor_state
+            return None
+
+        tm.hass.states.get = MagicMock(side_effect=get_state)
+
+        task = await tm._generate_temperature_task()
+        assert task is None
+
+    @pytest.mark.asyncio
+    async def test_verify_tasks_uses_generic_reason_for_unknown_type(self):
+        tm = make_task_manager()
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        tm.storage.get_today_tasks = AsyncMock(return_value=[{
+            "task_id": "unknown_type",
+            "task_type": "custom_unknown",
+            "target_value": 100,
+            "target_unit": "W",
+            "verified": False,
+            "area_name": None,
+            "created_at": f"{today_str}T06:00:00",
+            "peak_hour": None,
+        }])
+
+        tm._verify_single_task = AsyncMock(return_value=(False, 150, False))
+        await tm.verify_tasks()
+
+        reason = tm._last_verification_results["unknown_type"]["reason"]
+        assert "target was" in reason
+
+    @pytest.mark.asyncio
+    async def test_verify_tasks_pending_non_peak_uses_evaluation_deferred_reason(self):
+        tm = make_task_manager()
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        tm.storage.get_today_tasks = AsyncMock(return_value=[{
+            "task_id": "pending_non_peak",
+            "task_type": "power_reduction",
+            "target_value": 100,
+            "target_unit": "W",
+            "verified": False,
+            "area_name": None,
+            "created_at": f"{today_str}T06:00:00",
+            "peak_hour": None,
+        }])
+
+        tm._verify_single_task = AsyncMock(return_value=(False, None, True))
+        await tm.verify_tasks()
+
+        reason = tm._last_verification_results["pending_non_peak"]["reason"]
+        assert "deferred" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_verify_single_task_invalid_created_at_falls_back(self):
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 12, i), 250.0) for i in range(30)
+        ])
+
+        task = {
+            "task_id": "bad_created_at",
+            "task_type": "power_reduction",
+            "target_value": 400,
+            "created_at": "not-an-iso",
+            "verified": False,
+        }
+
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert verified
+        assert actual is not None
+        assert pending is False
+
+    @pytest.mark.asyncio
+    async def test_verify_single_task_unknown_type_returns_default_tuple(self):
+        verified, actual, pending = await make_task_manager()._verify_single_task({
+            "task_id": "x",
+            "task_type": "unknown_type",
+            "target_value": 1,
+        })
+        assert verified is False
+        assert actual is None
+        assert pending is False
+
+    @pytest.mark.asyncio
+    async def test_verify_single_task_daylight_after_filter_empty(self):
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 22, 0, 0), 250.0)
+        ])
+
+        task = {
+            "task_id": "day_empty",
+            "task_type": "daylight_usage",
+            "target_value": 200,
+            "created_at": "2026-02-19T06:00:00",
+            "verified": False,
+        }
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            fake_now = real_dt(2026, 2, 19, 23, 0, 0)
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert verified is False
+        assert actual is None
+        assert pending is False
+
+    @pytest.mark.asyncio
+    async def test_verify_single_task_unoccupied_without_area(self):
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        task = {
+            "task_id": "unocc_no_area",
+            "task_type": "unoccupied_power",
+            "target_value": 200,
+            "area_name": None,
+            "created_at": "2026-02-19T06:00:00",
+            "verified": False,
+        }
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert verified is False
+        assert actual is None
+        assert pending is False
+
+    @pytest.mark.asyncio
+    async def test_verify_tasks_no_streak_update_when_none_verified(self):
+        tm = make_task_manager()
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        tm.storage.get_today_tasks = AsyncMock(return_value=[{
+            "task_id": "t_fail",
+            "task_type": "power_reduction",
+            "target_value": 100,
+            "target_unit": "W",
+            "verified": False,
+            "area_name": None,
+            "created_at": f"{today_str}T06:00:00",
+            "peak_hour": None,
+        }])
+        tm._verify_single_task = AsyncMock(return_value=(False, 200, False))
+
+        await tm.verify_tasks()
+        tm.decision_agent.update_task_streak.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_generate_temperature_task_returns_none_when_no_temp_history(self):
+        tm = make_task_manager(sensors={"temperature": ["sensor.temp_1"]})
+        tm.config_data = {"weather_entity": "weather.home"}
+
+        weather_state = MagicMock()
+        weather_state.attributes = {"temperature": 35.0}
+        tm.hass.states.get = MagicMock(return_value=weather_state)
+        tm.data_collector.get_temperature_history = AsyncMock(return_value=[])
+
+        task = await tm._generate_temperature_task()
+        assert task is None
+
+    @pytest.mark.asyncio
+    async def test_generate_unoccupied_power_task_continues_when_all_occupied(self):
+        tm = make_task_manager(sensors={"power": ["sensor.p1"], "occupancy": ["binary_sensor.o1"]})
+        tm.data_collector.get_all_areas = MagicMock(return_value=["Office"])
+        base = datetime(2026, 2, 19, 10, 0, 0)
+        power = [(base + timedelta(minutes=i), 400.0) for i in range(10)]
+        occ = [(base + timedelta(minutes=i), 1) for i in range(10)]
+
+        async def area_history(area, metric, **kwargs):
+            return power if metric == "power" else occ
+
+        tm.data_collector.get_area_history = AsyncMock(side_effect=area_history)
+        task = await tm._generate_unoccupied_power_task()
+        assert task is None
+
+    @pytest.mark.asyncio
+    async def test_generate_daylight_task_success_path(self):
+        tm = make_task_manager(sensors={"power": ["sensor.power_1"], "illuminance": ["sensor.lux_1"]})
+        base = datetime(2026, 2, 19, 9, 0, 0)
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (base + timedelta(minutes=i), 500.0) for i in range(30)
+        ])
+        tm.storage.get_task_difficulty_stats = AsyncMock(return_value={
+            "too_easy_count": 0,
+            "just_right_count": 3,
+            "too_hard_count": 0,
+            "avg_difficulty": 3,
+            "suggested_adjustment": 0,
+        })
+
+        task = await tm._generate_daylight_task()
+        assert task is not None
+        assert task["task_type"] == "daylight_usage"
+        assert "target_value" in task
+
+    @pytest.mark.asyncio
+    async def test_verify_tasks_reason_variants_and_verified_logging(self):
+        tm = make_task_manager()
+        today_str = datetime.now().strftime("%Y-%m-%d")
+
+        tasks = [
+            {"task_id": "verified_case", "task_type": "power_reduction", "target_value": 100, "target_unit": "W", "verified": False, "area_name": None, "created_at": f"{today_str}T06:00:00", "peak_hour": None},
+            {"task_id": "pending_peak", "task_type": "peak_avoidance", "target_value": 100, "target_unit": "W", "verified": False, "area_name": None, "created_at": f"{today_str}T06:00:00", "peak_hour": 17},
+            {"task_id": "temp_increase_fail", "task_type": "temperature_increase", "target_value": 24.0, "target_unit": "°C", "verified": False, "area_name": None, "created_at": f"{today_str}T06:00:00", "peak_hour": None},
+            {"task_id": "insufficient", "task_type": "power_reduction", "target_value": 100, "target_unit": "W", "verified": False, "area_name": None, "created_at": f"{today_str}T06:00:00", "peak_hour": None},
+        ]
+        tm.storage.get_today_tasks = AsyncMock(return_value=tasks)
+
+        async def verify_side_effect(task):
+            if task["task_id"] == "verified_case":
+                return True, 80, False
+            if task["task_id"] == "pending_peak":
+                return False, None, True
+            if task["task_id"] == "temp_increase_fail":
+                return False, 26.0, False
+            return False, None, False
+
+        tm._verify_single_task = AsyncMock(side_effect=verify_side_effect)
+        await tm.verify_tasks()
+
+        assert tm.storage.mark_task_verified.called
+        assert tm.storage.log_task_completion.called
+        assert "Target achieved" in tm._last_verification_results["verified_case"]["reason"]
+        assert "peak hour" in tm._last_verification_results["pending_peak"]["reason"].lower()
+        assert "setpoint" in tm._last_verification_results["temp_increase_fail"]["reason"].lower()
+        assert "insufficient" in tm._last_verification_results["insufficient"]["reason"].lower()
+
+    @pytest.mark.asyncio
+    async def test_verify_single_task_returns_none_for_missing_histories(self):
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+
+            tm.data_collector.get_power_history = AsyncMock(return_value=[])
+            v1, a1, _ = await tm._verify_single_task({
+                "task_id": "p0", "task_type": "power_reduction", "target_value": 100, "created_at": "2026-02-19T06:00:00", "verified": False
+            })
+
+            tm.data_collector.get_power_history = AsyncMock(return_value=[(real_dt(2026, 2, 19, 12, 0, 0), 100.0)])
+            tm.data_collector.get_area_history = AsyncMock(return_value=[])
+            v2, a2, _ = await tm._verify_single_task({
+                "task_id": "u0", "task_type": "unoccupied_power", "target_value": 100, "area_name": "Office", "created_at": "2026-02-19T06:00:00", "verified": False
+            })
+
+            tm.data_collector.get_area_history = AsyncMock(side_effect=[
+                [(real_dt(2026, 2, 19, 12, i, 0), 200.0) for i in range(5)],
+                [(real_dt(2026, 2, 19, 12, i, 0), 1) for i in range(5)],
+            ])
+            v3, a3, _ = await tm._verify_single_task({
+                "task_id": "u1", "task_type": "unoccupied_power", "target_value": 100, "area_name": "Office", "created_at": "2026-02-19T06:00:00", "verified": False
+            })
+
+            tm.data_collector.get_power_history = AsyncMock(return_value=[])
+            v4, a4, _ = await tm._verify_single_task({
+                "task_id": "pk0", "task_type": "peak_avoidance", "target_value": 100, "peak_hour": 13, "created_at": "2026-02-19T06:00:00", "verified": False
+            })
+
+        assert v1 is False and a1 is None
+        assert v2 is False and a2 is None
+        assert v3 is False and a3 is None
+        assert v4 is False and a4 is None
+
     @pytest.mark.asyncio
     async def test_temperature_returns_false_when_no_history(self):
         from unittest.mock import patch

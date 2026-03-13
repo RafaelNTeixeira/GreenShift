@@ -10,7 +10,7 @@ Covers:
 """
 import pytest
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # We import only the pure helpers that have no mandatory HA dependency
 import sys, types
@@ -241,6 +241,13 @@ class TestIsWithinWorkingHours:
         t = datetime(2026, 2, 18, 10, 0)
         # Bad time strings -> fallback returns True (safe default)
         assert is_within_working_hours(bad_cfg, t) is True
+
+    def test_office_uses_datetime_now_when_check_time_missing(self, office_cfg):
+        fake_now = datetime(2026, 2, 18, 9, 30)  # Wednesday inside office hours
+        with patch.object(helpers, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.strptime = datetime.strptime
+            assert is_within_working_hours(office_cfg, None) is True
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -38,6 +38,7 @@ get_task_templates = trans_mod.get_task_templates
 get_time_of_day_name = trans_mod.get_time_of_day_name
 get_difficulty_display = trans_mod.get_difficulty_display
 get_phase_transition_template = trans_mod.get_phase_transition_template
+get_verification_reason_templates = trans_mod.get_verification_reason_templates
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -115,6 +116,21 @@ class TestGetLanguage:
 
         result = await get_language(hass)
         # Should default to en when unsupported
+        assert result == "en"
+
+    @pytest.mark.asyncio
+    async def test_returns_en_when_language_lookup_raises(self):
+        """Any unexpected exception in language lookup should hit the except fallback."""
+        hass = MagicMock()
+
+        class BrokenConfig:
+            @property
+            def language(self):
+                raise RuntimeError("boom")
+
+        hass.config = BrokenConfig()
+
+        result = await get_language(hass)
         assert result == "en"
 
 
@@ -326,6 +342,14 @@ class TestGetPhaseTransitionTemplate:
         template = get_phase_transition_template("xyz")
         en_template = get_phase_transition_template("en")
         assert template == en_template
+
+
+class TestGetVerificationReasonTemplates:
+
+    def test_defaults_to_en_for_unknown_language(self):
+        templates = get_verification_reason_templates("xyz")
+        en_templates = get_verification_reason_templates("en")
+        assert templates == en_templates
 
 
 # ─────────────────────────────────────────────────────────────────────────────
