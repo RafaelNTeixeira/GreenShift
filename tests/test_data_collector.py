@@ -1262,3 +1262,352 @@ class TestSetupMidnightSeeding:
         # No energy sensors → no seeding attempt
         assert dc._energy_midnight_points == {}
         hass.async_create_task.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Additional branch coverage
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAdditionalDataCollectorCoverage:
+
+    @pytest.mark.asyncio
+    async def test_load_persistent_data_returns_early_without_storage(self):
+        dc = make_collector()
+        dc.storage = None
+        await dc._load_persistent_data()
+        assert dc._energy_midnight_points == {}
+
+    def test_recalculate_skips_main_sensor_when_main_value_missing(self):
+        dc = make_collector(sensors={"power": ["sensor.main", "sensor.sub"]}, main_power="sensor.main")
+        dc._power_sensor_cache["sensor.main"] = None
+        dc._power_sensor_cache["sensor.sub"] = 220.0
+
+        dc._recalculate_total_power()
+
+        assert dc.current_total_power == 220.0
+
+    @pytest.mark.asyncio
+    async def test_power_callback_updates_area_power_totals(self):
+        dc = make_collector(sensors={"power": ["sensor.power_1", "sensor.power_2"]})
+        dc.area_sensors = {"power": {"Kitchen": ["sensor.power_1", "sensor.power_2"]}}
+        dc.area_data = {"Kitchen": {"power": 0.0}}
+
+        dc_mod.get_normalized_value = MagicMock(side_effect=[(120.0, "W"), (80.0, "W")])
+        dc_mod.get_entity_area = MagicMock(return_value="Kitchen")
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_power_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list)
+        callback(_make_state_event("sensor.power_1", "120"))
+        callback(_make_state_event("sensor.power_2", "80"))
+
+        assert dc.area_data["Kitchen"]["power"] == 200.0
+
+    @pytest.mark.asyncio
+    async def test_power_callback_handles_normalization_exceptions(self):
+        dc = make_collector(sensors={"power": ["sensor.power_1"]})
+        dc_mod.get_normalized_value = MagicMock(side_effect=ValueError("bad value"))
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_power_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list)
+        callback(_make_state_event("sensor.power_1", "not-a-number"))
+
+        assert dc._power_sensor_cache == {}
+
+    @pytest.mark.asyncio
+    async def test_energy_callback_ignores_unknown_entity(self):
+        dc = make_collector(sensors={"energy": ["sensor.energy_1"]})
+        dc_mod.get_normalized_value = MagicMock(return_value=(10.0, "kWh"))
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_energy_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list)
+        callback(_make_state_event("sensor.other", "10.0"))
+
+        assert "sensor.other" not in dc._energy_sensor_cache
+
+    @pytest.mark.asyncio
+    async def test_energy_callback_updates_area_daily_energy(self):
+        dc = make_collector(sensors={"energy": ["sensor.energy_1", "sensor.energy_2"]})
+        dc.area_sensors = {"energy": {"Office": ["sensor.energy_1", "sensor.energy_2"]}}
+        dc.area_data = {"Office": {"energy": 0.0}}
+        dc._energy_midnight_points = {"sensor.energy_1": 5.0, "sensor.energy_2": 8.0}
+
+        dc_mod.get_normalized_value = MagicMock(side_effect=[(7.0, "kWh"), (10.0, "kWh")])
+        dc_mod.get_entity_area = MagicMock(return_value="Office")
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_energy_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list)
+        callback(_make_state_event("sensor.energy_1", "7.0"))
+        callback(_make_state_event("sensor.energy_2", "10.0"))
+
+        assert dc.area_data["Office"]["energy"] == pytest.approx(4.0)
+
+    @pytest.mark.asyncio
+    async def test_energy_callback_area_daily_handles_reset_branch(self):
+        dc = make_collector(sensors={"energy": ["sensor.energy_1"]})
+        dc.area_sensors = {"energy": {"Office": ["sensor.energy_1"]}}
+        dc.area_data = {"Office": {"energy": 0.0}}
+        dc._energy_midnight_points = {"sensor.energy_1": 10.0}
+
+        dc_mod.get_normalized_value = MagicMock(return_value=(7.0, "kWh"))
+        dc_mod.get_entity_area = MagicMock(return_value="Office")
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_energy_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list)
+        callback(_make_state_event("sensor.energy_1", "7.0"))
+
+        assert dc.area_data["Office"]["energy"] == pytest.approx(7.0)
+
+    @pytest.mark.asyncio
+    async def test_energy_callback_handles_normalization_exceptions(self):
+        dc = make_collector(sensors={"energy": ["sensor.energy_1"]})
+        dc_mod.get_normalized_value = MagicMock(side_effect=ValueError("bad"))
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_energy_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list)
+        callback(_make_state_event("sensor.energy_1", "bad"))
+
+        assert dc._energy_sensor_cache == {}
+
+    @pytest.mark.asyncio
+    async def test_temperature_callback_updates_area_average(self):
+        sensors = {"temperature": ["sensor.temp_1", "sensor.temp_2"]}
+        dc = make_collector(sensors=sensors)
+        dc.area_sensors = {"temperature": {"Room": ["sensor.temp_1", "sensor.temp_2"]}}
+        dc.area_data = {"Room": {"temperature": None}}
+        dc_mod.get_entity_area = MagicMock(return_value="Room")
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("sensor.temp_1", "20.0"))
+        callback(_make_state_event("sensor.temp_2", "22.0"))
+
+        assert dc.area_data["Room"]["temperature"] == 21.0
+
+    @pytest.mark.asyncio
+    async def test_temperature_callback_handles_value_errors(self):
+        sensors = {"temperature": ["sensor.temp_1"]}
+        dc = make_collector(sensors=sensors)
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("sensor.temp_1", "nan_text"))
+
+        assert dc.current_temperature is None
+
+    @pytest.mark.asyncio
+    async def test_humidity_callback_updates_area_average(self):
+        sensors = {"humidity": ["sensor.h1", "sensor.h2"]}
+        dc = make_collector(sensors=sensors)
+        dc.area_sensors = {"humidity": {"Room": ["sensor.h1", "sensor.h2"]}}
+        dc.area_data = {"Room": {"humidity": None}}
+        dc_mod.get_entity_area = MagicMock(return_value="Room")
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("sensor.h1", "40"))
+        callback(_make_state_event("sensor.h2", "60"))
+
+        assert dc.area_data["Room"]["humidity"] == 50.0
+
+    @pytest.mark.asyncio
+    async def test_humidity_callback_handles_invalid_value(self):
+        sensors = {"humidity": ["sensor.h1"]}
+        dc = make_collector(sensors=sensors)
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("sensor.h1", "invalid"))
+
+        assert dc.current_humidity is None
+
+    @pytest.mark.asyncio
+    async def test_humidity_callback_ignores_unavailable(self):
+        sensors = {"humidity": ["sensor.h1"]}
+        dc = make_collector(sensors=sensors)
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("sensor.h1", "unavailable"))
+
+        assert dc.current_humidity is None
+
+    @pytest.mark.asyncio
+    async def test_illuminance_callback_ignores_unavailable(self):
+        sensors = {"illuminance": ["sensor.lux_1"]}
+        dc = make_collector(sensors=sensors)
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("sensor.lux_1", "unknown"))
+
+        assert dc.current_illuminance is None
+
+    @pytest.mark.asyncio
+    async def test_illuminance_callback_updates_area_average(self):
+        sensors = {"illuminance": ["sensor.l1", "sensor.l2"]}
+        dc = make_collector(sensors=sensors)
+        dc.area_sensors = {"illuminance": {"Hall": ["sensor.l1", "sensor.l2"]}}
+        dc.area_data = {"Hall": {"illuminance": None}}
+        dc_mod.get_entity_area = MagicMock(return_value="Hall")
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("sensor.l1", "100"))
+        callback(_make_state_event("sensor.l2", "300"))
+
+        assert dc.area_data["Hall"]["illuminance"] == 200.0
+
+    @pytest.mark.asyncio
+    async def test_illuminance_callback_handles_invalid_value(self):
+        sensors = {"illuminance": ["sensor.l1"]}
+        dc = make_collector(sensors=sensors)
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("sensor.l1", "bad"))
+
+        assert dc.current_illuminance is None
+
+    @pytest.mark.asyncio
+    async def test_occupancy_callback_ignores_unavailable(self):
+        sensors = {"occupancy": ["binary_sensor.occ_1"]}
+        dc = make_collector(sensors=sensors)
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("binary_sensor.occ_1", "unknown"))
+
+        assert dc.current_occupancy is False
+
+    @pytest.mark.asyncio
+    async def test_occupancy_callback_updates_area_occupancy(self):
+        sensors = {"occupancy": ["binary_sensor.o1", "binary_sensor.o2"]}
+        dc = make_collector(sensors=sensors)
+        dc.area_sensors = {"occupancy": {"Lab": ["binary_sensor.o1", "binary_sensor.o2"]}}
+        dc.area_data = {"Lab": {"occupancy": False}}
+        dc_mod.get_entity_area = MagicMock(return_value="Lab")
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("binary_sensor.o1", "on"))
+        callback(_make_state_event("binary_sensor.o2", "off"))
+
+        assert dc.area_data["Lab"]["occupancy"] is True
+
+    @pytest.mark.asyncio
+    async def test_occupancy_callback_handles_type_errors(self):
+        sensors = {"occupancy": ["binary_sensor.occ_1"]}
+        dc = make_collector(sensors=sensors)
+        dc_mod.get_entity_area = MagicMock(side_effect=TypeError("area error"))
+
+        dc_mod.async_track_state_change_event.reset_mock()
+        await dc._setup_environment_monitoring()
+
+        callback = _grab_callback(dc_mod.async_track_state_change_event.call_args_list, nth_from_end=0)
+        callback(_make_state_event("binary_sensor.occ_1", "on"))
+
+        assert dc.current_occupancy is False
+
+    def test_reset_midnight_listener_calls_update_midnight_points(self):
+        dc = make_collector(sensors={"energy": ["sensor.e1"]})
+        dc.update_midnight_points = MagicMock()
+
+        dc._reset_midnight_listener(datetime.now())
+
+        dc.update_midnight_points.assert_called_once()
+
+    def test_update_midnight_points_continues_when_normalized_value_none(self):
+        hass = MagicMock()
+        hass.async_create_task = MagicMock()
+
+        state_mock = MagicMock()
+        state_mock.state = "12.0"
+        state_mock.attributes = {"unit_of_measurement": "kWh"}
+        hass.states.get = MagicMock(return_value=state_mock)
+
+        dc_mod.get_normalized_value = MagicMock(return_value=(None, None))
+
+        dc = DataCollector(hass, {"energy": ["sensor.e1"]}, None, None, None)
+        dc.update_midnight_points()
+
+        assert "sensor.e1" not in dc._energy_midnight_points
+
+    def test_update_midnight_points_continues_on_normalization_exception(self):
+        hass = MagicMock()
+        hass.async_create_task = MagicMock()
+
+        state_mock = MagicMock()
+        state_mock.state = "broken"
+        state_mock.attributes = {}
+        hass.states.get = MagicMock(return_value=state_mock)
+
+        dc_mod.get_normalized_value = MagicMock(side_effect=ValueError("bad"))
+
+        dc = DataCollector(hass, {"energy": ["sensor.e1"]}, None, None, None)
+        dc.update_midnight_points()
+
+        assert "sensor.e1" not in dc._energy_midnight_points
+
+    @pytest.mark.asyncio
+    async def test_all_history_methods_return_empty_without_storage(self):
+        dc = make_collector()
+        dc.storage = None
+
+        assert await dc.get_area_history("Room", "power", hours=1) == []
+        assert await dc.get_power_history(hours=1) == []
+        assert await dc.get_energy_history(hours=1) == []
+        assert await dc.get_temperature_history(hours=1) == []
+        assert await dc.get_humidity_history(hours=1) == []
+        assert await dc.get_illuminance_history(hours=1) == []
+        assert await dc.get_occupancy_history(hours=1) == []
+
+    @pytest.mark.asyncio
+    async def test_baseline_summary_skips_no_area_in_top_area_loop(self):
+        now = datetime.now()
+        storage = AsyncMock()
+        storage.get_history = AsyncMock(side_effect=[
+            [(now - timedelta(hours=1), 1.0)],
+            [(now - timedelta(hours=1), 100.0)],
+        ])
+        storage.get_all_areas = AsyncMock(return_value=["No Area", "Kitchen"])
+        storage.get_area_stats = AsyncMock(return_value={"mean": 200.0})
+
+        dc = make_collector(storage=storage)
+        helpers_stub.get_environmental_impact = MagicMock(return_value={})
+
+        result = await dc.calculate_baseline_summary()
+
+        assert result["top_area"] == "Kitchen"
+        storage.get_area_stats.assert_called_once_with("Kitchen", "power", days=14, working_hours_only=None)

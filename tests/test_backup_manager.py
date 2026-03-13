@@ -281,6 +281,64 @@ class TestRestoreFromBackup:
         # Live DB must not have been overwritten
         assert not (data_dir / "sensor_data.db").exists()
 
+    @pytest.mark.asyncio
+    async def test_returns_false_when_integrity_check_not_ok(self, bm):
+        """Restore must fail when PRAGMA integrity_check does not return 'ok'."""
+        backup_path = bm.auto_dir / "20260218_100000"
+        backup_path.mkdir()
+        _create_dummy_db(backup_path / "sensor_data.db")
+
+        class _DummyConn:
+            def execute(self, _query):
+                class _Res:
+                    @staticmethod
+                    def fetchone():
+                        return ("corrupt",)
+
+                return _Res()
+
+            def close(self):
+                return None
+
+        class _DummyLoop:
+            async def run_in_executor(self, _executor, func):
+                func()
+
+        with patch.object(backup_mod.sqlite3, "connect", return_value=_DummyConn()):
+            with patch.object(backup_mod.asyncio, "get_event_loop", return_value=_DummyLoop()):
+                result = await bm.restore_from_backup("auto/20260218_100000")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_restore_unlinks_stale_wal_files_inline_executor(self, bm, data_dir):
+        """When WAL/SHM files exist, restore removes them for both DBs."""
+        backup_path = bm.auto_dir / "20260218_100001"
+        backup_path.mkdir()
+        _create_dummy_db(backup_path / "sensor_data.db")
+        _create_dummy_db(backup_path / "research_data.db")
+
+        # Plant stale files that must be removed by restore
+        sensor_wal = Path(str(bm.db_path) + "-wal")
+        sensor_shm = Path(str(bm.db_path) + "-shm")
+        research_wal = Path(str(bm.research_db_path) + "-wal")
+        research_shm = Path(str(bm.research_db_path) + "-shm")
+        for f in (sensor_wal, sensor_shm, research_wal, research_shm):
+            f.write_text("stale")
+
+        class _InlineLoop:
+            async def run_in_executor(self, _executor, func):
+                func()
+
+        with patch.object(backup_mod.asyncio, "get_event_loop", return_value=_InlineLoop()):
+            result = await bm.restore_from_backup("auto/20260218_100001")
+
+        assert result is True
+        assert not sensor_wal.exists()
+        assert not sensor_shm.exists()
+        assert not research_wal.exists()
+        assert not research_shm.exists()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Error / edge-case paths

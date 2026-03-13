@@ -998,6 +998,42 @@ class TestAreaAssignmentEdgeCases:
         assert result["type"] == "form"
         assert result["step_id"] == "area_assignment"
 
+    async def test_area_assignment_builds_optional_selector_without_default(self, config_flow, mock_entity_registry):
+        """When no current area exists, schema must still include an optional selector entry."""
+        config_flow.data = {
+            "discovered_sensors": {
+                "power": ["sensor.power_room"],
+                "energy": [], "temperature": [], "humidity": [],
+                "illuminance": [], "occupancy": [],
+            }
+        }
+
+        with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get",
+                          return_value=mock_entity_registry):
+            with patch.object(config_flow_mod, "get_entity_area_id", return_value=None):
+                result = await config_flow.async_step_area_assignment()
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "area_assignment"
+
+    async def test_area_assignment_builds_optional_selector_with_default(self, config_flow, mock_entity_registry):
+        """When an entity already has area_id, schema entry should be created with default."""
+        config_flow.data = {
+            "discovered_sensors": {
+                "power": ["sensor.power_room"],
+                "energy": [], "temperature": [], "humidity": [],
+                "illuminance": [], "occupancy": [],
+            }
+        }
+
+        with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get",
+                          return_value=mock_entity_registry):
+            with patch.object(config_flow_mod, "get_entity_area_id", return_value="area_kitchen"):
+                result = await config_flow.async_step_area_assignment()
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "area_assignment"
+
 
 # ============================================================================
 # Outdoor Temperature Sensor Field
@@ -1007,7 +1043,7 @@ class TestOutdoorTempSensorField:
     """Tests for the outdoor_temp_sensor field added to sensor_confirmation."""
 
     async def test_outdoor_temp_sensor_saved_when_provided(self, config_flow):
-        """outdoor_temp_sensor is persisted in flow data when user provides it."""
+        """outdoor_temp_sensor is persisted in flow data when user provides it.""" 
         user_input = {
             "outdoor_temp_sensor": "sensor.outside_temp",
             "confirmed_energy": [],
