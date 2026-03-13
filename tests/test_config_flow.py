@@ -302,7 +302,7 @@ class TestAsyncStepWorkingHours:
         assert result["type"] == "form"
         assert result["step_id"] == "sensor_confirmation"
 
-    # ── Bug fix #4: working hours time format validation ──────────────────
+    # -- Bug fix #4: working hours time format validation ------------------
 
     async def test_invalid_working_start_format_returns_error(self, config_flow):
         """'8am' and other non-HH:MM strings must produce a form error, not proceed."""
@@ -429,7 +429,7 @@ class TestAsyncStepWorkingHours:
             "A single selected day must not trigger the no_working_days error"
         )
 
-    # ── Improved time regex rejects impossible hour/minute values ──
+    # -- Improved time regex rejects impossible hour/minute values --
 
     @pytest.mark.parametrize("bad_time", [
         "25:00",   # hour > 23

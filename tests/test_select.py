@@ -17,7 +17,7 @@ import importlib.util
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 
-# ── Minimal HA stubs ─────────────────────────────────────────────────────────
+# -- Minimal HA stubs ---------------------------------------------------------
 
 for mod_name in [
     "homeassistant",
@@ -59,7 +59,7 @@ sys.modules["homeassistant.helpers.dispatcher"].async_dispatcher_connect = Magic
     return_value=MagicMock()
 )
 
-# ── Real const module ─────────────────────────────────────────────────────────
+# -- Real const module ---------------------------------------------------------
 
 const_spec = importlib.util.spec_from_file_location(
     "custom_components.green_shift.const",
@@ -70,7 +70,7 @@ const_mod.__package__ = "custom_components.green_shift"
 const_spec.loader.exec_module(const_mod)
 sys.modules["custom_components.green_shift.const"] = const_mod
 
-# ── Load select module ────────────────────────────────────────────────────────
+# -- Load select module --------------------------------------------------------
 
 select_spec = importlib.util.spec_from_file_location(
     "gs_select",
@@ -103,9 +103,9 @@ class TestSelectSetupEntry:
         assert isinstance(entities[1], GreenShiftNotificationSelect)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def make_collector(areas=None):
     collector = MagicMock()
@@ -127,9 +127,9 @@ def responded_notif(nid):
     return {"notification_id": nid, "responded": True}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # GreenShiftAreaViewSelect
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestAreaViewSelectInit:
 
@@ -227,9 +227,9 @@ class TestAreaViewSelectSelectOption:
         assert sel._attr_current_option == "Bedroom"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # GreenShiftNotificationSelect
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestNotificationSelectInit:
 
@@ -334,9 +334,9 @@ class TestNotificationSelectSelectOption:
         assert sel._attr_current_option == "n1"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Callback methods: async_added_to_hass and _update_callback
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestAreaViewSelectCallbacks:
 

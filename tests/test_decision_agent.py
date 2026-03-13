@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock, AsyncMock, patch
 import numpy as np
 
-# ── Minimal stubs so we can import DecisionAgent without a real HA install ──
+# Minimal stubs so we can import DecisionAgent without a real HA install 
 
 import sys, types
 
@@ -78,9 +78,9 @@ da_spec.loader.exec_module(da_mod)
 DecisionAgent = da_mod.DecisionAgent
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Factory
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def make_agent(config_data=None):
     hass = MagicMock()
@@ -110,9 +110,9 @@ def _make_state_vector(power=500.0, time_of_day=0.3, occupancy=1):
     return v
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _discretize_state
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestDiscreteState:
     """_discretize_state: baseline-relative 5-category power bins.
@@ -265,9 +265,9 @@ class TestDiscreteState:
         assert agent._discretize_state()[3] == 0
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _update_fatigue_index
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def _notif(accepted=True, responded=True, minutes_ago=60):
     ts = (datetime.now() - timedelta(minutes=minutes_ago)).isoformat()
@@ -452,9 +452,9 @@ class TestUpdateFatigueIndex:
         assert fatigue_high_rejection > fatigue_low_rejection
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _update_behaviour_index
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestUpdateBehaviourIndex:
 
@@ -527,9 +527,9 @@ class TestUpdateBehaviourIndex:
         # With 0.7 weight on new value the index should climb well above 0.5
         assert agent.behaviour_index > 0.7
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _check_cooldown_with_opportunity
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestCheckCooldown:
 
@@ -663,9 +663,9 @@ class TestCheckCooldown:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # get_weekly_challenge_status
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestWeeklyChallenge:
 
@@ -847,9 +847,9 @@ class TestWeeklyChallenge:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Notification daily counter reset
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestNotificationDailyCounter:
     """Verifies that notification_count_today resets on a new day (logic unit)."""
@@ -880,9 +880,9 @@ class TestNotificationDailyCounter:
         assert agent.notification_count_today == 3
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Baseline -> Active phase transition logic
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestPhaseTransition:
 
@@ -914,9 +914,9 @@ class TestPhaseTransition:
         assert agent.phase == "baseline"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _update_anomaly_index — baseline-consumption signal
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestUpdateAnomalyIndex:
     """
@@ -999,9 +999,9 @@ class TestUpdateAnomalyIndex:
         assert agent.anomaly_index > 0.5
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _calculate_reward_with_feedback
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestCalculateRewardWithFeedback:
     """Verify that _calculate_reward_with_feedback uses initial_power (notification-
@@ -1089,9 +1089,9 @@ class TestCalculateRewardWithFeedback:
         assert reward < 0
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _execute_action - mobile push notification
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestExecuteActionMobileNotify:
     """Verify mobile push notification behaviour in _execute_action."""
@@ -1186,14 +1186,14 @@ class TestExecuteActionMobileNotify:
         assert len(notify_calls) == 2, "Exactly 2 notify calls expected, one per device"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Gamification Streaks
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestStreaks:
     """Pure-logic tests for update_task_streak and update_weekly_streak."""
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    # -- helpers --------------------------------------------------------------
 
     @staticmethod
     def _agent():
@@ -1210,7 +1210,7 @@ class TestStreaks:
         from datetime import date, timedelta
         return (date(2026, 2, 2) + timedelta(weeks=delta_weeks)).isoformat()
 
-    # ── task_streak - basic increments ────────────────────────────────────────
+    # -- task_streak - basic increments ----------------------------------------
 
     def test_task_streak_first_success_gives_one(self):
         agent = self._agent()
@@ -1230,7 +1230,7 @@ class TestStreaks:
             agent.update_task_streak(True, self._day(i))
         assert agent.task_streak == 3
 
-    # ── task_streak - gap resets ──────────────────────────────────────────────
+    # -- task_streak - gap resets ----------------------------------------------
 
     def test_task_streak_gap_resets_to_one(self):
         """Streak breaks when there is a day gap and the next success counts as 1."""
@@ -1247,7 +1247,7 @@ class TestStreaks:
         agent.update_task_streak(True, self._day(7))   # one-week gap
         assert agent.task_streak == 1
 
-    # ── task_streak - idempotency ─────────────────────────────────────────────
+    # -- task_streak - idempotency ---------------------------------------------
 
     def test_task_streak_same_day_is_idempotent(self):
         agent = self._agent()
@@ -1263,7 +1263,7 @@ class TestStreaks:
             agent.update_task_streak(True, self._day(0))
         assert agent.task_streak == 1
 
-    # ── task_streak - failures ────────────────────────────────────────────────
+    # -- task_streak - failures ------------------------------------------------
 
     def test_task_streak_failure_resets_to_zero(self):
         agent = self._agent()
@@ -1306,7 +1306,7 @@ class TestStreaks:
         agent.update_task_streak(True, self._day(0))
         assert agent.task_streak == 1
 
-    # ── weekly_streak - basic increments ──────────────────────────────────────
+    # -- weekly_streak - basic increments --------------------------------------
 
     def test_weekly_streak_first_achieved_gives_one(self):
         agent = self._agent()
@@ -1326,7 +1326,7 @@ class TestStreaks:
             agent.update_weekly_streak(True, self._week(i))
         assert agent.weekly_streak == 3
 
-    # ── weekly_streak - gap resets ────────────────────────────────────────────
+    # -- weekly_streak - gap resets --------------------------------------------
 
     def test_weekly_streak_gap_resets_to_one(self):
         agent = self._agent()
@@ -1336,7 +1336,7 @@ class TestStreaks:
         assert agent.weekly_streak == 1
         assert agent.weekly_streak_last_week == self._week(2)
 
-    # ── weekly_streak - idempotency ───────────────────────────────────────────
+    # -- weekly_streak - idempotency -------------------------------------------
 
     def test_weekly_streak_same_week_is_idempotent(self):
         agent = self._agent()
@@ -1344,7 +1344,7 @@ class TestStreaks:
         agent.update_weekly_streak(True, self._week(0))
         assert agent.weekly_streak == 1
 
-    # ── weekly_streak - failures ──────────────────────────────────────────────
+    # -- weekly_streak - failures ----------------------------------------------
 
     def test_weekly_streak_failure_resets_to_zero(self):
         agent = self._agent()
@@ -1371,7 +1371,7 @@ class TestStreaks:
         assert agent.weekly_streak == 0
         assert agent.weekly_streak_last_week is None
 
-    # ── task_streak - office mode: non-working-day gaps ───────────────────────
+    # -- task_streak - office mode: non-working-day gaps -----------------------
 
     def test_task_streak_office_mode_weekend_does_not_break_streak(self):
         """In office mode, a Friday success followed by a Monday success
@@ -1439,9 +1439,9 @@ class TestStreaks:
         assert agent.task_streak == 1
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # DB query caching & area anomaly throttle
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestProcessAiModelQueryOptimisation:
     """
@@ -1569,9 +1569,9 @@ class TestProcessAiModelQueryOptimisation:
 
         agent.data_collector.get_power_history.assert_not_called()
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _update_area_anomalies: working_hours_only filter
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestUpdateAreaAnomaliesWorkingHours:
     """_update_area_anomalies must pass working_hours_only=True in office mode and None in home mode."""
@@ -1619,9 +1619,9 @@ class TestUpdateAreaAnomaliesWorkingHours:
         await agent._update_area_anomalies()
         assert calls == [], "get_area_history must not be called for 'No Area' areas"
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # WeeklyChallengeSensor / get_weekly_challenge_status cache
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestWeeklyChallengeCaching:
     """get_weekly_challenge_status must cache its result for 5 minutes
@@ -1701,9 +1701,9 @@ class TestWeeklyChallengeCaching:
         assert agent._weekly_challenge_cache_ts is None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Noop action (action=0): agent must be able to learn when to not send notifications.
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 # Re-use the same module loading pattern used above.
 _const_mod = sys.modules.get("custom_components.green_shift.const")
@@ -1819,9 +1819,9 @@ class TestNoopAction:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Anomaly index working-hours consistency
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestAnomalyIndexWorkingHours:
     """In office mode the anomaly index must use working-hours-filtered power
@@ -1902,9 +1902,9 @@ class TestAnomalyIndexWorkingHours:
         call_tracker.assert_not_called()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Shadow-reward cache reuse
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestShadowRewardCache:
     """_calculate_shadow_reward must reuse _cached_power_h1 instead of issuing
@@ -2014,6 +2014,32 @@ class TestShadowDecideAction:
         agent._shadow_update_q_table.assert_awaited_once()
         agent._log_rl_episode.assert_awaited_once()
         assert agent.shadow_episode_number == 1
+
+    @pytest.mark.asyncio
+    async def test_shadow_decide_exploit_tie_break_path(self):
+        agent = make_agent()
+        agent.action_mask = {a: False for a in ACTIONS.values()}
+        agent.action_mask[ACTIONS["specific"]] = True
+        agent.action_mask[ACTIONS["behavioural"]] = True
+        state_key = (1, 0, 0, 0, 1, 1)
+        agent._discretize_state = MagicMock(return_value=state_key)
+        # Equal Q values to force tie-break list.
+        agent.q_table[state_key] = {
+            ACTIONS["specific"]: 0.5,
+            ACTIONS["behavioural"]: 0.5,
+        }
+        agent._calculate_shadow_reward = AsyncMock(return_value=0.6)
+        agent._shadow_update_q_table = AsyncMock()
+        agent._log_rl_episode = AsyncMock()
+
+        with patch.object(da_mod.random, "random", return_value=1.0), patch.object(
+            da_mod.random, "choice", return_value=ACTIONS["specific"]
+        ):
+            await agent._shadow_decide_action()
+
+        agent._calculate_shadow_reward.assert_awaited_once_with(ACTIONS["specific"])
+        agent._shadow_update_q_table.assert_awaited_once()
+        agent._log_rl_episode.assert_awaited_once()
 
 
 class TestShadowRewardBranches:
@@ -2168,9 +2194,55 @@ class TestNotificationContextHelpers:
         assert metric == "humidity"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+class TestCalculateAreaBaselines:
+
+    @pytest.mark.asyncio
+    async def test_calculate_area_baselines_office_mode_filters_working_hours(self):
+        agent = make_agent(config_data={"environment_mode": "office"})
+        agent.data_collector.get_all_areas = MagicMock(return_value=["Office", "No Area"])
+
+        calls = []
+
+        async def _area_history(area, metric, days=None, working_hours_only=None):
+            calls.append((area, metric, working_hours_only))
+            if metric == "temperature":
+                return [(None, 21.0), (None, 23.0)]
+            if metric == "power":
+                return [(None, 300.0), (None, 500.0)]
+            return [(None, 40.0), (None, 50.0)]
+
+        agent.data_collector.get_area_history = AsyncMock(side_effect=_area_history)
+
+        await agent.calculate_area_baselines()
+
+        assert "Office" in agent.area_baselines
+        assert agent.area_baselines["Office"]["temperature"] == 22.0
+        assert agent.area_baselines["Office"]["power"] == 400.0
+        assert agent.area_baselines["Office"]["humidity"] == 45.0
+        assert all(wh is True for _a, _m, wh in calls)
+
+    @pytest.mark.asyncio
+    async def test_calculate_area_baselines_home_mode_no_filter_and_empty_values(self):
+        agent = make_agent(config_data={"environment_mode": "home"})
+        agent.data_collector.get_all_areas = MagicMock(return_value=["Living"])
+
+        async def _area_history(_area, metric, days=None, working_hours_only=None):
+            if metric == "temperature":
+                return []
+            if metric == "power":
+                return [(None, None), (None, None)]
+            return [(None, 45.0)]
+
+        agent.data_collector.get_area_history = AsyncMock(side_effect=_area_history)
+
+        await agent.calculate_area_baselines()
+
+        assert agent.area_baselines["Living"] == {"humidity": 45.0}
+
+
+# -----------------------------------------------------------------------------
 # Cooldown-block logging throttle
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestCooldownBlockLogging:
     """_decide_action must log blocked-by-cooldown notifications to the research
@@ -2307,9 +2379,9 @@ class TestCooldownBlockLogging:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # setup / _load_persistent_state / _save_persistent_state
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestSetup:
     @pytest.mark.asyncio
@@ -2459,9 +2531,9 @@ class TestSavePersistentState:
         assert agent2.feedback_episode_number == 42
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _build_state_vector
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestBuildStateVector:
 
@@ -2502,9 +2574,9 @@ class TestBuildStateVector:
         assert agent.state_vector[10] == pytest.approx(1.0)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _get_top_power_consumer
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestGetTopPowerConsumer:
 
@@ -2548,9 +2620,9 @@ class TestGetTopPowerConsumer:
         assert result == 0.0
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _update_action_mask
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestUpdateActionMask:
 
@@ -2640,9 +2712,9 @@ class TestUpdateActionMask:
         assert agent.action_mask[da_mod.ACTIONS["specific"]] is True
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _update_q_table_with_feedback  /  _shadow_update_q_table
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestUpdateQTableWithFeedback:
 
@@ -2718,9 +2790,9 @@ class TestShadowUpdateQTable:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _is_only_non_working_days_in_gap
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestIsOnlyNonWorkingDaysInGap:
 
@@ -2766,9 +2838,9 @@ class TestIsOnlyNonWorkingDaysInGap:
         assert agent._is_only_non_working_days_in_gap(d1, d2) is True
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # process_ai_model: daily counter reset and process_count increment
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestProcessAiModel:
 
@@ -2833,9 +2905,9 @@ class TestProcessAiModel:
         assert "old_ep" not in agent.pending_episodes
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Epsilon decay
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestEpsilonDecay:
     """Verify that epsilon decays towards MIN_EPSILON as real episodes accumulate."""
@@ -2935,9 +3007,9 @@ class TestEpsilonDecay:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _log_rl_episode: gamma_used resolution
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestLogRlEpisodeGamma:
     """_log_rl_episode must record the correct gamma_used for every episode category.
@@ -3013,9 +3085,9 @@ class TestLogRlEpisodeGamma:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # max_next_Q restricted to available actions
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestQTableUpdateRestrictedToAvailableActions:
     """_update_q_table_with_feedback() must restrict max_next_q to actions that are currently AVAILABLE in the action_mask."""
@@ -3129,9 +3201,9 @@ class TestQTableUpdateRestrictedToAvailableActions:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Behavioural template_index must be ABSOLUTE (position in all_templates)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestBehaviouralTemplateAbsoluteIndex:
     """When behavioural templates are filtered by context, the
@@ -3299,9 +3371,9 @@ class TestBehaviouralTemplateAbsoluteIndex:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _handle_notification_feedback: full pipeline
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def _make_feedback_agent(notif_id, accepted_init=None):
     """Return an agent pre-loaded with one pending episode and matching history entry."""
@@ -3457,9 +3529,9 @@ class TestHandleNotificationFeedback:
         await agent._handle_notification_feedback(notif_id, accepted=True)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _compute_noop_reward: near-baseline boundary (-0.1 band)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestComputeNoopRewardNearBaseline:
     """_compute_noop_reward must return -0.1 when 0 < deviation < 0.3."""
@@ -3496,9 +3568,9 @@ class TestComputeNoopRewardNearBaseline:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _calculate_opportunity_score: direct parametric tests
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestCalculateOpportunityScore:
     """Direct tests for the four components of _calculate_opportunity_score."""
@@ -3613,9 +3685,9 @@ class TestCalculateOpportunityScore:
                 )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Additional _load_persistent_state coverage
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestLoadPersistentStateExtended:
     """Extended tests covering fields not tested by TestLoadPersistentState."""
@@ -3852,9 +3924,9 @@ class TestLoadPersistentStateExtended:
         assert agent.task_streak == 4
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # TestStreaks: additional edge cases
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestStreaksEdgeCases:
     """Edge cases for update_weekly_streak not covered by TestStreaks."""
@@ -3888,9 +3960,9 @@ class TestStreaksEdgeCases:
         agent.update_weekly_streak(True, self._week(3))
         assert agent.weekly_streak == 1  # unchanged
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Expired pending episodes : logged with neutral reward before deletion
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def _make_agent_for_expiry():
     """Return an agent with all process_ai_model sub-methods mocked out."""
@@ -4078,3 +4150,524 @@ class TestExpiredEpisodeLogging:
         assert len(expired_calls) == 3
         for i in range(3):
             assert f"old_{i}" not in agent.pending_episodes
+
+
+# -----------------------------------------------------------------------------
+# Additional targeted branch coverage for decision_agent.py
+# -----------------------------------------------------------------------------
+
+class TestDecisionAgentFinalCoverage:
+
+    @pytest.mark.asyncio
+    async def test_load_q_table_non_tuple_key_hits_warning_branch(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={
+            "q_table": {"[1, 2, 3]": {"0": 1.0}}
+        })
+        agent.storage = storage
+
+        await agent._load_persistent_state()
+
+        assert agent.q_table == {}
+
+    @pytest.mark.asyncio
+    async def test_load_q_table_outer_exception_resets_q_table(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={"q_table": 42})
+        agent.storage = storage
+        agent.q_table = {(1, 0, 0, 0, 0, 0): {0: 0.9}}
+
+        await agent._load_persistent_state()
+
+        assert agent.q_table == {}
+
+    @pytest.mark.asyncio
+    async def test_save_uses_existing_start_date_from_storage_state(self):
+        agent = make_agent()
+        storage = AsyncMock()
+        storage.load_state = AsyncMock(return_value={"start_date": "2024-01-01T00:00:00"})
+        saved = {}
+
+        async def _capture(state):
+            saved.update(state)
+
+        storage.save_state = AsyncMock(side_effect=_capture)
+        agent.storage = storage
+
+        await agent._save_persistent_state()
+
+        assert saved["start_date"] == "2024-01-01T00:00:00"
+
+    @pytest.mark.asyncio
+    async def test_process_first_cycle_with_storage_triggers_checkpoint_save(self):
+        agent = make_agent()
+        agent.phase = "baseline"
+        agent._process_count = 0
+        agent.storage = AsyncMock()
+        agent._build_state_vector = AsyncMock()
+        agent._update_anomaly_index = AsyncMock()
+        agent._update_area_anomalies = AsyncMock()
+        agent._update_behaviour_index = MagicMock()
+        agent._update_fatigue_index = AsyncMock()
+        agent._update_action_mask = AsyncMock()
+        agent._decide_action = AsyncMock()
+        agent._shadow_decide_action = AsyncMock()
+        agent._save_persistent_state = AsyncMock()
+        agent.data_collector.get_power_history = AsyncMock(return_value=[])
+
+        await agent.process_ai_model()
+
+        agent._save_persistent_state.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_get_top_power_consumer_handles_normalization_exception(self):
+        agent = make_agent()
+        agent.sensors = {"power": ["sensor.p1"]}
+        agent.data_collector.main_power_sensor = None
+        bad_state = MagicMock()
+        bad_state.state = "10"
+        agent.hass.states.get = MagicMock(return_value=bad_state)
+
+        with patch.object(da_mod, "get_normalized_value", side_effect=ValueError("bad")):
+            result = await agent._get_top_power_consumer()
+
+        assert result == 0.0
+
+    @pytest.mark.asyncio
+    async def test_decide_action_returns_outside_working_hours(self):
+        agent = make_agent(config_data={"environment_mode": "office"})
+        agent._execute_action = AsyncMock()
+
+        original = helpers_stub.should_ai_be_active.return_value
+        helpers_stub.should_ai_be_active.return_value = False
+        try:
+            await agent._decide_action()
+        finally:
+            helpers_stub.should_ai_be_active.return_value = original
+
+        agent._execute_action.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_decide_action_returns_when_daily_limit_reached(self):
+        agent = make_agent()
+        agent.notification_count_today = da_mod.MAX_NOTIFICATIONS_PER_DAY
+        agent._execute_action = AsyncMock()
+
+        await agent._decide_action()
+
+        agent._execute_action.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_decide_action_returns_when_no_available_actions(self):
+        agent = make_agent()
+        agent.action_mask = {a: False for a in ACTIONS.values()}
+        agent._calculate_opportunity_score = AsyncMock(return_value=0.4)
+        agent._execute_action = AsyncMock()
+
+        await agent._decide_action()
+
+        agent._execute_action.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_decide_action_noop_initializes_q_table_for_new_state(self):
+        agent = make_agent()
+        state_key = (1, 0, 0, 0, 1, 1)
+        agent._discretize_state = MagicMock(return_value=state_key)
+        agent.action_mask = {a: False for a in ACTIONS.values()}
+        agent.action_mask[ACTIONS["noop"]] = True
+        agent._compute_noop_reward = MagicMock(return_value=0.0)
+        agent._log_rl_episode = AsyncMock()
+        agent.q_table = {}
+
+        with patch.object(da_mod.random, "random", return_value=0.0), patch.object(
+            da_mod.random, "choice", return_value=ACTIONS["noop"]
+        ):
+            await agent._decide_action()
+
+        assert state_key in agent.q_table
+
+    @pytest.mark.asyncio
+    async def test_shadow_exploit_initializes_q_table_for_new_state(self):
+        agent = make_agent()
+        state_key = (1, 0, 0, 0, 1, 1)
+        agent._discretize_state = MagicMock(return_value=state_key)
+        agent.action_mask = {a: False for a in ACTIONS.values()}
+        agent.action_mask[ACTIONS["specific"]] = True
+        agent._calculate_shadow_reward = AsyncMock(return_value=0.5)
+        agent._shadow_update_q_table = AsyncMock()
+        agent._log_rl_episode = AsyncMock()
+        agent.q_table = {}
+
+        with patch.object(da_mod.random, "random", return_value=1.0), patch.object(
+            da_mod.random, "choice", return_value=ACTIONS["specific"]
+        ):
+            await agent._shadow_decide_action()
+
+        assert state_key in agent.q_table
+
+    @pytest.mark.asyncio
+    async def test_shadow_reward_running_mean_zero_branch(self):
+        agent = make_agent()
+        agent._cached_power_h1 = [(None, 0.0)] * 20
+
+        reward = await agent._calculate_shadow_reward(ACTIONS["specific"])
+
+        assert isinstance(reward, float)
+
+    @pytest.mark.asyncio
+    async def test_shadow_reward_specific_dominance_branch(self):
+        agent = make_agent()
+        agent._cached_power_h1 = [(None, 100.0)] * 19 + [(None, 500.0)]
+        agent._get_top_power_consumer = AsyncMock(return_value=250.0)
+
+        reward = await agent._calculate_shadow_reward(ACTIONS["specific"])
+
+        assert reward > 0.0
+
+    @pytest.mark.asyncio
+    async def test_shadow_reward_behavioural_variability_branch(self):
+        agent = make_agent()
+        agent._cached_power_h1 = [(None, 200.0)] * 19 + [(None, 220.0)]
+
+        reward = await agent._calculate_shadow_reward(ACTIONS["behavioural"])
+
+        assert reward > 0.0
+
+    @pytest.mark.asyncio
+    async def test_shadow_reward_normative_with_baseline_branch(self):
+        agent = make_agent()
+        agent.baseline_consumption = 300.0
+        agent._cached_power_h1 = [(None, 350.0)] * 19 + [(None, 600.0)]
+
+        reward = await agent._calculate_shadow_reward(ACTIONS["normative"])
+
+        assert reward > 0.0
+
+    @pytest.mark.asyncio
+    async def test_shadow_reward_night_time_score_branch(self):
+        agent = make_agent()
+        agent._cached_power_h1 = [(None, 300.0)] * 20
+
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 20, 23, 0, 0)
+            reward = await agent._calculate_shadow_reward(ACTIONS["specific"])
+
+        assert isinstance(reward, float)
+
+    @pytest.mark.asyncio
+    async def test_shadow_reward_neutral_time_score_branch(self):
+        agent = make_agent()
+        agent._cached_power_h1 = [(None, 300.0)] * 20
+
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 20, 10, 0, 0)
+            reward = await agent._calculate_shadow_reward(ACTIONS["specific"])
+
+        assert isinstance(reward, float)
+
+    @pytest.mark.asyncio
+    async def test_execute_action_logs_to_storage_when_available(self):
+        agent = make_agent()
+        agent.phase = "active"
+        agent.state_vector = [0.0] * 18
+        agent._generate_notification = AsyncMock(return_value={
+            "title": "Tip",
+            "message": "Try this",
+            "template_index": 0,
+        })
+        agent.storage = AsyncMock()
+        agent.storage.log_nudge_sent = AsyncMock()
+        agent.hass.services.async_services = MagicMock(return_value={"notify": {}})
+        agent.hass.services.async_call = AsyncMock()
+
+        notif_id = await agent._execute_action(ACTIONS["specific"])
+
+        assert notif_id is not None
+        agent.storage.log_nudge_sent.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_action_returns_none_when_notification_not_generated(self):
+        agent = make_agent()
+        agent._generate_notification = AsyncMock(return_value=None)
+
+        notif_id = await agent._execute_action(ACTIONS["specific"])
+
+        assert notif_id is None
+
+    @pytest.mark.asyncio
+    async def test_generate_notification_returns_none_when_action_has_no_templates(self):
+        agent = make_agent()
+        with patch.object(da_mod, "get_notification_templates", return_value={"specific": []}):
+            notification = await agent._generate_notification("specific")
+        assert notification is None
+
+    @pytest.mark.asyncio
+    async def test_generate_notification_behavioural_daylight_filter_branch(self):
+        agent = make_agent()
+        templates = {
+            "behavioural": [
+                {"title": "A", "message": "A", "context_filter": "daylight_waste"}
+            ]
+        }
+        agent._gather_notification_context = AsyncMock(return_value={"is_daylight_waste": True})
+        with patch.object(da_mod, "get_notification_templates", return_value=templates):
+            notif = await agent._generate_notification("behavioural")
+        assert notif is not None
+
+    @pytest.mark.asyncio
+    async def test_generate_notification_behavioural_nighttime_filter_branch(self):
+        agent = make_agent()
+        templates = {
+            "behavioural": [
+                {"title": "A", "message": "A", "context_filter": "nighttime"}
+            ]
+        }
+        agent._gather_notification_context = AsyncMock(return_value={"is_nighttime": True})
+        with patch.object(da_mod, "get_notification_templates", return_value=templates):
+            notif = await agent._generate_notification("behavioural")
+        assert notif is not None
+
+    @pytest.mark.asyncio
+    async def test_generate_notification_behavioural_fallback_without_generic_returns_none(self):
+        agent = make_agent()
+        templates = {
+            "behavioural": [
+                {"title": "A", "message": "A", "context_filter": "away_mode"}
+            ]
+        }
+        agent._gather_notification_context = AsyncMock(return_value={
+            "is_daylight_waste": False,
+            "is_away_mode": False,
+            "is_nighttime": False,
+        })
+        with patch.object(da_mod, "get_notification_templates", return_value=templates):
+            notif = await agent._generate_notification("behavioural")
+        assert notif is None
+
+    @pytest.mark.asyncio
+    async def test_generate_notification_non_behavioural_second_empty_check(self):
+        agent = make_agent()
+
+        class FlakyTemplates(list):
+            def __init__(self):
+                super().__init__()
+                self._bool_calls = 0
+
+            def __bool__(self):
+                self._bool_calls += 1
+                return self._bool_calls == 1
+
+        flaky = FlakyTemplates()
+        with patch.object(da_mod, "get_notification_templates", return_value={"specific": flaky}):
+            notif = await agent._generate_notification("specific")
+        assert notif is None
+
+    @pytest.mark.asyncio
+    async def test_generate_notification_returns_none_on_missing_context_key(self):
+        agent = make_agent()
+        templates = {"specific": [{"title": "{missing}", "message": "{missing}"}]}
+        agent._gather_notification_context = AsyncMock(return_value={})
+        with patch.object(da_mod, "get_notification_templates", return_value=templates):
+            notif = await agent._generate_notification("specific")
+        assert notif is None
+
+    @pytest.mark.asyncio
+    async def test_gather_context_baseline_zero_sets_percent_above_to_zero(self):
+        agent = make_agent()
+        agent.baseline_consumption = 0.0
+        agent.data_collector.get_current_state = MagicMock(return_value={
+            "power": 100.0,
+            "temperature": 21.0,
+            "illuminance": 100,
+            "occupancy": True,
+        })
+        agent.data_collector.get_area_state = MagicMock(return_value={"temperature": 21.0})
+        agent._find_top_consumer = AsyncMock(return_value=("Heater", 100.0))
+        agent._find_highest_anomaly_area = AsyncMock(return_value=("Office", "temperature"))
+
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 20, 13, 0, 0)
+            context = await agent._gather_notification_context("specific")
+
+        assert context["percent_above"] == 0
+
+    @pytest.mark.asyncio
+    async def test_gather_context_covers_afternoon_and_evening_time_keys(self):
+        agent = make_agent()
+        agent.baseline_consumption = 500.0
+        agent.data_collector.get_current_state = MagicMock(return_value={
+            "power": 550.0,
+            "temperature": 21.0,
+            "illuminance": 100,
+            "occupancy": True,
+        })
+        agent.data_collector.get_area_state = MagicMock(return_value={"temperature": 21.0})
+        agent._find_top_consumer = AsyncMock(return_value=(None, 0.0))
+        agent._find_highest_anomaly_area = AsyncMock(return_value=(None, None))
+
+        seen = []
+        with patch.object(da_mod, "get_time_of_day_name", side_effect=lambda key, lang: key):
+            with patch.object(da_mod, "datetime") as mock_dt:
+                mock_dt.now.return_value = datetime(2026, 2, 20, 13, 0, 0)
+                ctx1 = await agent._gather_notification_context("specific")
+                seen.append(ctx1["time_of_day"])
+
+                mock_dt.now.return_value = datetime(2026, 2, 20, 19, 0, 0)
+                ctx2 = await agent._gather_notification_context("specific")
+                seen.append(ctx2["time_of_day"])
+
+        assert seen == ["afternoon", "evening"]
+
+    @pytest.mark.asyncio
+    async def test_find_top_consumer_no_sensors_returns_none_tuple(self):
+        agent = make_agent()
+        agent.sensors = {}
+
+        name, power = await agent._find_top_consumer()
+
+        assert name is None
+        assert power == 0.0
+
+    @pytest.mark.asyncio
+    async def test_find_top_consumer_handles_normalization_exception(self):
+        agent = make_agent()
+        agent.sensors = {"power": ["sensor.main", "sensor.a"]}
+        agent.data_collector.main_power_sensor = "sensor.main"
+        state_a = MagicMock()
+        state_a.state = "123"
+        agent.hass.states.get = MagicMock(side_effect=lambda eid: state_a if eid == "sensor.a" else None)
+
+        with patch.object(da_mod, "get_normalized_value", side_effect=TypeError("bad value")):
+            name, power = await agent._find_top_consumer()
+
+        assert name is None
+        assert power == 0.0
+
+    @pytest.mark.asyncio
+    async def test_find_highest_anomaly_area_returns_none_when_empty(self):
+        agent = make_agent()
+        agent.area_anomalies = {}
+
+        area, metric = await agent._find_highest_anomaly_area()
+
+        assert area is None and metric is None
+
+    @pytest.mark.asyncio
+    async def test_log_blocked_notification_returns_when_not_active_or_no_storage(self):
+        agent = make_agent()
+        agent.phase = "baseline"
+        agent.storage = None
+
+        await agent._log_blocked_notification("cooldown", 0.3)
+
+        assert True
+
+    @pytest.mark.asyncio
+    async def test_reward_with_no_baseline_and_zero_initial_hits_zero_energy_branch(self):
+        agent = make_agent()
+        agent.baseline_consumption = 0.0
+        agent.fatigue_index = 0.0
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 100.0})
+
+        reward = await agent._calculate_reward_with_feedback(accepted=True, initial_power=0.0)
+
+        assert reward == pytest.approx(da_mod.REWARD_WEIGHTS["beta"])
+
+    @pytest.mark.asyncio
+    async def test_update_area_anomalies_adds_temperature_power_humidity_metrics(self):
+        agent = make_agent(config_data={"environment_mode": "home"})
+        agent.data_collector.get_all_areas = MagicMock(return_value=["Office"])
+
+        temp_history = [(None, 20.0)] * 9 + [(None, 30.0)]
+        power_history = [(None, 100.0)] * 9 + [(None, 250.0)]
+        hum_history = [(None, 40.0)] * 9 + [(None, 70.0)]
+
+        async def _area_history(_area, metric, hours=None, days=None, working_hours_only=None):
+            if metric == "temperature":
+                return temp_history
+            if metric == "power":
+                return power_history
+            if metric == "humidity":
+                return hum_history
+            return []
+
+        agent.data_collector.get_area_history = AsyncMock(side_effect=_area_history)
+
+        await agent._update_area_anomalies()
+
+        assert "Office" in agent.area_anomalies
+        assert "temperature" in agent.area_anomalies["Office"]
+        assert "power" in agent.area_anomalies["Office"]
+        assert "humidity" in agent.area_anomalies["Office"]
+
+    @pytest.mark.asyncio
+    async def test_update_fatigue_handles_invalid_timestamp_in_silence_path(self):
+        agent = make_agent()
+        agent.notification_history = deque([
+            {"timestamp": "not-a-date", "responded": False, "accepted": None},
+            {"timestamp": datetime.now().isoformat(), "responded": True, "accepted": True},
+        ], maxlen=100)
+
+        await agent._update_fatigue_index()
+
+        assert 0.0 <= agent.fatigue_index <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_calculate_opportunity_score_neutral_time_window(self):
+        agent = make_agent()
+        agent.baseline_consumption = 500.0
+        agent.anomaly_index = 0.1
+        agent.fatigue_index = 0.1
+        agent.behaviour_index = 0.9
+        agent.area_anomalies = {}
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 600.0, "occupancy": True})
+
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 20, 10, 0, 0)
+            score = await agent._calculate_opportunity_score()
+
+        assert isinstance(score, float)
+        assert 0.0 <= score <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_cooldown_evening_time_multiplier_branch(self):
+        agent = make_agent()
+        agent.fatigue_index = 0.0
+        with patch.object(da_mod, "datetime") as mock_dt:
+            now = datetime(2026, 2, 20, 18, 0, 0)
+            mock_dt.now.return_value = now
+            agent.last_notification_time = now - timedelta(minutes=20)
+            can_send, req_cooldown, _ = await agent._check_cooldown_with_opportunity(0.3)
+
+        assert can_send is False
+        assert req_cooldown == pytest.approx(da_mod.MIN_COOLDOWN_MINUTES * 0.7)
+
+    @pytest.mark.asyncio
+    async def test_cooldown_morning_time_multiplier_branch(self):
+        agent = make_agent()
+        agent.fatigue_index = 0.0
+        with patch.object(da_mod, "datetime") as mock_dt:
+            now = datetime(2026, 2, 20, 8, 0, 0)
+            mock_dt.now.return_value = now
+            agent.last_notification_time = now - timedelta(minutes=20)
+            can_send, req_cooldown, _ = await agent._check_cooldown_with_opportunity(0.3)
+
+        assert can_send is False
+        assert req_cooldown == pytest.approx(da_mod.MIN_COOLDOWN_MINUTES * 0.8)
+
+    @pytest.mark.asyncio
+    async def test_weekly_challenge_target_avg_zero_progress_branch(self):
+        agent = make_agent()
+        agent.phase = "active"
+        agent.baseline_consumption = 1000.0
+        from datetime import date
+        agent.current_week_start_date = date.today()
+        agent._logged_weeks = set()
+        rows = [(datetime.now() - timedelta(seconds=i * 15), 900.0) for i in range(250)]
+        agent.data_collector.get_power_history = AsyncMock(return_value=rows)
+
+        status = await agent.get_weekly_challenge_status(target_percentage=100.0)
+
+        assert status["progress"] == 0

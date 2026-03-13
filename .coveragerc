@@ -1,6 +1,7 @@
 [run]
 # Source can be specified relative to where coverage is run
 # When run from tests/ directory, use ../config/...
+concurrency = multiprocessing
 source = 
     ../config/custom_components/green_shift
     config/custom_components/green_shift

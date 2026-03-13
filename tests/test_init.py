@@ -17,7 +17,7 @@ import pytest
 from datetime import datetime
 from unittest.mock import MagicMock, AsyncMock, patch
 
-# ── Minimal HA stubs ─────────────────────────────────────────────────────────
+# -- Minimal HA stubs ---------------------------------------------------------
 
 for mod_name in [
     "homeassistant",
@@ -45,7 +45,7 @@ dispatcher_stub.async_dispatcher_send = MagicMock()
 er_stub = sys.modules["homeassistant.helpers.entity_registry"]
 dr_stub = sys.modules["homeassistant.helpers.device_registry"]
 
-# ── Real const module ─────────────────────────────────────────────────────────
+# -- Real const module ---------------------------------------------------------
 
 const_spec = importlib.util.spec_from_file_location(
     "custom_components.green_shift.const",
@@ -56,7 +56,7 @@ const_mod.__package__ = "custom_components.green_shift"
 const_spec.loader.exec_module(const_mod)
 sys.modules["custom_components.green_shift.const"] = const_mod
 
-# ── Stub remaining green_shift sub-modules ────────────────────────────────────
+# -- Stub remaining green_shift sub-modules ------------------------------------
 
 for mod_name in [
     "custom_components.green_shift.data_collector",
@@ -91,7 +91,7 @@ translations_stub.get_phase_transition_template = MagicMock(return_value={
 # numpy is required by __init__.py
 import numpy as np  # noqa: E402 - already available in test env
 
-# ── Load __init__.py ──────────────────────────────────────────────────────────
+# -- Load __init__.py ----------------------------------------------------------
 
 init_spec = importlib.util.spec_from_file_location(
     "gs_init",
@@ -109,9 +109,9 @@ async_setup_entry = init_mod.async_setup_entry
 async_unload_entry = init_mod.async_unload_entry
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def _make_entity(entity_id, device_class=None, unit=None, original_name="",
                  platform="third_party", device_id="dev1"):
@@ -143,9 +143,9 @@ def _build_hass(entities, manufacturer="TestManufacturer"):
     return hass
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # async_discover_sensors
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestAsyncDiscoverSensors:
 
@@ -288,9 +288,9 @@ class TestAsyncDiscoverSensors:
         assert "sensor.env_456" in result["temperature"]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # sync_helper_entities
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestSyncHelperEntities:
 
@@ -398,9 +398,9 @@ class TestSyncHelperEntities:
         assert hass.services.async_call.call_count == 3
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # trigger_phase_transition_notification
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestTriggerPhaseTransitionNotification:
 
@@ -494,9 +494,9 @@ class TestTriggerPhaseTransitionNotification:
         assert "Living Room" in payload["message"]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # restore_backup service: in-memory reload after restore
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 DOMAIN = "green_shift"
 
@@ -712,6 +712,61 @@ class TestServiceHandlers:
         call = MagicMock()
         call.data = {}
         await handlers["create_backup"](call)
+
+    @pytest.mark.asyncio
+    async def test_verify_and_regenerate_services_call_expected_dependencies(self):
+        hass, handlers, _, _ = _build_services_hass(backup_success=True)
+        storage = hass.data[DOMAIN]["storage"]
+        task_manager = hass.data[DOMAIN]["task_manager"]
+        storage.delete_today_tasks = AsyncMock()
+        task_manager.verify_tasks = AsyncMock(return_value={"verified": 1})
+        task_manager.generate_daily_tasks = AsyncMock(return_value=[{"id": "a"}, {"id": "b"}])
+
+        await async_setup_services(hass)
+        dispatcher_stub.async_dispatcher_send.reset_mock()
+
+        await handlers["verify_tasks"](MagicMock(data={}))
+        await handlers["regenerate_tasks"](MagicMock(data={}))
+
+        task_manager.verify_tasks.assert_awaited_once()
+        storage.delete_today_tasks.assert_awaited_once()
+        task_manager.generate_daily_tasks.assert_awaited()
+        assert dispatcher_stub.async_dispatcher_send.call_count >= 2
+
+    @pytest.mark.asyncio
+    async def test_respond_to_selection_returns_when_selector_missing(self):
+        hass, handlers, _, agent_mock = _build_services_hass(backup_success=True)
+        hass.states = MagicMock()
+        hass.states.get = MagicMock(return_value=None)
+        agent_mock._handle_notification_feedback = AsyncMock()
+
+        await async_setup_services(hass)
+        await handlers["respond_to_selection"](MagicMock(data={"decision": "accept"}))
+
+        agent_mock._handle_notification_feedback.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_debug_services_force_process_set_indices_and_save_state(self):
+        hass, handlers, _, agent_mock = _build_services_hass(backup_success=True)
+        agent_mock.process_ai_model = AsyncMock()
+        agent_mock._save_persistent_state = AsyncMock()
+        agent_mock.fatigue_index = 0.0
+        agent_mock.behaviour_index = 0.0
+        agent_mock.anomaly_index = 0.0
+
+        await async_setup_services(hass)
+        dispatcher_stub.async_dispatcher_send.reset_mock()
+
+        await handlers["force_ai_process"](MagicMock(data={}))
+        await handlers["set_test_indices"](MagicMock(data={"fatigue": 0.7, "behavior": 0.8, "anomaly": 0.9}))
+        await handlers["save_state"](MagicMock(data={}))
+
+        agent_mock.process_ai_model.assert_awaited_once()
+        assert agent_mock.fatigue_index == 0.7
+        assert agent_mock.behaviour_index == 0.8
+        assert agent_mock.anomaly_index == 0.9
+        agent_mock._save_persistent_state.assert_awaited_once()
+        assert dispatcher_stub.async_dispatcher_send.call_count >= 1
 
 
 class TestSetupAndUnloadEntry:

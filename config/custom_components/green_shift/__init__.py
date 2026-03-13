@@ -752,9 +752,9 @@ async def async_setup_services(hass: HomeAssistant):
         max_next_q = max(agent.q_table[next_state].values())
 
         # TEST 1: REJECTION
-        _LOGGER.info(f"\n{'─'*60}")
+        _LOGGER.info(f"\n{'-'*60}")
         _LOGGER.info(f"TEST 1: REJECTION (accepted=False)")
-        _LOGGER.info(f"{'─'*60}")
+        _LOGGER.info(f"{'-'*60}")
         
         test_reward_reject = -0.25
         gamma_reject = 0.0  # Terminal state
@@ -765,9 +765,9 @@ async def async_setup_services(hass: HomeAssistant):
         _LOGGER.info(f"Result: {initial_q:.4f} -> {new_q_reject:.4f} (Δ = {new_q_reject - initial_q:+.4f})")
 
         # TEST 2: ACCEPTANCE
-        _LOGGER.info(f"\n{'─'*60}")
+        _LOGGER.info(f"\n{'-'*60}")
         _LOGGER.info(f"TEST 2: ACCEPTANCE (accepted=True)")
-        _LOGGER.info(f"{'─'*60}")
+        _LOGGER.info(f"{'-'*60}")
 
         test_reward_accept = 0.3
         gamma_accept = GAMMA  # Normal discounting (0.95)

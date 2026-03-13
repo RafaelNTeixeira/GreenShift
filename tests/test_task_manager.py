@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 
 import sys, types, pathlib, importlib
 
-# ── Stubs for HA and project modules ────────────────────────────────────────
+# -- Stubs for HA and project modules ----------------------------------------
 
 for mod_name in [
     "homeassistant", "homeassistant.core",
@@ -62,9 +62,9 @@ spec.loader.exec_module(tm_mod)
 TaskManager = tm_mod.TaskManager
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Fixtures
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def make_task_manager(sensors=None, phase="active", working_hours=True, config=None):
     hass = MagicMock()
@@ -116,9 +116,9 @@ def make_task_manager(sensors=None, phase="active", working_hours=True, config=N
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # generate_daily_tasks
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestGenerateDailyTasksPhaseGuard:
 
@@ -148,9 +148,9 @@ class TestGenerateDailyTasksPhaseGuard:
         assert tm._last_verification_results == {}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # generate_daily_tasks : working hours guard
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestGenerateDailyTasksWorkingHours:
     """
@@ -184,9 +184,9 @@ class TestGenerateDailyTasksWorkingHours:
         assert isinstance(result, list)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # generate_daily_tasks : idempotence
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestGenerateDailyTasksIdempotence:
 
@@ -202,9 +202,9 @@ class TestGenerateDailyTasksIdempotence:
         tm.storage.save_daily_tasks.assert_not_called()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # generate_daily_tasks : sensor availability
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestGenerateDailyTasksSensorAvailability:
 
@@ -253,9 +253,9 @@ class TestGenerateDailyTasksSensorAvailability:
         assert len(result) >= 1
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # difficulty_multipliers
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestDifficultyMultipliers:
 
@@ -277,9 +277,9 @@ class TestDifficultyMultipliers:
         assert tm.difficulty_multipliers[1] == pytest.approx(0.5)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Peak Avoidance Task : peak_hour storage and targeted verification
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestPeakAvoidanceTask:
 
@@ -415,9 +415,9 @@ class TestPeakAvoidanceTask:
         assert pending is True
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Unoccupied Power Task : occupancy-aware generation and verification
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestUnoccupiedPowerTask:
 
@@ -585,9 +585,9 @@ class TestUnoccupiedPowerTask:
         assert not verified  # 400W unoccupied avg > 250W target
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Power Reduction / Daylight Usage : working_hours_filter in office mode
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestVerificationWorkingHoursFilter:
     """In office mode, power_reduction and daylight_usage verification must pass
@@ -678,9 +678,9 @@ class TestVerificationWorkingHoursFilter:
         assert call_kwargs.kwargs.get("working_hours_only") is True
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # unoccupied_power: working_hours_filter in office mode
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestUnoccupiedPowerWorkingHoursFilter:
     """unoccupied_power generation and verification must pass working_hours_only=True
@@ -823,9 +823,9 @@ class TestUnoccupiedPowerWorkingHoursFilter:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Verification time anchor: created_at vs TASK_GENERATION_TIME
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestVerificationTimeAnchor:
     """When a task carries 'created_at', verification uses that timestamp as the
@@ -936,14 +936,14 @@ class TestVerificationTimeAnchor:
         assert hours_arg == 8, f"Expected ceil(7.9)=8 but got {hours_arg}"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Streak integration : via TaskManager
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestTaskManagerStreak:
     """Verify that TaskManager calls update_task_streak at the right moments."""
 
-    # ── verify_tasks ──────────────────────────────────────────────────────────
+    # -- verify_tasks ----------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_verify_tasks_credits_streak_when_at_least_one_verified(self):
@@ -999,7 +999,7 @@ class TestTaskManagerStreak:
 
         tm.decision_agent.update_task_streak.assert_not_called()
 
-    # ── generate_daily_tasks ──────────────────────────────────────────────────
+    # -- generate_daily_tasks --------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_generate_tasks_resets_streak_when_none_verified_yesterday(self):
@@ -1058,9 +1058,9 @@ class TestTaskManagerStreak:
         tm.decision_agent.update_task_streak.assert_not_called()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _calculate_task_difficulty with real stats data
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestCalculateTaskDifficultyWithStats:
 
@@ -1110,9 +1110,9 @@ class TestCalculateTaskDifficultyWithStats:
         assert result == 3
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Individual task generators return None when no history
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestTaskGeneratorsReturnNoneWithoutData:
 
@@ -1173,9 +1173,9 @@ class TestTaskGeneratorsReturnNoneWithoutData:
         assert result is None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # verify_tasks: pre-verified tasks stay verified
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestVerifyTasksPreVerified:
 
@@ -1237,9 +1237,9 @@ class TestVerifyTasksPreVerified:
         assert result["reason"] != ""
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _verify_single_task: temperature_reduction type
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestVerifySingleTaskTemperature:
 
@@ -1655,9 +1655,9 @@ class TestTaskManagerAdditionalCoverage:
         assert actual is None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _verify_single_task: error handling returns (False, None)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestVerifySingleTaskErrorHandling:
 
@@ -1687,9 +1687,9 @@ class TestVerifySingleTaskErrorHandling:
         assert actual is None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Office-mode Friday streak: last working day lookup 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestOfficeModeFridayStreak:
     """
@@ -1820,9 +1820,9 @@ class TestOfficeModeFridayStreak:
         tm.decision_agent.update_task_streak.assert_called_once_with(False, yesterday)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Task-type-specific verification failure reasons
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestVerificationFailureReasons:
     """
@@ -2001,9 +2001,9 @@ class TestVerificationFailureReasons:
         assert result["reason"] != "Avg: 22.0°C, target was 20.0°C"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # peak_avoidance verification: working_hours_filter
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestPeakAvoidanceWorkingHoursFilter:
     """peak_avoidance verification must pass working_hours_only=True in office
@@ -2080,9 +2080,9 @@ class TestPeakAvoidanceWorkingHoursFilter:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # AC guard: temperature tasks only generated when has_ac=True
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestTemperatureTaskACGuard:
     """Temperature task generators are conditional on config has_ac=True."""
@@ -2116,9 +2116,9 @@ class TestTemperatureTaskACGuard:
             assert types_found.issubset({"temperature_reduction", "temperature_increase"})
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _generate_temperature_task: seasonal direction
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestGenerateTemperatureTaskSeasonalDirection:
     """_generate_temperature_task selects direction based on outdoor temperature."""
@@ -2229,9 +2229,9 @@ class TestGenerateTemperatureTaskSeasonalDirection:
         assert result["target_unit"] == "°C"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # _verify_single_task: temperature_increase type
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestVerifySingleTaskTemperatureIncrease:
     """Cooling-season tasks pass when avg temp >= target (house not over-cooled)."""
@@ -2319,9 +2319,9 @@ class TestVerifySingleTaskTemperatureIncrease:
         assert actual is None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # hours_passed < 1 must return pending=True
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestVerifyPendingWithinFirstHour:
     """When a task was generated < 1 hour ago the 3rd return value must
@@ -2391,9 +2391,9 @@ class TestVerifyPendingWithinFirstHour:
         assert pending is False, "After 1+ hours pending must be False"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Auto-feedback on task generation day
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestAutoFeedbackOnGeneration:
     """
@@ -2498,9 +2498,9 @@ class TestAutoFeedbackOnGeneration:
         tm.storage.log_task_feedback.assert_not_called()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Temperature Task : climate-aware difficulty scaling (HDD/CDD)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def _make_tm_with_outdoor_temp(outdoor_temp: float) -> "TaskManager":
     """Create a TaskManager with a weather entity returning the given outdoor temperature."""
@@ -2556,7 +2556,7 @@ class TestTemperatureTaskClimateScale:
     def _cold(self, temp: float):
         return _make_tm_with_outdoor_temp(temp)
 
-    # ── hot season ────────────────────────────────────────────────────────────
+    # -- hot season ------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_hot_weather_task_type_is_temperature_increase(self):
@@ -2599,7 +2599,7 @@ class TestTemperatureTaskClimateScale:
         assert task is not None
         assert task["degree_day_value"] == pytest.approx(10.0)
 
-    # ── cold season ───────────────────────────────────────────────────────────
+    # -- cold season -----------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_cold_weather_task_type_is_temperature_reduction(self):
@@ -2634,7 +2634,7 @@ class TestTemperatureTaskClimateScale:
         assert task is not None
         assert task["degree_day_value"] == pytest.approx(10.0)
 
-    # ── effect on target ──────────────────────────────────────────────────────
+    # -- effect on target ------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_extreme_heat_produces_smaller_adjustment_than_mild_heat(self):
@@ -2650,7 +2650,7 @@ class TestTemperatureTaskClimateScale:
         delta_extreme = abs(task_extreme["target_value"] - task_extreme["baseline_value"])
         assert delta_extreme < delta_mild
 
-    # ── neutral zone ──────────────────────────────────────────────────────────
+    # -- neutral zone ----------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_neutral_outdoor_temp_returns_none(self):
@@ -2660,9 +2660,9 @@ class TestTemperatureTaskClimateScale:
         assert task is None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # outdoor_temp_sensor: WiFi-offline fallback for temperature task generation
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def _make_tm_with_sensor_fallback(
     weather_available: bool,

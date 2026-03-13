@@ -30,9 +30,9 @@ spec.loader.exec_module(backup_mod)
 BackupManager = backup_mod.BackupManager
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def _make_backup_dir(bm: BackupManager, btype: str, name: str) -> Path:
     """Create a fake backup subdirectory."""
@@ -51,9 +51,9 @@ def _create_dummy_db(path: Path):
     conn.close()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Fixtures
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 @pytest.fixture
 def data_dir(tmp_path):
@@ -66,9 +66,9 @@ def bm(data_dir):
     return BackupManager(data_dir)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Initialisation
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestBackupManagerInit:
 
@@ -82,9 +82,9 @@ class TestBackupManagerInit:
         assert bm.manual_dir.exists()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # create_backup
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestCreateBackup:
 
@@ -129,9 +129,9 @@ class TestCreateBackup:
         assert result is True
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # cleanup_old_backups
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestCleanupOldBackups:
 
@@ -178,9 +178,9 @@ class TestCleanupOldBackups:
         assert len(list(bm.shutdown_dir.iterdir())) == 2
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # list_backups
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestListBackups:
 
@@ -225,9 +225,9 @@ class TestListBackups:
         assert auto_backups == sorted(auto_backups, reverse=True)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # restore_from_backup
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestRestoreFromBackup:
 
@@ -340,9 +340,9 @@ class TestRestoreFromBackup:
         assert not research_shm.exists()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Error / edge-case paths
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestErrorPaths:
 
@@ -434,9 +434,83 @@ class TestErrorPaths:
         assert result == []
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+class TestExecutorInlineCoverage:
+    """Force run_in_executor bodies to execute inline so branch coverage includes them."""
+
+    class _InlineLoop:
+        async def run_in_executor(self, _executor, func):
+            return func()
+
+    @pytest.mark.asyncio
+    async def test_backup_sqlite_inline_executes_backup_body(self, bm, data_dir):
+        src = data_dir / "src.db"
+        dst = data_dir / "dst.db"
+        _create_dummy_db(src)
+
+        with patch.object(backup_mod.asyncio, "get_event_loop", return_value=self._InlineLoop()):
+            await bm._backup_sqlite(src, dst)
+
+        assert dst.exists()
+        conn = sqlite3.connect(str(dst))
+        row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='t'").fetchone()
+        conn.close()
+        assert row is not None
+
+    @pytest.mark.asyncio
+    async def test_backup_file_inline_executes_copy_body(self, bm, data_dir):
+        src = data_dir / "src.json"
+        dst = data_dir / "dst.json"
+        src.write_text('{"k": "v"}')
+
+        with patch.object(backup_mod.asyncio, "get_event_loop", return_value=self._InlineLoop()):
+            await bm._backup_file(src, dst)
+
+        assert dst.read_text() == '{"k": "v"}'
+
+    @pytest.mark.asyncio
+    async def test_cleanup_inline_covers_all_cleanup_branches(self, bm):
+        for i in range(4):
+            _make_backup_dir(bm, "auto", f"2026021{i}_100000")
+            _make_backup_dir(bm, "startup", f"2026021{i}_090000")
+            _make_backup_dir(bm, "shutdown", f"2026021{i}_200000")
+            _make_backup_dir(bm, "pre_restore", f"2026021{i}_210000")
+
+        with patch.object(backup_mod.asyncio, "get_event_loop", return_value=self._InlineLoop()):
+            await bm.cleanup_old_backups(keep_auto=1, keep_startup=1, keep_shutdown=1, keep_pre_restore=1)
+
+        assert len(list(bm.auto_dir.iterdir())) == 1
+        assert len(list(bm.startup_dir.iterdir())) == 1
+        assert len(list(bm.shutdown_dir.iterdir())) == 1
+        assert len(list(bm.pre_restore_dir.iterdir())) == 1
+
+    @pytest.mark.asyncio
+    async def test_restore_inline_covers_state_copy_branch(self, bm, data_dir):
+        backup_path = bm.auto_dir / "20260218_120000"
+        backup_path.mkdir()
+        (backup_path / "state.json").write_text('{"phase": "active"}')
+
+        with patch.object(backup_mod.asyncio, "get_event_loop", return_value=self._InlineLoop()):
+            result = await bm.restore_from_backup("auto/20260218_120000")
+
+        assert result is True
+        assert (data_dir / "state.json").read_text() == '{"phase": "active"}'
+
+    @pytest.mark.asyncio
+    async def test_restore_inline_invalid_research_db_hits_database_error_branch(self, bm, data_dir):
+        backup_path = bm.auto_dir / "20260218_130000"
+        backup_path.mkdir()
+        _create_dummy_db(backup_path / "sensor_data.db")
+        (backup_path / "research_data.db").write_bytes(b"not sqlite")
+
+        with patch.object(backup_mod.asyncio, "get_event_loop", return_value=self._InlineLoop()):
+            result = await bm.restore_from_backup("auto/20260218_130000")
+
+        assert result is False
+
+
+# -----------------------------------------------------------------------------
 # Data isolation: two backups with different data, restore one -> exact match
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class TestRestoreDataIsolation:
     """
@@ -445,7 +519,7 @@ class TestRestoreDataIsolation:
     the other backup or from the current (live) state.
     """
 
-    # ── Helpers ──────────────────────────────────────────────────────────────
+    #  Helpers
 
     def _create_db_with_marker(self, path: Path, marker: str) -> None:
         """Create a minimal SQLite DB containing a single identifiable row."""
@@ -463,29 +537,29 @@ class TestRestoreDataIsolation:
         conn.close()
         return row[0] if row else None
 
-    # ── Core round-trip: restore A does not contain B's data ─────────────────
+    # Core round-trip: restore A does not contain B's data
 
     @pytest.mark.asyncio
     async def test_restore_backup_a_excludes_backup_b_data(self, bm, data_dir):
         """Restoring backup A after B has been written must yield A's data."""
-        # ── Backup A ─────────────────────────────────────────────────────────
+        # Backup A 
         self._create_db_with_marker(data_dir / "sensor_data.db", "sensor_A")
         self._create_db_with_marker(data_dir / "research_data.db", "research_A")
         (data_dir / "state.json").write_text('{"phase": "baseline", "snapshot": "A"}')
         assert await bm.create_backup("manual") is True
         backup_a = "manual/" + list(bm.manual_dir.iterdir())[0].name
 
-        # ── Overwrite live files with B's content ────────────────────────────
+        # Overwrite live files with B's content
         (data_dir / "sensor_data.db").unlink()
         (data_dir / "research_data.db").unlink()
         self._create_db_with_marker(data_dir / "sensor_data.db", "sensor_B")
         self._create_db_with_marker(data_dir / "research_data.db", "research_B")
         (data_dir / "state.json").write_text('{"phase": "active", "snapshot": "B"}')
 
-        # ── Restore A ────────────────────────────────────────────────────────
+        # Restore A
         assert await bm.restore_from_backup(backup_a) is True
 
-        # ── Verify live data == A (not B) ─────────────────────────────────────
+        # Verify live data == A (not B)
         assert self._read_marker(data_dir / "sensor_data.db") == "sensor_A"
         assert self._read_marker(data_dir / "research_data.db") == "research_A"
         state_text = (data_dir / "state.json").read_text()
@@ -495,24 +569,24 @@ class TestRestoreDataIsolation:
     @pytest.mark.asyncio
     async def test_restore_backup_b_excludes_backup_a_data(self, bm, data_dir):
         """Restoring backup B must yield B's data even though A was created first."""
-        # ── Backup A (manual dir) ─────────────────────────────────────────────
+        # Backup A (manual dir)
         self._create_db_with_marker(data_dir / "sensor_data.db", "sensor_A")
         (data_dir / "state.json").write_text('{"snapshot": "A"}')
         await bm.create_backup("manual")
 
-        # ── Backup B (auto dir) ───────────────────────────────────────────────
+        # Backup B (auto dir)
         (data_dir / "sensor_data.db").unlink()
         self._create_db_with_marker(data_dir / "sensor_data.db", "sensor_B")
         (data_dir / "state.json").write_text('{"snapshot": "B"}')
         assert await bm.create_backup("auto") is True
         backup_b = "auto/" + list(bm.auto_dir.iterdir())[0].name
 
-        # ── Overwrite live with "C" (simulate time passing) ───────────────────
+        # Overwrite live with "C" (simulate time passing)
         (data_dir / "sensor_data.db").unlink()
         self._create_db_with_marker(data_dir / "sensor_data.db", "sensor_C")
         (data_dir / "state.json").write_text('{"snapshot": "C"}')
 
-        # ── Restore B ────────────────────────────────────────────────────────
+        # Restore B
         assert await bm.restore_from_backup(backup_b) is True
 
         assert self._read_marker(data_dir / "sensor_data.db") == "sensor_B"
@@ -521,7 +595,7 @@ class TestRestoreDataIsolation:
         assert '"snapshot": "A"' not in state_text
         assert '"snapshot": "C"' not in state_text
 
-    # ── Two-backup round-trip: swap between A and B, then back ───────────────
+    # Two-backup round-trip: swap between A and B, then back
 
     @pytest.mark.asyncio
     async def test_alternating_restores_always_match_their_backup(self, bm, data_dir):
@@ -529,14 +603,14 @@ class TestRestoreDataIsolation:
         Create A and B in different type dirs, then restore A -> B -> A.
         Each restore must yield exactly the data from that backup.
         """
-        # ── Backup A (manual) ────────────────────────────────────────────────
+        # Backup A (manual)
         self._create_db_with_marker(data_dir / "sensor_data.db", "epoch_1")
         self._create_db_with_marker(data_dir / "research_data.db", "r_epoch_1")
         (data_dir / "state.json").write_text('{"epoch": 1}')
         await bm.create_backup("manual")
         backup_a = "manual/" + list(bm.manual_dir.iterdir())[0].name
 
-        # ── Backup B (auto) ───────────────────────────────────────────────────
+        # Backup B (auto)
         (data_dir / "sensor_data.db").unlink()
         (data_dir / "research_data.db").unlink()
         self._create_db_with_marker(data_dir / "sensor_data.db", "epoch_2")
@@ -545,25 +619,25 @@ class TestRestoreDataIsolation:
         await bm.create_backup("auto")
         backup_b = "auto/" + list(bm.auto_dir.iterdir())[0].name
 
-        # ── Restore A ────────────────────────────────────────────────────────
+        # Restore A
         assert await bm.restore_from_backup(backup_a) is True
         assert self._read_marker(data_dir / "sensor_data.db") == "epoch_1"
         assert self._read_marker(data_dir / "research_data.db") == "r_epoch_1"
         assert '"epoch": 1' in (data_dir / "state.json").read_text()
 
-        # ── Restore B ────────────────────────────────────────────────────────
+        # Restore B
         assert await bm.restore_from_backup(backup_b) is True
         assert self._read_marker(data_dir / "sensor_data.db") == "epoch_2"
         assert self._read_marker(data_dir / "research_data.db") == "r_epoch_2"
         assert '"epoch": 2' in (data_dir / "state.json").read_text()
 
-        # ── Restore A again ───────────────────────────────────────────────────
+        # Restore A again
         assert await bm.restore_from_backup(backup_a) is True
         assert self._read_marker(data_dir / "sensor_data.db") == "epoch_1"
         assert self._read_marker(data_dir / "research_data.db") == "r_epoch_1"
         assert '"epoch": 1' in (data_dir / "state.json").read_text()
 
-    # ── Cross-DB isolation ────────────────────────────────────────────────────
+    # Cross-DB isolation 
 
     @pytest.mark.asyncio
     async def test_restore_does_not_mix_sensor_and_research_db_data(self, bm, data_dir):
@@ -587,7 +661,7 @@ class TestRestoreDataIsolation:
         assert self._read_marker(data_dir / "sensor_data.db") != "research_ALPHA"
         assert self._read_marker(data_dir / "research_data.db") != "sensor_ALPHA"
 
-    # ── WAL / SHM cleanup ────────────────────────────────────────────────────
+    # WAL / SHM cleanup
 
     @pytest.mark.asyncio
     async def test_stale_sensor_wal_and_shm_deleted_after_restore(self, bm, data_dir):
@@ -639,7 +713,7 @@ class TestRestoreDataIsolation:
         assert await bm.restore_from_backup(backup_name) is True
         assert self._read_marker(data_dir / "sensor_data.db") == "clean_marker"
 
-    # ── Pre-restore safety backup captures the live state ────────────────────
+    # Pre-restore safety backup captures the live state
 
     @pytest.mark.asyncio
     async def test_pre_restore_backup_captures_overwritten_state(self, bm, data_dir):

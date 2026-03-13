@@ -4,23 +4,23 @@ Green Shift includes a comprehensive test suite covering core functionality and 
 
 ## Coverage Summary
 
-**930 tests** across 11 modules - total measured coverage **75.6%**.
+**1097 tests** across 11 modules - total measured coverage **93.02%**.
 
-> **Note on `__init__.py`:** The main integration setup file requires a live Home Assistant runtime for its service registration, event bus subscriptions and platform setup. Its measured coverage is 12%: this is expected and cannot be meaningfully increased with unit tests alone. Excluding it, the **adjusted coverage across all other modules is ≈ 89%**.
+> **Note on `__init__.py`:** The main integration setup file requires a live Home Assistant runtime for its service registration, event bus subscriptions and platform setup. This means that full coverage is not expected.
 
 | Module | Tests | Coverage | Notes |
 |--------|-------|----------|-------|
-| `test_backup_manager.py` | 31 | **99%** | Backup creation, cleanup, restoration |
-| `test_config_flow.py` | 51 | **97%** | Config flow, sensor discovery, area assignment |
-| `test_data_collector.py` | 73 | **84%** | Real-time monitoring, energy tracking |
-| `test_decision_agent.py` | 268 | **77%** | AI model, Q-learning, fatigue tracking, engagement persistence, state persistence, action masking |
-| `test_helpers.py` | 46 | **99%** | Utility functions, conversions, entity/area resolution, working hours |
-| `test_init.py` | 33 | - | Tests service registration and restore-backup reload behaviour |
-| `test_select.py` | 36 | **94%** | |
-| `test_sensor.py` | 119 | **95%** | |
-| `test_storage.py` | 107 | **90%** | Deeply nested SQL error handlers not exercised |
-| `test_task_manager.py` | 105 | **93%** | Database operations, data persistence, task interactions, research data |
-| `test_translations_runtime.py` | 61 | **91%** | Multilingual support, templates |
+| `test_backup_manager.py` | 46 | **100%** | Backup creation, cleanup, restoration |
+| `test_config_flow.py` | 58 | **100%** | Config flow, sensor discovery, area assignment |
+| `test_data_collector.py` | 97 | **100%** | Real-time monitoring, energy tracking |
+| `test_decision_agent.py` | 320 | **100%** | AI model, Q-learning, fatigue tracking, engagement persistence, state persistence, action masking |
+| `test_helpers.py` | 47 | **100%** | Utility functions, conversions, entity/area resolution, working hours |
+| `test_init.py` | 44 | **57%** | |
+| `test_select.py` | 37 | **100%** | |
+| `test_sensor.py` | 129 | **100%** | |
+| `test_storage.py` | 131 | **100%** | Database operations, data persistence, retention |
+| `test_task_manager.py` | 126 | **100%** | Task generation/verification and persistence |
+| `test_translations_runtime.py` | 62 | **100%** | Multilingual support, templates |
 
 ## Running Tests
 
@@ -35,7 +35,7 @@ pip install -r requirements.txt
 Run from the **workspace root** (not from `tests/`):
 
 ```bash
-python3 -m pytest tests/
+python3 -m pytest -n auto tests/
 ```
 
 Coverage is automatically generated in `tests/htmlcov/`.
@@ -43,14 +43,14 @@ Coverage is automatically generated in `tests/htmlcov/`.
 ### Run Specific Module
 
 ```bash
-python3 -m pytest tests/test_decision_agent.py
-python3 -m pytest tests/test_backup_manager.py -v  # verbose output
+python3 -m pytest -n auto tests/test_decision_agent.py
+python3 -m pytest -n auto tests/test_backup_manager.py -v  # verbose output
 ```
 
 ### Run without Coverage (faster)
 
 ```bash
-python3 -m pytest tests/ --no-cov
+python3 -m pytest -n auto tests/ --no-cov
 ```
 
 ### View Coverage Report
@@ -61,14 +61,14 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 
 ## Test Structure
 
-### `test_backup_manager.py` - 31 tests, **99%** coverage
+### `test_backup_manager.py` - 46 tests, **100%** coverage
 - Directory structure creation
 - Automatic backup generation (startup, shutdown, daily triggers)
 - Cleanup policies (old backup removal by count/age)
 - Backup restoration (full state recovery)
 - Edge cases (missing backups, corrupted files, concurrent access)
 
-### `test_config_flow.py` - 51 tests, **97%** coverage
+### `test_config_flow.py` - 58 tests, **100%** coverage
 - Multi-step flow navigation (5 steps)
 - Environment mode branching (home vs office)
 - Sensor discovery and value-based sorting
@@ -77,7 +77,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Complete integration flows (home & office modes)
 - Input validation and edge cases
 
-### `test_data_collector.py` - 73 tests, **84%** coverage
+### `test_data_collector.py` - 97 tests, **100%** coverage
 - Real-time sensor monitoring
 - Energy midnight point tracking
 - Daily kWh calculations
@@ -86,7 +86,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Sensor cache management
 - *Note*: setup-phase callbacks that fire on HA startup cannot be exercised without the HA event loop.
 
-### `test_decision_agent.py` - 268 tests, **77%** coverage
+### `test_decision_agent.py` - 320 tests, **100%** coverage
 - State discretization (power bins, indices)
 - Fatigue index calculation (rejection rate, time decay)
 - Behavior index updates (EMA)
@@ -101,9 +101,9 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Action mask updates (noop, specific, normative, behavioural modes)
 - Non-working day gap detection
 - Full AI model cycle (`process_ai_model`): daily counter reset, episode expiry
-- *Note*: The full `_decide_action` orchestration, shadow-learning inner loops, and RL episode logging paths require deeply coupled dependencies and remain partially untested (77% -> bounded by integration complexity).
+- Full decision-agent unit branch coverage achieved in pure logic tests.
 
-### `test_helpers.py` - 46 tests, **99%** coverage
+### `test_helpers.py` - 47 tests, **100%** coverage
 - Unit conversions (kW->W, Wh->kWh)
 - Environmental impact calculations (CO2, metaphors)
 - Working hours validation (including timezone-aware datetimes)
@@ -114,20 +114,20 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Friendly name resolution (attribute, registry, entity_id fallback)
 - Daily working hours calculation (standard, custom, midnight-crossing, malformed config)
 
-### `test_init.py` - 33 tests
+### `test_init.py` - 44 tests, **57%** coverage
 - Service registration mocks
 - Entry setup/teardown
 - Event bus subscription hooks
 - `restore_backup` service: in-memory reload after restore
-- *Note*: coverage not reported separately (exercises `__init__.py` which is 12% due to HA runtime requirements)
+- *Note*: service/setup/unload unit coverage was expanded, while runtime-only Home Assistant paths remain.
 
-### `test_select.py` - 36 tests, **94%** coverage
+### `test_select.py` - 37 tests, **100%** coverage
 - `AreaViewSelect`: option population, current_option, async callbacks, `async_on_remove` unsubscription
 - `NotificationSelect`: pending notification rendering, selection acknowledgment, option refresh
 - `_update_callback` write-state path (sync and async)
 - *Note*: `async_setup_entry` (lines 34-40) requires `hass.data[DOMAIN]` from HA platform loader and cannot be unit-tested.
 
-### `test_sensor.py` - 119 tests, **95%** coverage
+### `test_sensor.py` - 129 tests, **100%** coverage
 - `HardwareSensors`: normalized_value sanitization, occupancy forwarding, `None`-value skip
 - `DailyTasksSensor`: task list state, attribute structure (completion values, `checked_at`, pending result)
 - `EnergyUsageSensor` / `DailyCO2EstimateSensor`: state extraction, name/unique_id, unit
@@ -138,7 +138,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - `GreenShiftBaseSensor` / `GreenShiftAISensor` callbacks: `async_added_to_hass`, `async_on_remove`, `_update_callback` create_task dispatch
 - *Note*: Lines 104/111-112 in sensor.py are unreachable dead code (see coverage note above).
 
-### `test_storage.py` - 107 tests, **90%** coverage
+### `test_storage.py` - 131 tests, **100%** coverage
 - Database initialization (SQLite schema creation)
 - Sensor snapshot storage and retrieval
 - Area-based data tracking
@@ -146,9 +146,9 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Task persistence (create, complete, fetch pending)
 - Data retention and cleanup (age-based pruning)
 - State file operations (JSON read/write, corrupt-file recovery)
-- *Note*: Deeply nested SQL exception handlers (e.g. multi-level rollback paths) are not exercised.
+- *Note*: Remaining low-level DB runtime edge behavior is now covered through targeted tests.
 
-### `test_task_manager.py` - 105 tests, **93%** coverage
+### `test_task_manager.py` - 126 tests, **100%** coverage
 - Task generation with sensor constraints
 - Phase guards (baseline vs active)
 - Working hours enforcement
@@ -159,7 +159,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Task verification logic (temperature below/above target, no history, pre-verified tasks)
 - Exception handling during verification
 
-### `test_translations_runtime.py` - 61 tests, **91%** coverage
+### `test_translations_runtime.py` - 62 tests, **100%** coverage
 - Language detection and selection
 - Notification template rendering (English and Portuguese)
 - Task template localization
@@ -169,4 +169,4 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 
 ---
 
-**Contributing?** Keep per-module coverage ≥ 85% (excluding `__init__.py`) and add tests for new features before submitting PRs. Run `python3 -m pytest tests/` from the workspace root to verify.
+**Contributing?** Keep per-module coverage ≥ 85% (excluding `__init__.py`) and add tests for new features before submitting PRs. Run `python3 -m pytest -n auto tests/` from the workspace root to verify.
