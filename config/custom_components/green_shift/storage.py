@@ -3,7 +3,7 @@ File: storage.py
 Description: This module defines the StorageManager class, which manages the SQLite databases and JSON state files for the Green Shift Home Assistant component.
 The StorageManager handles the initialization of the databases with appropriate schemas, periodic cleanup of old data, and provides methods for storing sensor snapshots, area-specific snapshots and retrieving historical data.
 The storage system is designed to be robust, with WAL mode enabled for crash protection and asynchronous operations to avoid blocking the main thread.
-The module also includes a separate research database that is never purged, allowing for long-term storage of data for research and analysis purposes.
+The module also includes a separate research database, allowing for long-term storage of data for research and analysis purposes.
 """
 
 import logging
@@ -167,9 +167,9 @@ class StorageManager:
         await self.hass.async_add_executor_job(_create_tables)
 
     async def _init_research_database(self):
-        """Initialize permanent research database (never purged)."""
+        """Initialize permanent research database."""
         def _create_research_tables():
-            """Create tables for research data storage. This database is never purged to allow for long-term analysis."""
+            """Create tables for research data storage. This database is used to allow for long-term analysis."""
             conn = sqlite3.connect(str(self.research_db_path))
             cursor = conn.cursor()
 
@@ -461,7 +461,7 @@ class StorageManager:
         await self.hass.async_add_executor_job(_create_research_tables)
 
     async def _cleanup_old_data(self):
-        """Remove data older than 14 days from sensor_data.db (research_data.db is never purged)."""
+        """Remove data older than 14 days from sensor_data.db"""
         def _cleanup():
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -1156,7 +1156,7 @@ class StorageManager:
         Get the total count of all completed tasks across all time from research database.
         
         Returns:
-            int: Total count of tasks marked as completed in the research database, which is never purged and allows for long-term analysis of task completion trends.
+            int: Total count of tasks marked as completed in the research database, which is used for long-term analysis of task completion trends.
         """
         def _query():
             conn = sqlite3.connect(str(self.research_db_path))

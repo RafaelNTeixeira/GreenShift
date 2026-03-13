@@ -493,7 +493,7 @@ class DecisionAgent:
         # (N_areas × 3 metric queries per call at 15-second frequency is excessive)
         if self._process_count % 4 == 0:
             await self._update_area_anomalies()
-        self._update_behaviour_index()
+        
         await self._update_fatigue_index()
 
         # Build state vector from DataCollector's current readings
