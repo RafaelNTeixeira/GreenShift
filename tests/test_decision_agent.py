@@ -1466,18 +1466,21 @@ class TestHolidaySkipPersistence:
 
     @pytest.mark.asyncio
     async def test_save_state_includes_holiday_skip_dates(self):
-        from datetime import date as _date_cls
+        from datetime import date as _date_cls, timedelta as _timedelta
         agent = make_agent(config_data={"environment_mode": "office"})
         agent.storage = AsyncMock()
         agent.storage.load_state = AsyncMock(return_value={})
         agent.storage.save_state = AsyncMock()
-        agent.holiday_skip_dates = {_date_cls(2026, 3, 10)}
+        recent_date = _date_cls.today() - _timedelta(days=5)
+        old_date = _date_cls.today() - _timedelta(days=31)
+        agent.holiday_skip_dates = {recent_date, old_date}
 
         await agent._save_persistent_state()
 
         saved_state = agent.storage.save_state.call_args[0][0]
         assert "holiday_skip_dates" in saved_state
-        assert "2026-03-10" in saved_state["holiday_skip_dates"]
+        assert recent_date.isoformat() in saved_state["holiday_skip_dates"]
+        assert old_date.isoformat() not in saved_state["holiday_skip_dates"]
 
     @pytest.mark.asyncio
     async def test_load_state_parses_holiday_skip_dates(self):

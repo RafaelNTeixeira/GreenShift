@@ -333,6 +333,14 @@ class DecisionAgent:
         # Keep only last NOTIFICATION_HISTORY_LIMIT notifications in JSON (sliding window)
         trimmed_notification_history = list(self.notification_history)[-NOTIFICATION_HISTORY_LIMIT:]
 
+        # Keep only recent holiday skips to avoid unbounded state growth.
+        from datetime import date as _date_cls
+        _cutoff = _date_cls.today() - timedelta(days=30)
+        self.holiday_skip_dates = {
+            d for d in self.holiday_skip_dates
+            if d >= _cutoff
+        }
+
         ai_state = {
             "start_date": safe_start_date,
             "phase": self.phase,
