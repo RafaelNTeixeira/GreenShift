@@ -4,20 +4,20 @@ Green Shift includes a comprehensive test suite covering core functionality and 
 
 ## Coverage Summary
 
-**1112 tests** across 11 modules - total measured coverage **100%**.
+**1129 tests** across 11 modules - total measured coverage **100%**.
 
 | Module | Tests | Coverage | Notes |
 |--------|-------|----------|-------|
 | `test_backup_manager.py` | 46 | **100%** | Backup creation, cleanup, restoration |
 | `test_config_flow.py` | 58 | **100%** | Config flow, sensor discovery, area assignment |
 | `test_data_collector.py` | 97 | **100%** | Real-time monitoring, energy tracking |
-| `test_decision_agent.py` | 324 | **100%** | AI model, Q-learning, fatigue tracking, engagement persistence, state persistence, action masking |
-| `test_helpers.py` | 47 | **100%** | Utility functions, conversions, entity/area resolution, working hours |
+| `test_decision_agent.py` | 328 | **100%** | AI model, Q-learning, fatigue tracking, engagement persistence, state persistence, action masking |
+| `test_helpers.py` | 58 | **100%** | Utility functions, conversions, entity/area resolution, working hours |
 | `test_init.py` | 55 | **100%** | Integration setup/services/unload/discovery and callback/runtime edge paths |
 | `test_select.py` | 37 | **100%** | |
 | `test_sensor.py` | 129 | **100%** | |
 | `test_storage.py` | 131 | **100%** | Database operations, data persistence, retention |
-| `test_task_manager.py` | 126 | **100%** | Task generation/verification and persistence |
+| `test_task_manager.py` | 128 | **100%** | Task generation/verification and persistence |
 | `test_translations_runtime.py` | 62 | **100%** | Multilingual support, templates |
 
 ## Running Tests
@@ -83,7 +83,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Working hours filtering
 - Sensor cache management
 
-### `test_decision_agent.py` - 324 tests, **100%** coverage
+### `test_decision_agent.py` - 328 tests, **100%** coverage
 - State discretization (power bins, indices)
 - Fatigue index calculation (rejection rate, time decay)
 - Behavior index updates (EMA)
@@ -100,7 +100,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Full AI model cycle (`process_ai_model`): daily counter reset, episode expiry
 - Full decision-agent unit branch coverage achieved in pure logic tests.
 
-### `test_helpers.py` - 47 tests, **100%** coverage
+### `test_helpers.py` - 58 tests, **100%** coverage
 - Unit conversions (kW->W, Wh->kWh)
 - Environmental impact calculations (CO2, metaphors)
 - Working hours validation (including timezone-aware datetimes)
@@ -144,7 +144,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Data retention and cleanup (age-based pruning)
 - State file operations (JSON read/write, corrupt-file recovery)
 
-### `test_task_manager.py` - 126 tests, **100%** coverage
+### `test_task_manager.py` - 128 tests, **100%** coverage
 - Task generation with sensor constraints
 - Phase guards (baseline vs active)
 - Working hours enforcement

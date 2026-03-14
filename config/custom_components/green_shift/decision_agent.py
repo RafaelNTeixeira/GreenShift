@@ -118,6 +118,8 @@ class DecisionAgent:
         self.task_streak_last_date = None   # date (date obj) of last successful task-streak credit
         self.weekly_streak = 0              # consecutive weeks with weekly challenge achieved
         self.weekly_streak_last_week = None # week_key (ISO str) of last successful weekly-streak credit
+        # Dates skipped because they were holidays (workday_sensor=off on configured weekday)
+        self.holiday_skip_dates = set()     # set[date]
 
         # Performance optimisation: per-cycle DB query caches
         self._cached_power_h1 = None        # power_history(hours=1): shared within one process_ai_model() call
@@ -296,6 +298,17 @@ class DecisionAgent:
         if "weekly_streak_last_week" in state and state["weekly_streak_last_week"]:
             self.weekly_streak_last_week = state["weekly_streak_last_week"]
 
+        # Load holiday skip dates
+        if "holiday_skip_dates" in state and isinstance(state["holiday_skip_dates"], list):
+            from datetime import date as _date_cls
+            self.holiday_skip_dates = set()
+            for d in state["holiday_skip_dates"]:
+                try:
+                    self.holiday_skip_dates.add(_date_cls.fromisoformat(d))
+                except (ValueError, AttributeError):
+                    pass
+            _LOGGER.info("Loaded %d holiday skip dates", len(self.holiday_skip_dates))
+
         _LOGGER.info("Persistent AI state loaded successfully")
 
     async def _save_persistent_state(self):
@@ -345,6 +358,7 @@ class DecisionAgent:
             "task_streak_last_date": self.task_streak_last_date.isoformat() if self.task_streak_last_date else None,
             "weekly_streak": self.weekly_streak,
             "weekly_streak_last_week": self.weekly_streak_last_week,
+            "holiday_skip_dates": [d.isoformat() for d in self.holiday_skip_dates],
             "pending_episodes": {
                 notif_id: {
                     "state_key": str(ep["state_key"]),
@@ -366,6 +380,20 @@ class DecisionAgent:
     # Gamification streak helpers
     # ------------------------------------------------------------------
 
+    def record_holiday_skip(self, skip_date) -> None:
+        """
+        Record a date as a holiday skip for streak gap protection.
+
+        Args:
+            skip_date: The date that was skipped (date object or datetime).
+        """
+        from datetime import date as _date_cls
+        if isinstance(skip_date, datetime):
+            skip_date = skip_date.date()
+        if isinstance(skip_date, _date_cls):
+            self.holiday_skip_dates.add(skip_date)
+            _LOGGER.info("Recorded holiday skip for %s (streak gap protection)", skip_date)
+
     def _is_only_non_working_days_in_gap(self, from_date, to_date) -> bool:
         """Return True iff every calendar day strictly between from_date and to_date is a non-working day.
         Only meaningful in office mode.
@@ -382,7 +410,7 @@ class DecisionAgent:
         working_days = get_working_days_from_config(self.config_data)
         day = from_date + timedelta(days=1)
         while day < to_date:
-            if day.weekday() in working_days:
+            if day.weekday() in working_days and day not in self.holiday_skip_dates:
                 return False
             day += timedelta(days=1)
         return True
@@ -674,7 +702,7 @@ class DecisionAgent:
     async def _decide_action(self):
         """Selects action A_t using epsilon-greedy policy with Q-learning."""
         # Check if AI should be active (working hours for office mode)
-        if not should_ai_be_active(self.config_data):
+        if not should_ai_be_active(self.config_data, hass=self.hass):
             _LOGGER.debug("Outside working hours - AI notifications paused")
             return
 
@@ -803,7 +831,7 @@ class DecisionAgent:
         """
 
         # Check if AI should be active (working hours for office mode)
-        if not should_ai_be_active(self.config_data):
+        if not should_ai_be_active(self.config_data, hass=self.hass):
             _LOGGER.debug("Outside working hours - shadow learning paused")
             return
 

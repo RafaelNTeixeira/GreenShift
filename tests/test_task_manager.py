@@ -39,6 +39,7 @@ sys.modules["custom_components.green_shift.translations_runtime"] = trans_mod
 helpers_stub = types.ModuleType("custom_components.green_shift.helpers")
 helpers_stub.should_ai_be_active = MagicMock(return_value=True)
 helpers_stub.get_working_days_from_config = MagicMock(return_value=list(range(5)))  # Mon-Fri
+helpers_stub.is_working_day = MagicMock(return_value=True)
 sys.modules["custom_components.green_shift.helpers"] = helpers_stub
 
 # Import real const module
@@ -95,6 +96,7 @@ def make_task_manager(sensors=None, phase="active", working_hours=True, config=N
     # because task_manager already imported them
     tm_mod.should_ai_be_active = MagicMock(return_value=working_hours)
     tm_mod.get_language = AsyncMock(return_value="en")
+    tm_mod.is_working_day = MagicMock(return_value=working_hours)
     # Patch working-days helper (used by new office-mode day-guard)
     today_weekday = datetime.now().weekday()
     if working_hours:
@@ -165,6 +167,18 @@ class TestGenerateDailyTasksWorkingHours:
         tm = make_task_manager(working_hours=False, config=office_config)
         result = await tm.generate_daily_tasks()
         assert result == []
+
+    @pytest.mark.asyncio
+    async def test_holiday_day_records_skip_in_decision_agent(self):
+        office_config = {"environment_mode": "office"}
+        tm = make_task_manager(working_hours=False, config=office_config)
+        tm_mod.get_working_days_from_config = MagicMock(return_value=list(range(7)))
+        tm.decision_agent.record_holiday_skip = MagicMock()
+
+        result = await tm.generate_daily_tasks()
+
+        assert result == []
+        tm.decision_agent.record_holiday_skip.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_generates_tasks_on_working_day_office_mode(self):
@@ -1818,6 +1832,42 @@ class TestOfficeModeFridayStreak:
             await tm.generate_daily_tasks()
 
         tm.decision_agent.update_task_streak.assert_called_once_with(False, yesterday)
+
+    @pytest.mark.asyncio
+    async def test_office_mode_skips_holiday_candidate_in_lookback(self):
+        """If the latest office working-day candidate is a recorded holiday, look back further."""
+        from datetime import datetime as real_dt, date as real_date
+        from unittest.mock import patch
+
+        office_cfg = {"environment_mode": "office"}
+        tm = make_task_manager(config=office_cfg)
+        tm_mod.get_working_days_from_config = MagicMock(return_value=list(range(5)))
+
+        monday = real_date(2026, 3, 2)
+        friday_holiday = real_date(2026, 2, 27)
+        thursday = real_date(2026, 2, 26)
+        tm.decision_agent.holiday_skip_dates = {friday_holiday}
+
+        thursday_failed = [{"task_id": "thu_1", "verified": False}]
+
+        async def get_tasks(date_arg):
+            if date_arg == thursday:
+                return thursday_failed
+            return []
+
+        tm.storage.get_tasks_for_date = AsyncMock(side_effect=get_tasks)
+
+        fake_now = real_dt(2026, 3, 2, 7, 0, 0)
+
+        class FixedDatetime(real_dt):
+            @classmethod
+            def now(cls, tz=None):
+                return fake_now
+
+        with patch.object(tm_mod, "datetime", FixedDatetime):
+            await tm.generate_daily_tasks()
+
+        tm.decision_agent.update_task_streak.assert_called_once_with(False, thursday)
 
 
 # -----------------------------------------------------------------------------

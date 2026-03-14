@@ -9,7 +9,7 @@ Covers:
 - should_ai_be_active    : thin wrapper check
 """
 import pytest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 # We import only the pure helpers that have no mandatory HA dependency
@@ -51,6 +51,7 @@ helpers_spec.loader.exec_module(helpers)
 get_normalized_value = helpers.get_normalized_value
 get_environmental_impact = helpers.get_environmental_impact
 get_working_days_from_config = helpers.get_working_days_from_config
+is_working_day = helpers.is_working_day
 is_within_working_hours = helpers.is_within_working_hours
 should_ai_be_active = helpers.should_ai_be_active
 
@@ -85,6 +86,16 @@ def office_cfg():
 @pytest.fixture
 def home_cfg():
     return {"environment_mode": "home"}
+
+
+def _today_or_next_weekday_at(hour=10, minute=0):
+    now = datetime.now()
+    candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if candidate.weekday() <= 4:
+        return candidate
+
+    days_until_monday = 7 - candidate.weekday()
+    return candidate + timedelta(days=days_until_monday)
 
 
 # -----------------------------------------------------------------------------
@@ -188,6 +199,49 @@ class TestGetWorkingDaysFromConfig:
 
 
 # -----------------------------------------------------------------------------
+# is_working_day
+# -----------------------------------------------------------------------------
+
+class TestIsWorkingDay:
+
+    def test_home_mode_always_true(self, home_cfg):
+        t = datetime(2026, 2, 22, 9, 0)
+        assert is_working_day(home_cfg, t) is True
+
+    def test_office_weekday_true(self, office_cfg):
+        t = datetime(2026, 2, 18, 9, 0)
+        assert is_working_day(office_cfg, t) is True
+
+    def test_office_weekend_false(self, office_cfg):
+        t = datetime(2026, 2, 22, 9, 0)
+        assert is_working_day(office_cfg, t) is False
+
+    def test_office_workday_sensor_off_today_false(self, office_cfg):
+        hass = MagicMock()
+        hass.states.get.return_value = MagicMock(state="off")
+        fake_now = datetime(2026, 2, 18, 10, 0)  # Wednesday
+        with patch.object(helpers, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            assert is_working_day(office_cfg, fake_now, hass=hass) is False
+
+    def test_office_none_check_date_uses_now(self, office_cfg):
+        fake_now = datetime(2026, 2, 18, 10, 0)  # Wednesday
+        with patch.object(helpers, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            assert is_working_day(office_cfg, None) is True
+
+    def test_office_tz_aware_datetime_is_supported(self, office_cfg):
+        t = datetime(2026, 2, 18, 10, 0, tzinfo=timezone.utc)
+        assert is_working_day(office_cfg, t) is True
+
+    def test_office_workday_sensor_off_non_today_ignored(self, office_cfg):
+        hass = MagicMock()
+        hass.states.get.return_value = MagicMock(state="off")
+        t = datetime(2026, 2, 18, 9, 0)
+        assert is_working_day(office_cfg, t, hass=hass) is True
+
+
+# -----------------------------------------------------------------------------
 # is_within_working_hours
 # -----------------------------------------------------------------------------
 
@@ -249,9 +303,31 @@ class TestIsWithinWorkingHours:
             mock_dt.strptime = datetime.strptime
             assert is_within_working_hours(office_cfg, None) is True
 
+    def test_office_workday_sensor_off_marks_holiday_inactive(self, office_cfg):
+        t = _today_or_next_weekday_at(10, 0)
+        hass = MagicMock()
+        hass.states.get.return_value = MagicMock(state="off")
+
+        expected = t.date() == datetime.now().date()
+        assert is_within_working_hours(office_cfg, t, hass=hass) is (not expected)
+
+    def test_office_workday_sensor_on_keeps_active(self, office_cfg):
+        t = _today_or_next_weekday_at(10, 0)
+        hass = MagicMock()
+        hass.states.get.return_value = MagicMock(state="on")
+
+        assert is_within_working_hours(office_cfg, t, hass=hass) is True
+
+    def test_office_missing_workday_sensor_falls_back_to_static_logic(self, office_cfg):
+        t = _today_or_next_weekday_at(10, 0)
+        hass = MagicMock()
+        hass.states.get.return_value = None
+
+        assert is_within_working_hours(office_cfg, t, hass=hass) is True
+
 
 # -----------------------------------------------------------------------------
-# should_ai_be_active (wrapper)
+# should_ai_be_active
 # -----------------------------------------------------------------------------
 
 class TestShouldAiBeActive:
@@ -266,6 +342,14 @@ class TestShouldAiBeActive:
     def test_office_mode_weekday_active(self, office_cfg):
         t = datetime(2026, 2, 18, 14, 0)  # Wednesday afternoon
         assert should_ai_be_active(office_cfg, t) is True
+
+    def test_wrapper_forwards_hass_for_workday_check(self, office_cfg):
+        t = _today_or_next_weekday_at(10, 0)
+        hass = MagicMock()
+        hass.states.get.return_value = MagicMock(state="off")
+
+        expected = t.date() == datetime.now().date()
+        assert should_ai_be_active(office_cfg, t, hass=hass) is (not expected)
 
 
 # -----------------------------------------------------------------------------

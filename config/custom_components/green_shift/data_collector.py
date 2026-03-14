@@ -554,7 +554,7 @@ class DataCollector:
             return
 
         # Check if within working hours (for office mode filtering)
-        within_working_hours = is_within_working_hours(self.config_data, now)
+        within_working_hours = is_within_working_hours(self.config_data, now, hass=self.hass)
 
         # Store global aggregate snapshot
         self.hass.async_create_task(

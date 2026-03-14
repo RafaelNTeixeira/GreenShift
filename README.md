@@ -129,7 +129,19 @@ input_select: !include input_selects.yaml
 input_boolean: !include input_booleans.yaml
 ```
 
-### Step 4: Restart Home Assistant
+### Step 4: Configure Workday integration
+
+Workday is required if you want Green Shift to correctly treat public holidays as non-working days in office mode.
+
+1. Go to **Settings** -> **Devices & Services**
+2. Click **+ ADD INTEGRATION**
+3. Search for **Workday**
+4. Configure your country/region and holiday options
+5. Make sure the entity exists as `binary_sensor.workday_sensor`
+
+> Green Shift uses `binary_sensor.workday_sensor` to avoid generating office-mode activity on holidays.
+
+### Step 5: Restart Home Assistant
 
 ```bash
 # Via Home Assistant UI
@@ -139,7 +151,7 @@ Settings → System → Restart Home Assistant
 ha core restart
 ```
 
-### Step 5: Add the Integration
+### Step 6: Add the Integration
 
 1. Go to **Settings** → **Devices & Services**
 2. Click **+ ADD INTEGRATION**
@@ -440,7 +452,7 @@ All data is stored in: `config/green_shift_data/`
 
 ## 🧪 Testing
 
-Green Shift includes currently **1112 comprehensive tests** covering AI logic, backup systems, configuration and utility functions - with **100% total code coverage**.
+Green Shift includes currently **1129 comprehensive tests** covering AI logic, backup systems, configuration and utility functions - with **100% total code coverage**.
 
 ### Quick Start
 
@@ -467,13 +479,13 @@ python3 -m pytest -n auto tests/test_decision_agent.py -v
 - ✅ **46 tests** - Backup management (100%)
 - ✅ **58 tests** - Config flow & sensor discovery (100%)
 - ✅ **97 tests** - Real-time data collection & energy tracking (100%)
-- ✅ **324 tests** - AI decision agent & Q-learning (100%)
-- ✅ **47 tests** - Helper functions & conversions (100%)
+- ✅ **328 tests** - AI decision agent & Q-learning (100%)
+- ✅ **58 tests** - Helper functions & conversions (100%)
 - ✅ **55 tests** - Integration setup/services/unload/discovery (100%)
 - ✅ **131 tests** - Database operations & persistence (100%)
 - ✅ **129 tests** - Sensor entities (100%)
 - ✅ **37 tests** - Select entities (100%)
-- ✅ **126 tests** - Task generation & verification (100%)
+- ✅ **128 tests** - Task generation & verification (100%)
 - ✅ **62 tests** - Multilingual support & translations (100%)
 
 ### Pre-Commit Hooks

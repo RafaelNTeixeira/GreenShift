@@ -204,7 +204,48 @@ def get_friendly_name(hass: HomeAssistant, entity_id: str) -> str:
     return entity_id
 
 
-def is_within_working_hours(config_data: Dict, check_time: datetime = None) -> bool:
+def is_working_day(config_data: Dict, check_date: datetime = None, hass: HomeAssistant = None) -> bool:
+    """
+    Check if a given date is a working day in office mode.
+    Unlike is_within_working_hours(), this only checks the day-level (no time window check).
+
+    Args:
+        config_data (dict): Configuration data from config entry
+        check_date (datetime): Date to check (defaults to now)
+        hass (HomeAssistant): Optional HA instance for workday sensor check
+
+    Returns:
+        bool: True if it's a working day (or home mode). False for weekends, holidays, non-working days.
+    """
+    environment_mode = config_data.get("environment_mode", ENVIRONMENT_HOME)
+    if environment_mode == ENVIRONMENT_HOME:
+        return True
+
+    if check_date is None:
+        check_date = datetime.now()
+
+    if hasattr(check_date, "tzinfo") and check_date.tzinfo is not None:
+        check_date = check_date.astimezone().replace(tzinfo=None)
+
+    day_obj = check_date.date() if hasattr(check_date, "date") else check_date
+    weekday = day_obj.weekday()
+    working_days = get_working_days_from_config(config_data)
+
+    if weekday not in working_days:
+        return False
+
+    # Consult workday sensor only for today (sensor only reflects current day)
+    if hass is not None and getattr(hass, "states", None):
+        today = datetime.now().date()
+        if day_obj == today:
+            workday_state = hass.states.get("binary_sensor.workday_sensor")
+            if workday_state and workday_state.state == "off":
+                return False
+
+    return True
+
+
+def is_within_working_hours(config_data: Dict, check_time: datetime = None, hass: HomeAssistant = None) -> bool:
     """
     Check if the current (or specified) time is within configured working hours.
     Only applies to office environments.
@@ -212,6 +253,7 @@ def is_within_working_hours(config_data: Dict, check_time: datetime = None) -> b
     Args:
         config_data (dict): Configuration data from config entry
         check_time (datetime): Time to check (defaults to current time)
+        hass (HomeAssistant): Optional Home Assistant instance used to consult Workday sensor
 
     Returns:
         bool: True if within working hours OR if in home mode (always active). False if outside working hours in office mode.
@@ -229,11 +271,7 @@ def is_within_working_hours(config_data: Dict, check_time: datetime = None) -> b
     if check_time.tzinfo is not None:
         check_time = check_time.astimezone().replace(tzinfo=None)
 
-    # Check if today is a working day
-    weekday = check_time.weekday()  # Monday=0, Sunday=6
-    working_days = get_working_days_from_config(config_data)
-
-    if weekday not in working_days:
+    if not is_working_day(config_data, check_time, hass=hass):
         return False
 
     # Check if current time is within working hours
@@ -245,7 +283,11 @@ def is_within_working_hours(config_data: Dict, check_time: datetime = None) -> b
         end_time = datetime.strptime(working_end, "%H:%M").time()
         current_time = check_time.time()
 
-        return start_time <= current_time < end_time
+        within_time_window = start_time <= current_time < end_time
+        if not within_time_window:
+            return False
+
+        return True
     except (ValueError, AttributeError):
         # If parsing fails, assume within working hours
         return True
@@ -281,7 +323,7 @@ def get_working_days_from_config(config_data: Dict) -> List[int]:
     return working_days
 
 
-def should_ai_be_active(config_data: Dict, check_time: datetime = None) -> bool:
+def should_ai_be_active(config_data: Dict, check_time: datetime = None, hass: HomeAssistant = None) -> bool:
     """
     Determine if AI operations (tasks, notifications) should be active.
 
@@ -290,11 +332,12 @@ def should_ai_be_active(config_data: Dict, check_time: datetime = None) -> bool:
     Args:
         config_data (dict): Configuration data from config entry
         check_time (datetime): Time to check (defaults to current time)
+        hass (HomeAssistant): Optional Home Assistant instance used to consult Workday sensor
 
     Returns:
         bool: True if AI should be active (generate tasks/notifications). False if AI should be paused
     """
-    return is_within_working_hours(config_data, check_time)
+    return is_within_working_hours(config_data, check_time, hass=hass)
 
 def get_daily_working_hours(config_data: dict) -> float:
     """

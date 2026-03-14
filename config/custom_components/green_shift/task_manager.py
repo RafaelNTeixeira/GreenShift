@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import TASK_GENERATION_TIME, ENVIRONMENT_OFFICE, OUTDOOR_COLD_TEMP_THRESHOLD, OUTDOOR_HOT_TEMP_THRESHOLD, BASE_TEMPERATURE
 from .translations_runtime import get_language, get_task_templates, get_difficulty_display, get_verification_reason_templates
-from .helpers import should_ai_be_active, get_working_days_from_config
+from .helpers import should_ai_be_active, get_working_days_from_config, is_working_day
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,11 +62,16 @@ class TaskManager:
         """
         # In office mode: only generate tasks on working days.
         if self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE:
-            working_days = get_working_days_from_config(self.config_data)
-            today_weekday = datetime.now().weekday()
-            if today_weekday not in working_days:
-                _LOGGER.debug("Not a working day (weekday=%d, working_days=%s) - task generation skipped",
-                    today_weekday, working_days)
+            now = datetime.now()
+            if not is_working_day(self.config_data, now, hass=self.hass):
+                working_days = get_working_days_from_config(self.config_data)
+                if now.weekday() in working_days:
+                    # Configured weekday but workday_sensor says off -> holiday.
+                    if self.decision_agent and hasattr(self.decision_agent, "record_holiday_skip"):
+                        self.decision_agent.record_holiday_skip(now.date())
+                    _LOGGER.debug("Holiday detected (workday_sensor=off) on %s - task generation skipped", now.date())
+                else:
+                    _LOGGER.debug("Not a working day (weekday=%d) - task generation skipped", now.weekday())
                 return []
 
         today = datetime.now().strftime("%Y-%m-%d")
@@ -84,6 +89,9 @@ class TaskManager:
                 for offset in range(1, 8):
                     candidate = datetime.now().date() - timedelta(days=offset)
                     if candidate.weekday() in working_days:
+                        holiday_dates = getattr(self.decision_agent, "holiday_skip_dates", set()) if self.decision_agent else set()
+                        if isinstance(holiday_dates, set) and candidate in holiday_dates:
+                            continue
                         check_date = candidate
                         break
 

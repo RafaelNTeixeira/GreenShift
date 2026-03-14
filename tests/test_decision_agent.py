@@ -53,6 +53,7 @@ helpers_stub.get_friendly_name = MagicMock(return_value="Mock Sensor")
 helpers_stub.get_normalized_value = MagicMock(return_value=(100.0, "W"))
 helpers_stub.should_ai_be_active = MagicMock(return_value=True)
 helpers_stub.get_working_days_from_config = MagicMock(return_value=list(range(5)))  # Mon-Fri
+helpers_stub.is_working_day = MagicMock(return_value=True)
 sys.modules["custom_components.green_shift.helpers"] = helpers_stub
 
 # Stub translations module
@@ -1437,6 +1438,59 @@ class TestStreaks:
         agent.update_task_streak(True, self._day(10))  # Mon week-2 (7-day gap, includes Tue-Fri) -> 1
 
         assert agent.task_streak == 1
+
+    def test_task_streak_holiday_in_gap_does_not_break(self):
+        """Friday -> Tuesday continues if Monday is recorded as holiday skip."""
+        office_cfg = {"environment_mode": "office", "working_days": [0, 1, 2, 3, 4]}
+        agent = make_agent(config_data=office_cfg)
+        helpers_stub.get_working_days_from_config.return_value = [0, 1, 2, 3, 4]
+
+        friday = self._day(0)
+        monday = self._day(3)
+        tuesday = self._day(4)
+
+        agent.record_holiday_skip(monday)
+        agent.update_task_streak(True, friday)
+        agent.update_task_streak(True, tuesday)
+
+        assert agent.task_streak == 2
+
+    def test_record_holiday_skip_accepts_datetime(self):
+        agent = make_agent(config_data={"environment_mode": "office", "working_days": [0, 1, 2, 3, 4]})
+        dt = datetime(2026, 3, 10, 9, 0)
+        agent.record_holiday_skip(dt)
+        assert dt.date() in agent.holiday_skip_dates
+
+
+class TestHolidaySkipPersistence:
+
+    @pytest.mark.asyncio
+    async def test_save_state_includes_holiday_skip_dates(self):
+        from datetime import date as _date_cls
+        agent = make_agent(config_data={"environment_mode": "office"})
+        agent.storage = AsyncMock()
+        agent.storage.load_state = AsyncMock(return_value={})
+        agent.storage.save_state = AsyncMock()
+        agent.holiday_skip_dates = {_date_cls(2026, 3, 10)}
+
+        await agent._save_persistent_state()
+
+        saved_state = agent.storage.save_state.call_args[0][0]
+        assert "holiday_skip_dates" in saved_state
+        assert "2026-03-10" in saved_state["holiday_skip_dates"]
+
+    @pytest.mark.asyncio
+    async def test_load_state_parses_holiday_skip_dates(self):
+        from datetime import date as _date_cls
+        agent = make_agent(config_data={"environment_mode": "office"})
+        agent.storage = AsyncMock()
+        agent.storage.load_state = AsyncMock(return_value={
+            "holiday_skip_dates": ["2026-03-10", "invalid-date"]
+        })
+
+        await agent._load_persistent_state()
+
+        assert _date_cls(2026, 3, 10) in agent.holiday_skip_dates
 
 
 # -----------------------------------------------------------------------------
