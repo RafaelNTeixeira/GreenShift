@@ -4,14 +4,14 @@ Green Shift includes a comprehensive test suite covering core functionality and 
 
 ## Coverage Summary
 
-**1140 tests** across 11 modules - total measured coverage **100%**.
+**1153 tests** across 11 modules - total measured coverage **100%**.
 
 | Module | Tests | Coverage | Notes |
 |--------|-------|----------|-------|
 | `test_backup_manager.py` | 46 | **100%** | Backup creation, cleanup, restoration |
 | `test_config_flow.py` | 58 | **100%** | Config flow, sensor discovery, area assignment |
 | `test_data_collector.py` | 97 | **100%** | Real-time monitoring, energy tracking |
-| `test_decision_agent.py` | 335 | **100%** | AI model, Q-learning, fatigue tracking, engagement persistence, state persistence, action masking |
+| `test_decision_agent.py` | 348 | **100%** | AI model, Q-learning, fatigue tracking, engagement persistence, state persistence, action masking |
 | `test_helpers.py` | 58 | **100%** | Utility functions, conversions, entity/area resolution, working hours |
 | `test_init.py` | 55 | **100%** | Integration setup/services/unload/discovery and callback/runtime edge paths |
 | `test_select.py` | 37 | **100%** | |
@@ -83,7 +83,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Working hours filtering
 - Sensor cache management
 
-### `test_decision_agent.py` - 335 tests, **100%** coverage
+### `test_decision_agent.py` - 348 tests, **100%** coverage
 - State discretization (power bins, indices)
 - Fatigue index calculation (rejection rate, time decay)
 - Behavior index updates (EMA)

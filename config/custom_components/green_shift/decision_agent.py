@@ -982,13 +982,17 @@ class DecisionAgent:
         now = datetime.now()
         hour = now.hour
 
-        # Good notification times (morning, lunch, evening)
-        if 7 <= hour <= 9 or 12 <= hour <= 14 or 18 <= hour <= 21:
+        # Good notification times
+        if hour >= 22 or hour < 7: # Night/Standby
+            time_score = 0.1
+        elif hour < 10:            # Morning Peak
+            time_score = 0.9
+        elif hour < 14:            # Midday
+            time_score = 0.8
+        elif hour < 19:            # Daytime + Late Afternoon
+            time_score = 0.9
+        else:                      # Evening Peak
             time_score = 1.0
-        elif 22 <= hour or hour < 7:
-            time_score = 0.2  # Bad time
-        else:
-            time_score = 0.6  # Neutral
 
         # Boost if building is occupied
         current_state = self.data_collector.get_current_state()
@@ -1694,14 +1698,20 @@ class DecisionAgent:
         current_power = self.data_collector.get_current_state().get("power", 0)
         deviation = (current_power - self.baseline_consumption) / self.baseline_consumption
 
+        now_hour = datetime.now().hour
+        is_night = now_hour >= 22 or now_hour < 7
+
         if deviation < 0:
             # Below baseline: noop was clearly the right choice.
             return 0.2
         elif deviation < 0.3:
             # Near baseline: mild preference toward intervening.
-            return -0.1
+            return 0.0 if is_night else -0.1
         else:
             # Significantly above baseline: missed opportunity.
+            if is_night:
+                # Relax penalty during the night (forgive the AI for ignoring spikes while user sleeps)
+                return -0.1
             return max(-0.5, -deviation * 0.5)
 
     async def _update_anomaly_index(self):
@@ -1929,7 +1939,7 @@ class DecisionAgent:
         """
         Converts continuous state vector to discrete tuple for Q-table.
 
-        State Space: ~960 possible states (5x4x3x2x4x2)
+        State Space: ~1200 possible states (5x4x3x2x5x2)
 
         State components:
         - power_level: 0=standby(<5% baseline), 1=low(5-50%), 2=medium(50-150%),
@@ -1939,7 +1949,12 @@ class DecisionAgent:
         - anomaly_level: 0=none(<0.25), 1=low(0.25-0.5), 2=medium(0.5-0.75), 3=high(>0.75)
         - fatigue_level: 0=low(<0.33), 1=medium(0.33-0.66), 2=high(>0.66)
         - has_area_anomaly: 0=no area anomalies, 1=area anomalies present
-        - time_period: 0=night, 1=morning, 2=afternoon, 3=evening
+        - time_period:
+            0=22:00-07:00 (Night/Inactive)
+            1=07:00-10:00 (Morning Peak)
+            2=10:00-14:00 (Midday)
+            3=14:00-19:00 (Afternoon)
+            4=19:00-22:00 (Evening Peak)
         - is_occupied: 0=not occupied, 1=occupied
 
         Returns:
@@ -1978,16 +1993,18 @@ class DecisionAgent:
         area_anomaly_count = int(self.state_vector[15])
         has_area_anomaly = 1 if area_anomaly_count > 0 else 0
 
-        # Time of day (0=night, 1=morning, 2=afternoon, 3=evening)
-        time_of_day = self.state_vector[16]  # 0-1 normalized
-        if time_of_day < 0.25:  # 0:00-6:00
+        # Time of day bucket based on normalized hour from state vector.
+        current_hour = self.state_vector[16] * 24.0
+        if current_hour >= 22.0 or current_hour < 7.0:  # 22:00-07:00
             time_period = 0
-        elif time_of_day < 0.5:  # 6:00-12:00
+        elif current_hour < 10.0:  # 07:00-10:00
             time_period = 1
-        elif time_of_day < 0.75:  # 12:00-18:00
+        elif current_hour < 14.0:  # 10:00-14:00
             time_period = 2
-        else:  # 18:00-24:00
+        elif current_hour < 19.0:  # 14:00-19:00
             time_period = 3
+        else:  # 19:00-22:00
+            time_period = 4
 
         # Occupancy (binary)
         is_occupied = int(self.state_vector[10])
@@ -2032,13 +2049,17 @@ class DecisionAgent:
         now = datetime.now()
         hour = now.hour
 
-        # Better times: morning (7-9), lunch (12-14), evening (18-21)
-        if 7 <= hour <= 9 or 12 <= hour <= 14 or 18 <= hour <= 21:
+        # Align context timing with the same 5-period day partition used in _discretize_state.
+        if hour >= 22 or hour < 7: # Night / Inactive
+            time_score = 0.1 
+        elif hour < 10:            # Morning Peak
+            time_score = 0.9
+        elif hour < 14:            # Midday
+            time_score = 0.8
+        elif hour < 19:            # Afternoon
+            time_score = 0.9
+        else:                      # Evening Peak
             time_score = 1.0
-        elif 22 <= hour or hour < 7: # Late night/early morning - poor time
-            time_score = 0.3
-        else:
-            time_score = 0.7
 
         # Boost if occupied
         occupancy = 1.0 if current_state.get("occupancy", False) else 0.5
@@ -2086,9 +2107,9 @@ class DecisionAgent:
         # Decrease cooldown during peak energy usage hours (more opportunities)
         now = datetime.now()
         hour = now.hour
-        if 17 <= hour <= 22:  # Evening peak
+        if 17 <= hour < 22:  # Evening peak
             time_multiplier = 0.7
-        elif 7 <= hour <= 9:  # Morning peak
+        elif 7 <= hour < 10:  # Morning peak
             time_multiplier = 0.8
         else:
             time_multiplier = 1.0

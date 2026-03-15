@@ -226,14 +226,18 @@ class TestDiscreteState:
         assert agent._discretize_state()[2] == expected_level
 
     @pytest.mark.parametrize("time_val,expected_period", [
-        (0.0,  0),  # night
-        (0.24, 0),  # night
-        (0.25, 1),  # morning
-        (0.49, 1),  # morning
-        (0.50, 2),  # afternoon
-        (0.74, 2),  # afternoon
-        (0.75, 3),  # evening
-        (1.0,  3),  # evening
+        (0.00, 0),            # 00:00 
+        (6.99 / 24.0, 0),     # just before 07:00
+        (7.00 / 24.0, 1),     # 07:00 
+        (9.99 / 24.0, 1),     # just before 10:00
+        (10.00 / 24.0, 2),    # 10:00 
+        (13.99 / 24.0, 2),    # just before 14:00
+        (14.00 / 24.0, 3),    # 14:00 
+        (18.99 / 24.0, 3),    # just before 19:00
+        (19.00 / 24.0, 4),    # 19:00 
+        (21.99 / 24.0, 4),    # just before 22:00
+        (22.00 / 24.0, 0),    # 22:00
+        (1.00, 0),            # 24:00 (equivalent to 00:00)
     ])
     def test_time_period(self, time_val, expected_period):
         agent = make_agent()
@@ -3827,6 +3831,16 @@ class TestComputeNoopRewardNearBaseline:
             f"30%% deviation must use miss-band formula (< -0.1), got {reward}"
         )
 
+    def test_high_deviation_at_night_uses_relaxed_penalty(self):
+        """At night, high deviation should return the fixed relaxed penalty (-0.1)."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 2000.0})
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 22, 0, 0)
+            reward = agent._compute_noop_reward()
+        assert reward == pytest.approx(-0.1)
+
 
 # -----------------------------------------------------------------------------
 # _calculate_opportunity_score: direct parametric tests
@@ -3943,6 +3957,46 @@ class TestCalculateOpportunityScore:
                 assert 0.0 <= score <= 1.0, (
                     f"Score {score} out of [0,1] for inputs: {c}"
                 )
+
+    @pytest.mark.asyncio
+    async def test_post_work_period_uses_medium_time_score_branch(self):
+        """19:00-24:00 should use the post-work time bucket branch."""
+        agent = self._base_agent(power=1000.0, baseline=1000.0, occupancy=True,
+                                 anomaly=0.0, fatigue=0.0, behaviour=1.0)
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 20, 0, 0)
+            score = await agent._calculate_opportunity_score()
+
+        # savings=0, urgency=0, receptiveness=1.0
+        # day_period=4 -> time_score=1.0; occupancy=True -> context=1.0
+        # score = 0.20*1.0 + 0.10*1.0 = 0.30
+        assert score == pytest.approx(0.30, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_startup_period_uses_high_time_score_branch(self):
+        """07:00-10:00 bucket should map to high time_score (day_period=1)."""
+        agent = self._base_agent(power=1000.0, baseline=1000.0, occupancy=True,
+                                 anomaly=0.0, fatigue=0.0, behaviour=1.0)
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 8, 0, 0)
+            score = await agent._calculate_opportunity_score()
+
+        # day_period=1 -> time_score=0.9; occupancy=True -> context=0.95
+        # score = 0.20*1.0 + 0.10*0.95 = 0.295
+        assert score == pytest.approx(0.295, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_late_afternoon_period_uses_medium_time_score_branch(self):
+        """14:00-19:00 bucket should map to high time_score (day_period=3)."""
+        agent = self._base_agent(power=1000.0, baseline=1000.0, occupancy=True,
+                                 anomaly=0.0, fatigue=0.0, behaviour=1.0)
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 16, 0, 0)
+            score = await agent._calculate_opportunity_score()
+
+        # day_period=3 -> time_score=0.9; occupancy=True -> context=0.95
+        # score = 0.20*1.0 + 0.10*0.95 = 0.295
+        assert score == pytest.approx(0.295, abs=0.01)
 
     @pytest.mark.asyncio
     async def test_behaviour_floor_keeps_receptiveness_non_zero(self):
@@ -4631,7 +4685,7 @@ class TestDecisionAgentFinalCoverage:
         agent._cached_power_h1 = [(None, 300.0)] * 20
 
         with patch.object(da_mod, "datetime") as mock_dt:
-            mock_dt.now.return_value = datetime(2026, 2, 20, 23, 0, 0)
+            mock_dt.now.return_value = datetime(2026, 2, 20, 22, 0, 0)
             reward = await agent._calculate_shadow_reward(ACTIONS["specific"])
 
         assert isinstance(reward, float)
@@ -4643,6 +4697,17 @@ class TestDecisionAgentFinalCoverage:
 
         with patch.object(da_mod, "datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2026, 2, 20, 10, 0, 0)
+            reward = await agent._calculate_shadow_reward(ACTIONS["specific"])
+
+        assert isinstance(reward, float)
+
+    @pytest.mark.asyncio
+    async def test_shadow_reward_evening_peak_time_score_branch(self):
+        agent = make_agent()
+        agent._cached_power_h1 = [(None, 300.0)] * 20
+
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 20, 20, 0, 0)
             reward = await agent._calculate_shadow_reward(ACTIONS["specific"])
 
         assert isinstance(reward, float)
@@ -4827,7 +4892,7 @@ class TestDecisionAgentFinalCoverage:
         assert context["percent_below"] == 5
 
     @pytest.mark.asyncio
-    async def test_gather_context_covers_afternoon_and_evening_time_keys(self):
+    async def test_gather_context_covers_morning_afternoon_evening_and_night_time_keys(self):
         agent = make_agent()
         agent.baseline_consumption = 500.0
         agent.data_collector.get_current_state = MagicMock(return_value={
@@ -4841,8 +4906,12 @@ class TestDecisionAgentFinalCoverage:
         agent._find_highest_anomaly_area = AsyncMock(return_value=(None, None))
 
         seen = []
-        with patch.object(da_mod, "get_time_of_day_name", side_effect=lambda key, lang: key):
+        with patch.object(da_mod, "get_time_of_day_name", side_effect=lambda key, lang: key) as tod_mock:
             with patch.object(da_mod, "datetime") as mock_dt:
+                mock_dt.now.return_value = datetime(2026, 2, 20, 8, 0, 0)
+                ctx0 = await agent._gather_notification_context("specific")
+                seen.append(ctx0["time_of_day"])
+
                 mock_dt.now.return_value = datetime(2026, 2, 20, 13, 0, 0)
                 ctx1 = await agent._gather_notification_context("specific")
                 seen.append(ctx1["time_of_day"])
@@ -4851,7 +4920,13 @@ class TestDecisionAgentFinalCoverage:
                 ctx2 = await agent._gather_notification_context("specific")
                 seen.append(ctx2["time_of_day"])
 
-        assert seen == ["afternoon", "evening"]
+                mock_dt.now.return_value = datetime(2026, 2, 20, 1, 0, 0)
+                ctx3 = await agent._gather_notification_context("specific")
+                seen.append(ctx3["time_of_day"])
+
+            assert seen == ["morning", "afternoon", "evening", "night"]
+            called_keys = [c.args[0] for c in tod_mock.call_args_list]
+            assert called_keys == ["morning", "afternoon", "evening", "night"]
 
     @pytest.mark.asyncio
     async def test_find_top_consumer_no_sensors_returns_none_tuple(self):

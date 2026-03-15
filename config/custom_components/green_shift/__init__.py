@@ -657,15 +657,22 @@ async def async_setup_services(hass: HomeAssistant):
 
         # Basic stats
         total_states = len(agent.q_table)
+        theoretical_states = 5 * 4 * 3 * 2 * 5 * 2
         _LOGGER.info(f"Total states in Q-table: {total_states}")
-        _LOGGER.info(f"Theoretical max states: 5*4*3*2*4*2 = 960")
-        _LOGGER.info(f"State space usage: {total_states/960*100:.2f}%")
+        _LOGGER.info(f"Theoretical max states: 5*4*3*2*5*2 = {theoretical_states}")
+        _LOGGER.info(f"State space usage: {total_states/theoretical_states*100:.2f}%")
 
         # Current state
         current_state_key = agent._discretize_state()
         anomaly_labels = ['none', 'low', 'medium', 'high']
         fatigue_labels = ['low', 'medium', 'high']
-        time_labels = ['night', 'morning', 'afternoon', 'evening']
+        time_labels = [
+            'Night/Inactive',
+            'Morning Peak',
+            'Midday',
+            'Afternoon',
+            'Evening Peak',
+        ]
 
         _LOGGER.info(f"\nCurrent discretized state: {current_state_key}")
         _LOGGER.info(f"  power_bin={current_state_key[0]} (~{current_state_key[0]*100}-{(current_state_key[0]+1)*100}W)")
@@ -707,7 +714,7 @@ async def async_setup_services(hass: HomeAssistant):
             _LOGGER.info(f"  Anomaly levels used: {len(set(anomaly_bins))} / 4")
             _LOGGER.info(f"  Fatigue levels used: {len(set(fatigue_bins))} / 3")
             _LOGGER.info(f"  Area anomaly states used: {len(set(area_bins))} / 2")
-            _LOGGER.info(f"  Time periods used: {len(set(time_bins))} / 4")
+            _LOGGER.info(f"  Time periods used: {len(set(time_bins))} / 5")
             _LOGGER.info(f"  Occupancy values used: {len(set(occupancy_bins))} / 2")
 
         # Learning progress
