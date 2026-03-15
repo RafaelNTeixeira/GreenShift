@@ -430,7 +430,7 @@ class SavingsAccumulatedSensor(GreenShiftAISensor):
     async def _async_update_state(self):
         """Fetch data asynchronously and calculate state.
 
-        Uses research_daily_aggregates (never purged) instead of sensor_data.db
+        Uses research_daily_aggregates instead of sensor_data.db
         """
         active_since = getattr(self._agent, 'active_since', None)
         if self._agent.phase == PHASE_BASELINE or active_since is None:
@@ -517,7 +517,7 @@ class CO2SavedSensor(GreenShiftAISensor):
     async def _async_update_state(self):
         """Fetch data asynchronously and calculate CO2 saved.
 
-        Uses research_daily_aggregates (never purged) for full-study accuracy.
+        Uses research_daily_aggregates for full-study accuracy.
         """
         active_since = getattr(self._agent, 'active_since', None)
         if self._agent.phase == PHASE_BASELINE or active_since is None:

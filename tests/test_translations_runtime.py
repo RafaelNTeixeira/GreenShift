@@ -191,6 +191,16 @@ class TestGetNotificationTemplates:
         en_templates = get_notification_templates("en")
         assert templates == en_templates
 
+    def test_en_templates_use_signed_percent_format(self):
+        templates = get_notification_templates("en")
+        assert "{percent_above:+d}" in templates["anomaly"][0]["message"]
+        assert "{percent_above:+d}" in templates["normative"][0]["message"]
+
+    def test_pt_templates_use_signed_percent_format(self):
+        templates = get_notification_templates("pt")
+        assert "{percent_above:+d}" in templates["anomaly"][0]["message"]
+        assert "{percent_above:+d}" in templates["normative"][0]["message"]
+
 
 # -----------------------------------------------------------------------------
 # get_task_templates

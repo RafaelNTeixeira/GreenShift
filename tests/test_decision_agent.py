@@ -2129,6 +2129,21 @@ class TestShadowRewardBranches:
 
         assert reward > 0.0
 
+    @pytest.mark.asyncio
+    async def test_shadow_reward_good_time_window_branch(self):
+        """Covers the good-time temporal branch (07-09 / 12-14 / 18-21)."""
+        agent = make_agent()
+        agent._cached_power_h1 = [(None, 700.0)] * 20
+        agent.baseline_consumption = 500.0
+        agent.anomaly_index = 0.2
+        agent.area_anomalies = {}
+
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 20, 8, 0, 0)
+            reward = await agent._calculate_shadow_reward(ACTIONS["specific"])
+
+        assert isinstance(reward, float)
+
 
 class TestDecideActionPendingEpisode:
 
@@ -4607,6 +4622,26 @@ class TestDecisionAgentFinalCoverage:
             context = await agent._gather_notification_context("specific")
 
         assert context["percent_above"] == 0
+
+    @pytest.mark.asyncio
+    async def test_gather_context_keeps_negative_percentage_when_below_baseline(self):
+        agent = make_agent()
+        agent.baseline_consumption = 800.0
+        agent.data_collector.get_current_state = MagicMock(return_value={
+            "power": 400.0,
+            "temperature": 21.0,
+            "illuminance": 100,
+            "occupancy": True,
+        })
+        agent.data_collector.get_area_state = MagicMock(return_value={"temperature": 21.0})
+        agent._find_top_consumer = AsyncMock(return_value=("Heater", 100.0))
+        agent._find_highest_anomaly_area = AsyncMock(return_value=("Office", "temperature"))
+
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 20, 13, 0, 0)
+            context = await agent._gather_notification_context("normative")
+
+        assert context["percent_above"] < 0
 
     @pytest.mark.asyncio
     async def test_gather_context_covers_afternoon_and_evening_time_keys(self):

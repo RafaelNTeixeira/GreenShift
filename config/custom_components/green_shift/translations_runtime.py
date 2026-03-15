@@ -27,7 +27,7 @@ NOTIFICATION_TEMPLATES = {
         "anomaly": [
             {
                 "title": "Unusual Consumption Pattern",
-                "message": "📊 Your current power usage ({current_power}W) is {percent_above}% higher than your typical baseline ({baseline_power}W). Check if any devices were left on accidentally."
+                "message": "📊 Your current power usage ({current_power}W) is {percent_above:+d}% relative to your typical baseline ({baseline_power}W). Check if any devices were left on accidentally."
             },
             {
                 "title": "Energy Anomaly Detected",
@@ -86,7 +86,7 @@ NOTIFICATION_TEMPLATES = {
         "normative": [
             {
                 "title": "Weekly Goal Update",
-                "message": "🎯 Your consumption this week is {percent_above}% above target. You're close to achieving your {target_power}W goal - keep it up!"
+                "message": "🎯 Weekly goal update: your consumption this week is {percent_above:+d}% relative to your target ({target_power}W)."
             },
             {
                 "title": "Progress Check-In",
@@ -94,11 +94,11 @@ NOTIFICATION_TEMPLATES = {
             },
             {
                 "title": "Benchmark Update",
-                "message": "📈 Your current energy use ({current_power}W) is {percent_above}% above your personal best. Let's work together to improve this week."
+                "message": "📈 Your current energy use ({current_power}W) is {percent_above:+d}% relative to your benchmark. Let's keep improving this week."
             },
             {
                 "title": "Target Achievement",
-                "message": "🌟 Great progress! You're {percent_above}% away from your weekly reduction target. A few small changes could close the gap."
+                "message": "🌟 Great progress! You're currently {percent_above:+d}% relative to your weekly reduction target."
             }
         ],
 
@@ -123,7 +123,7 @@ NOTIFICATION_TEMPLATES = {
         "anomaly": [
             {
                 "title": "Padrão de Consumo Incomum",
-                "message": "📊 O seu consumo de energia atual ({current_power}W) está {percent_above}% acima da sua baseline típica ({baseline_power}W). Verifique se deixou algum dispositivo ligado acidentalmente."
+                "message": "📊 O seu consumo de energia atual ({current_power}W) está {percent_above:+d}% em relação à sua baseline típica ({baseline_power}W). Verifique se deixou algum dispositivo ligado acidentalmente."
             },
             {
                 "title": "Anomalia de Energia Detetada",
@@ -182,7 +182,7 @@ NOTIFICATION_TEMPLATES = {
         "normative": [
             {
                 "title": "Atualização de Meta Semanal",
-                "message": "🎯 O seu consumo esta semana está {percent_above}% acima da meta. Está perto de atingir o seu objetivo de {target_power}W - continue assim!"
+                "message": "🎯 Atualização de objetivo semanal: o seu consumo esta semana está {percent_above:+d}% em relação à sua meta ({target_power}W)."
             },
             {
                 "title": "Verificação de Progresso",
@@ -190,11 +190,11 @@ NOTIFICATION_TEMPLATES = {
             },
             {
                 "title": "Atualização de Benchmark",
-                "message": "📈 O seu uso de energia atual ({current_power}W) está {percent_above}% acima do seu melhor pessoal. Vamos trabalhar juntos para melhorar esta semana."
+                "message": "📈 O seu uso de energia atual ({current_power}W) está {percent_above:+d}% em relação ao seu benchmark. Vamos continuar a melhorar esta semana."
             },
             {
                 "title": "Conquista de Meta",
-                "message": "🌟 Ótimo progresso! Está a {percent_above}% de distância da sua meta de redução semanal. Algumas pequenas mudanças podem fechar a diferença."
+                "message": "🌟 Ótimo progresso! Está atualmente a {percent_above:+d}% em relação à sua meta de redução semanal."
             }
         ],
 

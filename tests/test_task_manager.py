@@ -1440,11 +1440,21 @@ class TestTaskManagerAdditionalCoverage:
 
     @pytest.mark.asyncio
     async def test_verify_single_task_unknown_type_returns_default_tuple(self):
-        verified, actual, pending = await make_task_manager()._verify_single_task({
-            "task_id": "x",
-            "task_type": "unknown_type",
-            "target_value": 1,
-        })
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        fake_now = real_dt(2026, 2, 19, 20, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task({
+                "task_id": "x",
+                "task_type": "unknown_type",
+                "target_value": 1,
+            })
+
         assert verified is False
         assert actual is None
         assert pending is False

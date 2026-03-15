@@ -1262,7 +1262,7 @@ class DecisionAgent:
         # Calculate percentage difference
         if self.baseline_consumption > 0:
             diff = ((current_state.get("power", 0) - self.baseline_consumption) / self.baseline_consumption) * 100
-            context["percent_above"] = int(abs(diff))
+            context["percent_above"] = int(diff)
         else:
             context["percent_above"] = 0
 
