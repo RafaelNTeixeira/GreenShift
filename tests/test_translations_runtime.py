@@ -375,6 +375,30 @@ class TestGetVerificationReasonTemplates:
         en_templates = get_verification_reason_templates("en")
         assert templates == en_templates
 
+    def test_validation_time_reason_key_exists_in_both_languages(self):
+        en_templates = get_verification_reason_templates("en")
+        pt_templates = get_verification_reason_templates("pt")
+
+        assert "waiting_for_validation_time" in en_templates
+        assert "waiting_for_validation_time" in pt_templates
+        assert "{validation_time}" in en_templates["waiting_for_validation_time"]
+        assert "{validation_time}" in pt_templates["waiting_for_validation_time"]
+
+    def test_validation_progress_reason_key_exists_in_both_languages(self):
+        en_templates = get_verification_reason_templates("en")
+        pt_templates = get_verification_reason_templates("pt")
+
+        assert "waiting_with_current_progress" in en_templates
+        assert "waiting_with_current_progress" in pt_templates
+        assert "{actual}" in en_templates["waiting_with_current_progress"]
+        assert "{target}" in en_templates["waiting_with_current_progress"]
+        assert "{unit}" in en_templates["waiting_with_current_progress"]
+        assert "{validation_time}" in en_templates["waiting_with_current_progress"]
+        assert "{actual}" in pt_templates["waiting_with_current_progress"]
+        assert "{target}" in pt_templates["waiting_with_current_progress"]
+        assert "{unit}" in pt_templates["waiting_with_current_progress"]
+        assert "{validation_time}" in pt_templates["waiting_with_current_progress"]
+
 
 # -----------------------------------------------------------------------------
 # Template content validation

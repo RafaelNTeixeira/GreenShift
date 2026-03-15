@@ -4,21 +4,21 @@ Green Shift includes a comprehensive test suite covering core functionality and 
 
 ## Coverage Summary
 
-**1156 tests** across 11 modules - total measured coverage **100%**.
+**1173 tests** across 11 modules - total measured coverage **100%**.
 
 | Module | Tests | Coverage | Notes |
 |--------|-------|----------|-------|
 | `test_backup_manager.py` | 46 | **100%** | Backup creation, cleanup, restoration |
 | `test_config_flow.py` | 58 | **100%** | Config flow, sensor discovery, area assignment |
 | `test_data_collector.py` | 97 | **100%** | Real-time monitoring, energy tracking |
-| `test_decision_agent.py` | 349 | **100%** | AI model, Q-learning, fatigue tracking, engagement persistence, state persistence, action masking |
+| `test_decision_agent.py` | 351 | **100%** | AI model, Q-learning, fatigue tracking, engagement persistence, state persistence, action masking |
 | `test_helpers.py` | 58 | **100%** | Utility functions, conversions, entity/area resolution, working hours |
 | `test_init.py` | 55 | **100%** | Integration setup/services/unload/discovery and callback/runtime edge paths |
 | `test_select.py` | 37 | **100%** | |
 | `test_sensor.py` | 129 | **100%** | |
 | `test_storage.py` | 131 | **100%** | Database operations, data persistence, retention |
-| `test_task_manager.py` | 130 | **100%** | Task generation/verification and persistence |
-| `test_translations_runtime.py` | 66 | **100%** | Multilingual support, templates |
+| `test_task_manager.py` | 143 | **100%** | Task generation/verification and persistence |
+| `test_translations_runtime.py` | 68 | **100%** | Multilingual support, templates |
 
 ## Running Tests
 
@@ -83,7 +83,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Working hours filtering
 - Sensor cache management
 
-### `test_decision_agent.py` - 349 tests, **100%** coverage
+### `test_decision_agent.py` - 351 tests, **100%** coverage
 - State discretization (power bins, indices)
 - Fatigue index calculation (rejection rate, time decay)
 - Behavior index updates (EMA)
@@ -144,18 +144,21 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Data retention and cleanup (age-based pruning)
 - State file operations (JSON read/write, corrupt-file recovery)
 
-### `test_task_manager.py` - 130 tests, **100%** coverage
+### `test_task_manager.py` - 143 tests, **100%** coverage
 - Task generation with sensor constraints
 - Phase guards (baseline vs active)
 - Working hours enforcement
 - Difficulty multipliers
 - Idempotence (no duplicate tasks in same window)
-- Dynamic difficulty calculation with historical stats (clamping, adjustment, fallback)
+- Dynamic difficulty calculation with historical stats (clamping, adjustment, fallback)- Validation windows for daily-average tasks (home cutoff and office cutoff)
+- Pending feedback reason includes expected validation time and current progress (non-peak tasks)
+- Real-time partial metrics before cutoff (pending task with current running average)
+- Regression checks preventing premature morning verification and streak credit
 - Task generator edge cases (no history, no daytime readings, no occupied areas)
 - Task verification logic (temperature below/above target, no history, pre-verified tasks)
 - Exception handling during verification
 
-### `test_translations_runtime.py` - 66 tests, **100%** coverage
+### `test_translations_runtime.py` - 68 tests, **100%** coverage
 - Language detection and selection
 - Notification template rendering (English and Portuguese)
 - Task template localization

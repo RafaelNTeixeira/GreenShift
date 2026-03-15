@@ -385,6 +385,16 @@ In the **Challenges** tab, rate each task:
 
 This feedback is stored and analyzed to personalize future task generation.
 
+### Task Validation Windows
+
+Daily-average tasks are not finalized immediately after generation.
+
+- Home environment: validation starts at 20:00.
+- Office environment: validation starts 2 hours before the configured `working_end` time.
+- Before the minimum validation time, task status stays pending and the UI reason shows the expected validation time.
+- Before cutoff, the UI still receives current measured values (running average) and the reason includes the current average vs target.
+
+This avoids false early wins (for example, very low standby consumption right after 06:00 generation) and prevents streak/reward credit before a representative day window is observed.
 ---
 
 ## ⚙️ Configuration
@@ -452,7 +462,7 @@ All data is stored in: `config/green_shift_data/`
 
 ## 🧪 Testing
 
-Green Shift includes currently **1156 comprehensive tests** covering AI logic, backup systems, configuration and utility functions - with **100% total code coverage**.
+Green Shift includes currently **1173 comprehensive tests** covering AI logic, backup systems, configuration and utility functions - with **100% total code coverage**.
 
 ### Quick Start
 
@@ -479,14 +489,14 @@ python3 -m pytest -n auto tests/test_decision_agent.py -v
 - ✅ **46 tests** - Backup management (100%)
 - ✅ **58 tests** - Config flow & sensor discovery (100%)
 - ✅ **97 tests** - Real-time data collection & energy tracking (100%)
-- ✅ **349 tests** - AI decision agent & Q-learning (100%)
+- ✅ **351 tests** - AI decision agent & Q-learning (100%)
 - ✅ **58 tests** - Helper functions & conversions (100%)
 - ✅ **55 tests** - Integration setup/services/unload/discovery (100%)
 - ✅ **131 tests** - Database operations & persistence (100%)
 - ✅ **129 tests** - Sensor entities (100%)
 - ✅ **37 tests** - Select entities (100%)
-- ✅ **130 tests** - Task generation & verification (100%)
-- ✅ **66 tests** - Multilingual support & translations (100%)
+- ✅ **143 tests** - Task generation & verification (100%)
+- ✅ **68 tests** - Multilingual support & translations (100%)
 
 ### Pre-Commit Hooks
 

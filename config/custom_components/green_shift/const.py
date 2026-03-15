@@ -52,9 +52,21 @@ WEATHER_ENTITIES = [
     "sensor.outside_temperature",
     "sensor.outdoor_temp"
 ]
+
 # Temperature task tuning
 OUTDOOR_HOT_TEMP_THRESHOLD = 24.0  # °C - above this the system suggests raising AC setpoint (cooling season)
 OUTDOOR_COLD_TEMP_THRESHOLD = 16.0  # °C - below this the system suggests lowering heating setpoint (heating season)
+
+# Task validation settings
+HOME_VALIDATION_CUTOFF_HOUR = 20 # 8 PM cutoff for validating home tasks
+OFFICE_VALIDATION_LEAD_HOURS = 2 # Hours before finish working hours to validate office tasks (e.g., if office ends at 6 PM, validate office tasks starting from 4 PM)
+DAILY_AVERAGE_TASK_TYPES = { # Task types that should be averaged over the day for validation instead of checking individual task performance
+    'temperature_reduction',
+    'temperature_increase',
+    'power_reduction',
+    'daylight_usage',
+    'unoccupied_power',
+}
 
 # Sensor categories and keywords for auto-discovery
 SENSOR_MAPPING = {

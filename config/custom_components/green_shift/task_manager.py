@@ -12,13 +12,11 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from homeassistant.core import HomeAssistant
 
-from .const import TASK_GENERATION_TIME, ENVIRONMENT_OFFICE, OUTDOOR_COLD_TEMP_THRESHOLD, OUTDOOR_HOT_TEMP_THRESHOLD, BASE_TEMPERATURE
+from .const import TASK_GENERATION_TIME, ENVIRONMENT_OFFICE, OUTDOOR_COLD_TEMP_THRESHOLD, OUTDOOR_HOT_TEMP_THRESHOLD, BASE_TEMPERATURE, HOME_VALIDATION_CUTOFF_HOUR, OFFICE_VALIDATION_LEAD_HOURS, DAILY_AVERAGE_TASK_TYPES
 from .translations_runtime import get_language, get_task_templates, get_difficulty_display, get_verification_reason_templates
 from .helpers import should_ai_be_active, get_working_days_from_config, is_working_day
 
 _LOGGER = logging.getLogger(__name__)
-
-
 class TaskManager:
     """Manages daily energy-saving tasks with automatic verification and difficulty adjustment."""
 
@@ -51,6 +49,59 @@ class TaskManager:
             4: 1.25,  # Medium-Hard (125%)
             5: 1.5,   # Hard (150%)
         }
+
+    def _resolve_task_start(self, task: Dict, now: datetime) -> datetime:
+        """Resolve task start timestamp from created_at with safe fallback."""
+        created_at_str = task.get('created_at')
+        if created_at_str:
+            try:
+                return datetime.fromisoformat(str(created_at_str))
+            except (ValueError, TypeError):
+                pass
+
+        return now.replace(
+            hour=TASK_GENERATION_TIME[0],
+            minute=TASK_GENERATION_TIME[1],
+            second=TASK_GENERATION_TIME[2],
+            microsecond=0,
+        )
+
+    def _get_daily_validation_cutoff(self, task_start: datetime) -> datetime:
+        """Compute the earliest time daily-average tasks can be validated."""
+        if self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE:
+            working_end_str = str(self.config_data.get("working_end", "18:00"))
+            try:
+                end_hour, end_minute = map(int, working_end_str.split(":"))
+                end_time = task_start.replace(
+                    hour=max(0, min(23, end_hour)),
+                    minute=max(0, min(59, end_minute)),
+                    second=0,
+                    microsecond=0,
+                )
+            except (ValueError, TypeError):
+                end_time = task_start.replace(hour=18, minute=0, second=0, microsecond=0)
+            cutoff = end_time - timedelta(hours=OFFICE_VALIDATION_LEAD_HOURS)
+        else:
+            cutoff = task_start.replace(
+                hour=HOME_VALIDATION_CUTOFF_HOUR,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+
+        # Ensure we always keep at least one hour of observation window.
+        min_cutoff = task_start + timedelta(hours=1)
+        if cutoff < min_cutoff:
+            cutoff = min_cutoff
+
+        return cutoff
+
+    @staticmethod
+    def _filter_history_window(history: list, start_ts: datetime, end_ts: datetime) -> list:
+        """Filter readings to the inclusive [start_ts, end_ts] window."""
+        if not history:
+            return []
+        return [(ts, value) for ts, value in history if start_ts <= ts <= end_ts]
 
     async def generate_daily_tasks(self) -> List[Dict]:
         """
@@ -222,13 +273,39 @@ class TaskManager:
 
         return outdoor_temp
 
-    def _get_temperature_task_type(self, outdoor_temp: Optional[float]) -> Optional[str]:
-        """Return seasonal temperature task type or None when no thermal action is appropriate."""
+    def _get_temperature_task_type(self, outdoor_temp: Optional[float], reference_time: Optional[datetime] = None) -> Optional[str]:
+        """Return seasonal temperature task type or None when no thermal action is appropriate.
+
+        Uses a generation-time-aware cold threshold to better match Portuguese daily patterns,
+        avoiding early-morning false heating tasks during warmer months.
+        """
         if outdoor_temp is None:
             return None
-        if outdoor_temp > OUTDOOR_HOT_TEMP_THRESHOLD:
+
+        now_ref = reference_time or datetime.now()
+        month = now_ref.month
+        hour = now_ref.hour
+
+        hot_threshold = OUTDOOR_HOT_TEMP_THRESHOLD
+        cold_threshold = OUTDOOR_COLD_TEMP_THRESHOLD
+
+        # Portugal-aware adjustment for task generation around dawn.
+        if 5 <= hour < 9:
+            # Peak Summer (June, July, August, September)
+            if month in (6, 7, 8, 9):
+                cold_threshold = 10.0  # Practically disables heating tasks (only triggers if freezing summer dawn)
+                hot_threshold = 18.0   # If it's already >= 18ºC at 6 AM, it will be a hot afternoon (>28ºC)
+            # (May, October)
+            elif month in (5, 10):
+                cold_threshold = 12.0  # Avoids triggering heating on normal 14ºC spring/autumn mornings
+                hot_threshold = 20.0   # If it's unusually warm (>= 20ºC) at 6 AM, it will be a hot day
+            # Winter & colder months (November, December, January, February, March, April)
+            else:
+                cold_threshold = 16.0
+
+        if outdoor_temp > hot_threshold:
             return "temperature_increase"
-        if outdoor_temp <= OUTDOOR_COLD_TEMP_THRESHOLD:
+        if outdoor_temp <= cold_threshold:
             return "temperature_reduction"
         return None
 
@@ -244,8 +321,9 @@ class TaskManager:
         Returns:
             dict: A task dictionary or None if it cannot be generated.
         """
+        generation_ts = datetime.now()
         outdoor_temp = self._resolve_outdoor_temperature()
-        task_type = self._get_temperature_task_type(outdoor_temp)
+        task_type = self._get_temperature_task_type(outdoor_temp, generation_ts)
         if not task_type:
             return None
 
@@ -639,6 +717,22 @@ class TaskManager:
             elif pending:
                 if peak_hour is not None:
                     _reason = _reasons["waiting_for_peak_hour"].format(peak_hour=peak_hour)
+                elif task.get('task_type') in DAILY_AVERAGE_TASK_TYPES:
+                    validation_ts = self._get_daily_validation_cutoff(self._resolve_task_start(task, _now))
+                    if actual_value is not None:
+                        _reason = _reasons.get(
+                            "waiting_with_current_progress",
+                            _reasons.get("waiting_for_validation_time", _reasons["evaluation_deferred"]),
+                        ).format(
+                            actual=actual_value,
+                            target=target_value,
+                            unit=target_unit,
+                            validation_time=validation_ts.strftime("%H:%M"),
+                        )
+                    else:
+                        _reason = _reasons.get("waiting_for_validation_time", _reasons["evaluation_deferred"]).format(
+                            validation_time=validation_ts.strftime("%H:%M")
+                        )
                 else:
                     _reason = _reasons["evaluation_deferred"]
             elif actual_value is not None:
@@ -715,27 +809,21 @@ class TaskManager:
         task_type = task['task_type']
         target_value = task['target_value']
         area_name = task.get('area_name')
+        now = datetime.now()
 
-        # Get today's data. Use the task's created_at as the starting point to ensure we only evaluate data from the day the task was generated.
-        created_at_str = task.get('created_at')
-        if created_at_str:
-            try:
-                today_start = datetime.fromisoformat(str(created_at_str))
-            except (ValueError, TypeError):
-                today_start = datetime.now().replace(
-                    hour=TASK_GENERATION_TIME[0], minute=TASK_GENERATION_TIME[1],
-                    second=TASK_GENERATION_TIME[2], microsecond=0
-                )
-        else:
-            today_start = datetime.now().replace(
-                hour=TASK_GENERATION_TIME[0], minute=TASK_GENERATION_TIME[1],
-                second=TASK_GENERATION_TIME[2], microsecond=0
-            )
-        hours_passed = (datetime.now() - today_start).total_seconds() / 3600
+        # Use task created_at as the baseline to ensure day-bounded verification.
+        today_start = self._resolve_task_start(task, now)
+        hours_passed = (now - today_start).total_seconds() / 3600
 
-        if hours_passed < 1:
-            # Too early to verify
-            return False, None, True
+        eval_end_ts = now
+        is_early_evaluation = False
+        if task_type in DAILY_AVERAGE_TASK_TYPES:
+            validation_cutoff = self._get_daily_validation_cutoff(today_start)
+            if now < validation_cutoff:
+                is_early_evaluation = True
+                eval_end_ts = now
+            else:
+                eval_end_ts = validation_cutoff
 
         try:
             if task_type == 'temperature_reduction':
@@ -743,12 +831,16 @@ class TaskManager:
                 is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
                 working_hours_filter = True if is_office_mode else None
 
-                temp_history = await self.data_collector.get_temperature_history(hours=math.ceil(hours_passed), working_hours_only=working_hours_filter)
+                query_hours = max(1, math.ceil((eval_end_ts - today_start).total_seconds() / 3600))
+                temp_history = await self.data_collector.get_temperature_history(hours=query_hours, working_hours_only=working_hours_filter)
+                temp_history = self._filter_history_window(temp_history, today_start, eval_end_ts)
                 if not temp_history:
-                    return False, None, False
+                    return False, None, is_early_evaluation
                 avg_temp = np.mean([temp for _, temp in temp_history])
                 _LOGGER.debug("Average temperature for verification: %.1f°C, target: %.1f°C", avg_temp, target_value)
                 verified = bool(avg_temp <= target_value)
+                if is_early_evaluation:
+                    return False, round(avg_temp, 2), True
                 return verified, round(avg_temp, 2), False
 
             elif task_type == 'temperature_increase':
@@ -756,35 +848,44 @@ class TaskManager:
                 is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
                 working_hours_filter = True if is_office_mode else None
 
-                temp_history = await self.data_collector.get_temperature_history(hours=math.ceil(hours_passed), working_hours_only=working_hours_filter)
+                query_hours = max(1, math.ceil((eval_end_ts - today_start).total_seconds() / 3600))
+                temp_history = await self.data_collector.get_temperature_history(hours=query_hours, working_hours_only=working_hours_filter)
+                temp_history = self._filter_history_window(temp_history, today_start, eval_end_ts)
                 if not temp_history:
-                    return False, None, False
+                    return False, None, is_early_evaluation
                 avg_temp = np.mean([temp for _, temp in temp_history])
                 _LOGGER.debug("Average temperature for increase verification: %.1f°C, target: %.1f°C", avg_temp, target_value)
                 verified = bool(avg_temp >= target_value)
+                if is_early_evaluation:
+                    return False, round(avg_temp, 2), True
                 return verified, round(avg_temp, 2), False
 
             elif task_type in ['power_reduction', 'daylight_usage']:
                 # Check average power today (working hours only in office mode)
                 is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
                 working_hours_filter = True if is_office_mode else None
+                query_hours = max(1, math.ceil((eval_end_ts - today_start).total_seconds() / 3600))
 
                 power_history = await self.data_collector.get_power_history(
-                    hours=math.ceil(hours_passed), working_hours_only=working_hours_filter
+                    hours=query_hours, working_hours_only=working_hours_filter
                 )
+                power_history = self._filter_history_window(power_history, today_start, eval_end_ts)
                 if not power_history:
-                    return False, None, False
+                    return False, None, is_early_evaluation
 
                 if task_type == 'daylight_usage':
                     # Filter for daytime hours only
                     power_history = [(ts, p) for ts, p in power_history if 8 <= ts.hour < 17]
 
                 if not power_history:
-                    return False, None, False
+                    return False, None, is_early_evaluation
 
                 avg_power = np.mean([power for _, power in power_history])
                 _LOGGER.debug("Average power for verification: %.2fW, target: %.2fW", avg_power, target_value)
-                return avg_power <= target_value, round(avg_power, 2), False
+                verified = bool(avg_power <= target_value)
+                if is_early_evaluation:
+                    return False, round(avg_power, 2), True
+                return verified, round(avg_power, 2), False
 
             elif task_type == 'unoccupied_power':
                 # Check area-specific power during unoccupied periods only
@@ -794,16 +895,19 @@ class TaskManager:
                 # Apply working-hours filter in office mode for consistency with task generation.
                 is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
                 working_hours_filter = True if is_office_mode else None
+                query_hours = max(1, math.ceil((eval_end_ts - today_start).total_seconds() / 3600))
 
                 area_power_history = await self.data_collector.get_area_history(
-                    area_name, 'power', hours=math.ceil(hours_passed), working_hours_only=working_hours_filter
+                    area_name, 'power', hours=query_hours, working_hours_only=working_hours_filter
                 )
+                area_power_history = self._filter_history_window(area_power_history, today_start, eval_end_ts)
                 if not area_power_history:
-                    return False, None, False
+                    return False, None, is_early_evaluation
 
                 area_occ_history = await self.data_collector.get_area_history(
-                    area_name, 'occupancy', hours=math.ceil(hours_passed), working_hours_only=working_hours_filter
+                    area_name, 'occupancy', hours=query_hours, working_hours_only=working_hours_filter
                 )
+                area_occ_history = self._filter_history_window(area_occ_history, today_start, eval_end_ts)
                 if area_occ_history:
                     occ_by_minute = {
                         ts.replace(second=0, microsecond=0): bool(occ)
@@ -817,14 +921,17 @@ class TaskManager:
                     unoccupied_powers = [p for _, p in area_power_history]
 
                 if not unoccupied_powers:
-                    return False, None, False
+                    return False, None, is_early_evaluation
 
                 avg_unoccupied_power = np.mean(unoccupied_powers)
                 _LOGGER.debug(
                     "Average unoccupied power in area %s for verification: %.2fW, target: %.2fW",
                     area_name, avg_unoccupied_power, target_value
                 )
-                return avg_unoccupied_power <= target_value, round(avg_unoccupied_power, 2), False
+                verified = bool(avg_unoccupied_power <= target_value)
+                if is_early_evaluation:
+                    return False, round(avg_unoccupied_power, 2), True
+                return verified, round(avg_unoccupied_power, 2), False
 
             elif task_type == 'peak_avoidance':
                 # Use the peak_hour stored at task generation: only that hour is evaluated
@@ -833,18 +940,24 @@ class TaskManager:
                     _LOGGER.warning("peak_avoidance task %s missing peak_hour field; cannot verify", task.get('task_id'))
                     return False, None, False
 
+                peak_hour_start = today_start.replace(hour=peak_hour, minute=0, second=0, microsecond=0)
+                peak_hour_end = peak_hour_start + timedelta(hours=1)
+                if now < peak_hour_end:
+                    _LOGGER.debug("Peak avoidance task %s: waiting for full peak window ending at %02d:00",
+                                  task.get('task_id'), peak_hour_end.hour)
+                    return False, None, True
+
                 is_office_mode = self.config_data.get("environment_mode") == ENVIRONMENT_OFFICE
                 working_hours_filter = True if is_office_mode else None
                 power_history = await self.data_collector.get_power_history(hours=math.ceil(hours_passed), working_hours_only=working_hours_filter)
                 if not power_history:
                     return False, None, False
 
-                peak_hour_powers = [p for ts, p in power_history if ts.hour == peak_hour]
+                peak_hour_powers = [p for ts, p in power_history if peak_hour_start <= ts < peak_hour_end]
                 if not peak_hour_powers:
-                    # Peak hour has not been reached yet today – result is deferred, not failed
-                    _LOGGER.debug("Peak avoidance task %s: peak hour %02d:00 not reached yet; deferring",
-                                  task.get('task_id'), peak_hour)
-                    return False, None, True  # pending=True
+                    _LOGGER.debug("Peak avoidance task %s: no readings in peak window %02d:00-%02d:00",
+                                  task.get('task_id'), peak_hour, (peak_hour + 1) % 24)
+                    return False, None, False
 
                 avg_peak = np.mean(peak_hour_powers)
                 _LOGGER.debug(

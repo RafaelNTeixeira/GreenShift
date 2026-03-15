@@ -957,23 +957,24 @@ class TestVerificationTimeAnchor:
     @pytest.mark.asyncio
     async def test_hours_passed_ceil_not_truncated(self):
         """_verify_single_task must use math.ceil, not int().
-        created_at 06:00, fake_now 13:54 -> hours_passed=7.9 -> query must ask for 8 h."""
+        Uses peak_avoidance path (not daily-cutoff bounded) to assert ceil behavior."""
         from unittest.mock import patch
         from datetime import datetime as real_dt
 
         tm = make_task_manager()
         tm.data_collector.get_power_history = AsyncMock(return_value=[
-            (real_dt(2026, 2, 19, 12, i), 300.0) for i in range(30)
+            (real_dt(2026, 2, 19, 13, i), 300.0) for i in range(60)
         ])
         task = {
             "task_id": "ceil_test",
-            "task_type": "power_reduction",
+            "task_type": "peak_avoidance",
             "target_value": 500,
             "area_name": None,
+            "peak_hour": 13,
             "created_at": "2026-02-19T06:00:00",
             "verified": False,
         }
-        fake_now = real_dt(2026, 2, 19, 13, 54, 0)
+        fake_now = real_dt(2026, 2, 19, 14, 54, 0)
         with patch.object(tm_mod, "datetime") as mock_dt:
             mock_dt.now.return_value = fake_now
             mock_dt.fromisoformat = real_dt.fromisoformat
@@ -985,7 +986,75 @@ class TestVerificationTimeAnchor:
             hours_arg = call_kwargs.kwargs["hours"]
         else:
             hours_arg = call_kwargs.args[0] if call_kwargs.args else None
-        assert hours_arg == 8, f"Expected ceil(7.9)=8 but got {hours_arg}"
+        assert hours_arg == 9, f"Expected ceil(8.9)=9 but got {hours_arg}"
+
+    @pytest.mark.asyncio
+    async def test_daily_tasks_stay_pending_before_cutoff(self):
+        """Daily-average tasks must stay pending before the minimum validation time."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 6, i), 120.0) for i in range(30)
+        ])
+
+        task = {
+            "task_id": "early_pending",
+            "task_type": "power_reduction",
+            "target_value": 500,
+            "area_name": None,
+            "created_at": "2026-02-19T06:00:00",
+            "verified": False,
+        }
+
+        fake_now = real_dt(2026, 2, 19, 7, 0, 0)
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert verified is False
+        assert actual == 120.0
+        assert pending is True
+        tm.data_collector.get_power_history.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_office_cutoff_uses_working_end_minus_two_hours(self):
+        """In office mode, minimum validation time should be 2h before working_end."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager(config={"environment_mode": "office", "working_end": "18:00"})
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 9, i), 250.0) for i in range(60)
+        ])
+
+        task = {
+            "task_id": "office_cutoff",
+            "task_type": "power_reduction",
+            "target_value": 500,
+            "area_name": None,
+            "created_at": "2026-02-19T06:00:00",
+            "verified": False,
+        }
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = real_dt(2026, 2, 19, 15, 0, 0)
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            _, _, pending_before = await tm._verify_single_task(task)
+
+        assert pending_before is True
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = real_dt(2026, 2, 19, 16, 0, 0)
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            _, _, pending_at_cutoff = await tm._verify_single_task(task)
+
+        assert pending_at_cutoff is False
 
 
 # -----------------------------------------------------------------------------
@@ -1353,6 +1422,25 @@ class TestVerifySingleTaskTemperature:
 
 class TestTaskManagerAdditionalCoverage:
 
+    def test_daily_validation_cutoff_office_falls_back_on_invalid_working_end(self):
+        tm = make_task_manager(config={"environment_mode": "office", "working_end": "bad-value"})
+        task_start = datetime(2026, 2, 19, 6, 0, 0)
+
+        cutoff = tm._get_daily_validation_cutoff(task_start)
+
+        expected = task_start.replace(hour=18, minute=0, second=0, microsecond=0) - timedelta(
+            hours=tm_mod.OFFICE_VALIDATION_LEAD_HOURS
+        )
+        assert cutoff == expected
+
+    def test_daily_validation_cutoff_respects_minimum_one_hour_window(self):
+        tm = make_task_manager(config={"environment_mode": "office", "working_end": "07:00"})
+        task_start = datetime(2026, 2, 19, 6, 0, 0)
+
+        cutoff = tm._get_daily_validation_cutoff(task_start)
+
+        assert cutoff == task_start + timedelta(hours=1)
+
     @pytest.mark.asyncio
     async def test_generate_daily_tasks_ignores_generator_exception(self):
         tm = make_task_manager()
@@ -1428,7 +1516,7 @@ class TestTaskManagerAdditionalCoverage:
         assert "target was" in reason
 
     @pytest.mark.asyncio
-    async def test_verify_tasks_pending_non_peak_uses_evaluation_deferred_reason(self):
+    async def test_verify_tasks_pending_non_peak_uses_validation_time_reason(self):
         tm = make_task_manager()
         today_str = datetime.now().strftime("%Y-%m-%d")
         tm.storage.get_today_tasks = AsyncMock(return_value=[{
@@ -1446,7 +1534,84 @@ class TestTaskManagerAdditionalCoverage:
         await tm.verify_tasks()
 
         reason = tm._last_verification_results["pending_non_peak"]["reason"]
+        assert "validated at" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_verify_tasks_pending_non_peak_with_actual_shows_progress_reason(self):
+        tm = make_task_manager()
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        tm.storage.get_today_tasks = AsyncMock(return_value=[{
+            "task_id": "pending_non_peak_progress",
+            "task_type": "power_reduction",
+            "target_value": 100,
+            "target_unit": "W",
+            "verified": False,
+            "area_name": None,
+            "created_at": f"{today_str}T06:00:00",
+            "peak_hour": None,
+        }])
+
+        tm._verify_single_task = AsyncMock(return_value=(False, 120.0, True))
+        await tm.verify_tasks()
+
+        reason = tm._last_verification_results["pending_non_peak_progress"]["reason"].lower()
+        assert "current avg" in reason
+        assert "120.0w" in reason
+        assert "target: 100w" in reason
+        assert "validation" in reason
+
+    @pytest.mark.asyncio
+    async def test_verify_tasks_pending_unknown_type_uses_evaluation_deferred_reason(self):
+        tm = make_task_manager()
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        tm.storage.get_today_tasks = AsyncMock(return_value=[{
+            "task_id": "pending_unknown",
+            "task_type": "custom_unknown",
+            "target_value": 100,
+            "target_unit": "W",
+            "verified": False,
+            "area_name": None,
+            "created_at": f"{today_str}T06:00:00",
+            "peak_hour": None,
+        }])
+
+        tm._verify_single_task = AsyncMock(return_value=(False, None, True))
+        await tm.verify_tasks()
+
+        reason = tm._last_verification_results["pending_unknown"]["reason"]
         assert "deferred" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_verify_tasks_does_not_mark_success_before_cutoff(self):
+        """A low early-morning average must not prematurely complete and persist a task."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        tm.storage.get_today_tasks = AsyncMock(return_value=[{
+            "task_id": "no_early_win",
+            "task_type": "power_reduction",
+            "target_value": 500,
+            "target_unit": "W",
+            "verified": False,
+            "area_name": None,
+            "created_at": "2026-02-19T06:00:00",
+            "peak_hour": None,
+        }])
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 6, i), 120.0) for i in range(60)
+        ])
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = real_dt(2026, 2, 19, 7, 0, 0)
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            results = await tm.verify_tasks()
+
+        assert results["no_early_win"] is False
+        tm.storage.mark_task_verified.assert_not_called()
+        tm.storage.log_task_completion.assert_not_called()
+        tm.decision_agent.update_task_streak.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_verify_single_task_invalid_created_at_falls_back(self):
@@ -1475,6 +1640,64 @@ class TestTaskManagerAdditionalCoverage:
         assert verified
         assert actual is not None
         assert pending is False
+
+    @pytest.mark.asyncio
+    async def test_verify_single_task_temperature_reduction_returns_actual_while_pending_before_cutoff(self):
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager(sensors={"temperature": ["sensor.t1"]})
+        tm.data_collector.get_temperature_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 6, 0, 0), 19.0),
+            (real_dt(2026, 2, 19, 6, 30, 0), 21.0),
+        ])
+
+        task = {
+            "task_id": "temp_early",
+            "task_type": "temperature_reduction",
+            "target_value": 22.0,
+            "created_at": "2026-02-19T06:00:00",
+            "verified": False,
+        }
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = real_dt(2026, 2, 19, 7, 0, 0)
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert verified is False
+        assert actual == 20.0
+        assert pending is True
+
+    @pytest.mark.asyncio
+    async def test_verify_single_task_temperature_increase_returns_actual_while_pending_before_cutoff(self):
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager(sensors={"temperature": ["sensor.t1"]})
+        tm.data_collector.get_temperature_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 6, 0, 0), 24.0),
+            (real_dt(2026, 2, 19, 6, 30, 0), 26.0),
+        ])
+
+        task = {
+            "task_id": "temp_inc_early",
+            "task_type": "temperature_increase",
+            "target_value": 23.0,
+            "created_at": "2026-02-19T06:00:00",
+            "verified": False,
+        }
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = real_dt(2026, 2, 19, 7, 0, 0)
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert verified is False
+        assert actual == 25.0
+        assert pending is True
 
     @pytest.mark.asyncio
     async def test_verify_single_task_unknown_type_returns_default_tuple(self):
@@ -1526,6 +1749,36 @@ class TestTaskManagerAdditionalCoverage:
         assert pending is False
 
     @pytest.mark.asyncio
+    async def test_verify_single_task_daylight_returns_false_when_daytime_window_empty(self):
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager(config={"environment_mode": "office", "working_end": "10:00"})
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 7, 0, 0), 250.0),
+            (real_dt(2026, 2, 19, 19, 0, 0), 260.0),
+        ])
+
+        task = {
+            "task_id": "day_window_empty",
+            "task_type": "daylight_usage",
+            "target_value": 200,
+            "created_at": "2026-02-19T06:00:00",
+            "verified": False,
+        }
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            fake_now = real_dt(2026, 2, 19, 9, 0, 0)
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert verified is False
+        assert actual is None
+        assert pending is False
+
+    @pytest.mark.asyncio
     async def test_verify_single_task_unoccupied_without_area(self):
         from unittest.mock import patch
         from datetime import datetime as real_dt
@@ -1549,6 +1802,42 @@ class TestTaskManagerAdditionalCoverage:
         assert verified is False
         assert actual is None
         assert pending is False
+
+    @pytest.mark.asyncio
+    async def test_verify_single_task_unoccupied_returns_actual_while_pending_before_cutoff(self):
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        tm.data_collector.get_area_history = AsyncMock(side_effect=[
+            [
+                (real_dt(2026, 2, 19, 6, 0, 0), 120.0),
+                (real_dt(2026, 2, 19, 6, 30, 0), 80.0),
+            ],
+            [
+                (real_dt(2026, 2, 19, 6, 0, 0), 0),
+                (real_dt(2026, 2, 19, 6, 30, 0), 0),
+            ],
+        ])
+
+        task = {
+            "task_id": "unocc_early",
+            "task_type": "unoccupied_power",
+            "target_value": 200,
+            "area_name": "Office",
+            "created_at": "2026-02-19T06:00:00",
+            "verified": False,
+        }
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = real_dt(2026, 2, 19, 7, 0, 0)
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert verified is False
+        assert actual == 100.0
+        assert pending is True
 
     @pytest.mark.asyncio
     async def test_verify_tasks_no_streak_update_when_none_verified(self):
@@ -1690,6 +1979,37 @@ class TestTaskManagerAdditionalCoverage:
         assert v2 is False and a2 is None
         assert v3 is False and a3 is None
         assert v4 is False and a4 is None
+
+    @pytest.mark.asyncio
+    async def test_verify_single_task_peak_avoidance_returns_false_when_peak_window_has_no_points(self):
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager()
+        tm.data_collector.get_power_history = AsyncMock(return_value=[
+            (real_dt(2026, 2, 19, 13, 30, 0), 180.0),
+            (real_dt(2026, 2, 19, 15, 10, 0), 220.0),
+        ])
+
+        task = {
+            "task_id": "peak_gap",
+            "task_type": "peak_avoidance",
+            "target_value": 200,
+            "peak_hour": 14,
+            "created_at": "2026-02-19T06:00:00",
+            "verified": False,
+        }
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            fake_now = real_dt(2026, 2, 19, 16, 0, 0)
+            mock_dt.now.return_value = fake_now
+            mock_dt.fromisoformat = real_dt.fromisoformat
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            verified, actual, pending = await tm._verify_single_task(task)
+
+        assert verified is False
+        assert actual is None
+        assert pending is False
 
     @pytest.mark.asyncio
     async def test_temperature_returns_false_when_no_history(self):
@@ -2276,15 +2596,80 @@ class TestGenerateTemperatureTaskSeasonalDirection:
     @pytest.mark.asyncio
     async def test_exactly_at_cold_threshold_generates_reduction(self):
         """Outdoor temp == OUTDOOR_COLD_TEMP_THRESHOLD (<=) -> reduction task."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
         cold_threshold = tm_mod.OUTDOOR_COLD_TEMP_THRESHOLD
         tm = make_task_manager(
             sensors={"temperature": ["sensor.t1"]},
             config={"has_ac": True, "weather_entity": "weather.home"},
         )
         tm.hass.states.get = MagicMock(return_value=self._make_weather_state(outdoor_temp=cold_threshold))
-        result = await tm._generate_temperature_task()
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = real_dt(2026, 2, 19, 12, 0, 0)
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            result = await tm._generate_temperature_task()
         assert result is not None
         assert result["task_type"] == "temperature_reduction"
+
+    @pytest.mark.asyncio
+    async def test_portugal_dawn_warm_month_avoids_false_cold_reduction(self):
+        """At 06:00 in warmer months, mild cool readings should not force heating tasks."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager(
+            sensors={"temperature": ["sensor.t1"]},
+            config={"has_ac": True, "weather_entity": "weather.home"},
+        )
+        tm.hass.states.get = MagicMock(return_value=self._make_weather_state(outdoor_temp=15.0))
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = real_dt(2026, 7, 15, 6, 0, 0)
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            result = await tm._generate_temperature_task()
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_portugal_dawn_winter_still_allows_cold_reduction(self):
+        """At 06:00 in winter, truly cold readings should still generate reduction tasks."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager(
+            sensors={"temperature": ["sensor.t1"]},
+            config={"has_ac": True, "weather_entity": "weather.home"},
+        )
+        tm.hass.states.get = MagicMock(return_value=self._make_weather_state(outdoor_temp=13.0))
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = real_dt(2026, 1, 15, 6, 0, 0)
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            result = await tm._generate_temperature_task()
+
+        assert result is not None
+        assert result["task_type"] == "temperature_reduction"
+
+    @pytest.mark.asyncio
+    async def test_portugal_dawn_shoulder_month_uses_intermediate_thresholds(self):
+        """At 06:00 in May/October, warm dawns should trigger increase and not reduction bias."""
+        from unittest.mock import patch
+        from datetime import datetime as real_dt
+
+        tm = make_task_manager(
+            sensors={"temperature": ["sensor.t1"]},
+            config={"has_ac": True, "weather_entity": "weather.home"},
+        )
+        tm.hass.states.get = MagicMock(return_value=self._make_weather_state(outdoor_temp=21.0))
+
+        with patch.object(tm_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = real_dt(2026, 5, 15, 6, 0, 0)
+            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
+            result = await tm._generate_temperature_task()
+
+        assert result is not None
+        assert result["task_type"] == "temperature_increase"
 
     @pytest.mark.asyncio
     async def test_between_thresholds_returns_none(self):
@@ -2415,79 +2800,6 @@ class TestVerifySingleTaskTemperatureIncrease:
 
         assert verified is False
         assert actual is None
-
-
-# -----------------------------------------------------------------------------
-# hours_passed < 1 must return pending=True
-# -----------------------------------------------------------------------------
-
-class TestVerifyPendingWithinFirstHour:
-    """When a task was generated < 1 hour ago the 3rd return value must
-    be True (pending) so the UI shows 'Evaluation deferred', not 'Insufficient
-    data'."""
-
-    @pytest.mark.asyncio
-    async def test_within_first_hour_returns_pending_true(self):
-        """created_at 10 minutes ago -> hours_passed < 1 -> pending=True."""
-        from unittest.mock import patch
-        from datetime import datetime as real_dt
-
-        tm = make_task_manager()
-        # Task was generated 10 minutes ago
-        created_at = real_dt(2026, 2, 19, 11, 50, 0)
-        fake_now   = real_dt(2026, 2, 19, 12,  0, 0)  # only 10 minutes later
-
-        task = {
-            "task_id": "early_verify",
-            "task_type": "power_reduction",
-            "target_value": 400,
-            "area_name": None,
-            "created_at": created_at.isoformat(),
-            "verified": False,
-        }
-
-        with patch.object(tm_mod, "datetime") as mock_dt:
-            mock_dt.now.return_value = fake_now
-            mock_dt.fromisoformat = real_dt.fromisoformat
-            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
-            verified, actual, pending = await tm._verify_single_task(task)
-
-        assert verified is False, "Task should not be verified yet"
-        assert actual is None,    "No actual value expected before first hour"
-        assert pending is True,   "pending must be True within the first hour (was False before the fix)"
-
-    @pytest.mark.asyncio
-    async def test_after_first_hour_pending_is_false(self):
-        """After 1 full hour, pending must be False (evaluation proceeds normally)."""
-        from unittest.mock import patch
-        from datetime import datetime as real_dt
-
-        tm = make_task_manager()
-        base = real_dt(2026, 2, 19, 8, 0, 0)
-        tm.data_collector.get_power_history = AsyncMock(return_value=[
-            (base + timedelta(minutes=i), 600.0) for i in range(60)
-        ])
-
-        created_at = real_dt(2026, 2, 19, 6,  0, 0)
-        fake_now   = real_dt(2026, 2, 19, 20, 0, 0)  # 14 hours later
-
-        task = {
-            "task_id": "normal_verify",
-            "task_type": "power_reduction",
-            "target_value": 400,
-            "area_name": None,
-            "created_at": created_at.isoformat(),
-            "verified": False,
-        }
-
-        with patch.object(tm_mod, "datetime") as mock_dt:
-            mock_dt.now.return_value = fake_now
-            mock_dt.fromisoformat = real_dt.fromisoformat
-            mock_dt.side_effect = lambda *a, **kw: real_dt(*a, **kw)
-            verified, actual, pending = await tm._verify_single_task(task)
-
-        assert pending is False, "After 1+ hours pending must be False"
-
 
 # -----------------------------------------------------------------------------
 # Auto-feedback on task generation day

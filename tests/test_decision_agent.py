@@ -640,6 +640,22 @@ class TestCheckCooldown:
             assert adap_cooldown == pytest.approx(30.0)
 
     @pytest.mark.asyncio
+    async def test_normal_opportunity_afternoon_uses_reduced_time_multiplier(self):
+        """14:00-18:59 branch uses the afternoon 0.8 multiplier."""
+        agent = make_agent()
+        agent.fatigue_index = 0.0
+        with patch.object(da_mod, 'datetime') as mock_dt:
+            now = datetime(2026, 2, 19, 15, 0, 0)
+            mock_dt.now.return_value = now
+            agent.last_notification_time = now - timedelta(minutes=25)
+
+            can_send, req_cooldown, adap_cooldown = await agent._check_cooldown_with_opportunity(0.3)
+
+        assert adap_cooldown == pytest.approx(24.0)
+        assert req_cooldown == pytest.approx(24.0)
+        assert can_send is True
+
+    @pytest.mark.asyncio
     async def test_cooldown_block_passes_values_to_log(self):
         """When _decide_action blocks on cooldown, _log_blocked_notification must receive
         non-None required_cooldown and adaptive_cooldown values from the returned tuple."""
@@ -2177,6 +2193,20 @@ class TestShadowRewardBranches:
             reward = await agent._calculate_shadow_reward(ACTIONS["specific"])
 
         assert isinstance(reward, float)
+
+    @pytest.mark.asyncio
+    async def test_shadow_reward_daytime_late_afternoon_branch(self):
+        """Covers the 14:00-18:59 temporal branch in shadow reward."""
+        agent = make_agent()
+        agent._cached_power_h1 = [(None, 700.0)] * 20
+        agent.baseline_consumption = 500.0
+
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 20, 15, 0, 0)
+            reward = await agent._calculate_shadow_reward(ACTIONS["normative"])
+
+        assert isinstance(reward, float)
+        assert reward > 0.0
 
 
 class TestDecideActionPendingEpisode:

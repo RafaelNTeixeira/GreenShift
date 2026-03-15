@@ -667,6 +667,8 @@ views:
 
                     ⏱️ As tarefas são verificadas de 15 em 15 minutos, mas também pode acionar manualmente a verificação clicando no botão "Verificar Todas as Tarefas" para ver se completou alguma tarefa e obter feedback em tempo real!
 
+                    <small>*Nota: Algumas tarefas são validadas mais tarde no dia para garantir que os objetivos sejam mantidos ao longo de todo o período.*</small>
+
 # ========== TAB 4: META COLABORATIVA ==========
 - title: Meta Colaborativa
   path: collaborative

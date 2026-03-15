@@ -424,6 +424,8 @@ VERIFICATION_REASON_TEMPLATES = {
     "en": {
         "target_achieved":         "Target achieved",
         "waiting_for_peak_hour":   "Waiting for peak hour ({peak_hour:02d}:00)",
+        "waiting_for_validation_time": "Will be validated at {validation_time}",
+        "waiting_with_current_progress": "Current avg: {actual}{unit} (target: {target}{unit}). Definitive validation starts at {validation_time}",
         "evaluation_deferred":     "Evaluation deferred",
         "avg_above_target":        "Avg: {actual}{unit}, target was {target}{unit}",
         "insufficient_data":       "Insufficient data",
@@ -438,6 +440,8 @@ VERIFICATION_REASON_TEMPLATES = {
     "pt": {
         "target_achieved":         "Objetivo atingido",
         "waiting_for_peak_hour":   "À espera da hora de pico ({peak_hour:02d}:00)",
+        "waiting_for_validation_time": "Será validada às {validation_time}",
+        "waiting_with_current_progress": "Média atual: {actual}{unit} (objetivo: {target}{unit}). Validação definitiva começa às {validation_time}",
         "evaluation_deferred":     "Avaliação adiada",
         "avg_above_target":        "Média: {actual}{unit}, objetivo era {target}{unit}",
         "insufficient_data":       "Dados insuficientes",
