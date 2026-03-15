@@ -692,7 +692,7 @@ views:
 
                     ⏱️ Tasks are verified every 15 minutes, but you can also manually trigger verification by clicking on the "Verify All Tasks" button to see if you've completed any tasks and get real-time feedback on your progress!
 
-                    <small>*Note: Some tasks are validated later in the day to ensure targets are maintained over the entire period.*</small>
+                    <small>*Note: Some tasks can only be validated later in the day to ensure targets are maintained over the entire period.*</small>
 
 # ========== TAB 4: COLLABORATIVE GOAL ==========
 - title: Collaborative Goal
