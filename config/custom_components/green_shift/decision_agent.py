@@ -990,9 +990,9 @@ class DecisionAgent:
         elif hour < 14:            # Midday
             time_score = 0.8
         elif hour < 19:            # Daytime + Late Afternoon
-            time_score = 0.9
+            time_score = 0.8
         else:                      # Evening Peak
-            time_score = 1.0
+            time_score = 0.9
 
         # Boost if building is occupied
         current_state = self.data_collector.get_current_state()
@@ -2057,9 +2057,9 @@ class DecisionAgent:
         elif hour < 14:            # Midday
             time_score = 0.8
         elif hour < 19:            # Afternoon
-            time_score = 0.9
+            time_score = 0.8
         else:                      # Evening Peak
-            time_score = 1.0
+            time_score = 0.9
 
         # Boost if occupied
         occupancy = 1.0 if current_state.get("occupancy", False) else 0.5
@@ -2104,15 +2104,19 @@ class DecisionAgent:
         # Increase cooldown if fatigue is high
         fatigue_multiplier = 1.0 + (self.fatigue_index * 2.0) # 1x to 3x based on fatigue
 
-        # Decrease cooldown during peak energy usage hours (more opportunities)
+        # Decrease cooldown during peak energy usage hours, increase during sensitive hours
         now = datetime.now()
         hour = now.hour
-        if 17 <= hour < 22:  # Evening peak
-            time_multiplier = 0.7
-        elif 7 <= hour < 10:  # Morning peak
+        if 7 <= hour < 10:  # Morning peak
             time_multiplier = 0.8
+        elif 10 <= hour < 14: # Midday
+            time_multiplier = 1.0 
+        elif 14 <= hour < 19: # Afternoon
+            time_multiplier = 0.8
+        elif 19 <= hour < 22:  # Evening peak
+            time_multiplier = 0.7
         else:
-            time_multiplier = 1.0
+            time_multiplier = 2.0
 
         adaptive_cooldown = base_cooldown * fatigue_multiplier * time_multiplier
 

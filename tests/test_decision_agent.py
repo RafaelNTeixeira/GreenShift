@@ -549,7 +549,7 @@ class TestCheckCooldown:
 
     @pytest.mark.asyncio
     async def test_critical_opportunity_respects_absolute_cooldown(self):
-        """Critical score (>=0.8) still requires CRITICAL_MIN_COOLDOWN_MINUTES (5 min)."""
+        """Critical score (>=0.8) still requires CRITICAL_MIN_COOLDOWN_MINUTES (10 min)."""
         agent = make_agent()
         # Only 1 minute since last notification: still within the absolute minimum
         agent.last_notification_time = datetime.now() - timedelta(minutes=1)
@@ -565,8 +565,8 @@ class TestCheckCooldown:
     async def test_critical_opportunity_after_absolute_cooldown(self):
         """Critical score passes once CRITICAL_MIN_COOLDOWN_MINUTES have elapsed."""
         agent = make_agent()
-        # 6 minutes since last notification — past the 5-min absolute minimum
-        agent.last_notification_time = datetime.now() - timedelta(minutes=6)
+        # 11 minutes since last notification — past the 10-min absolute minimum
+        agent.last_notification_time = datetime.now() - timedelta(minutes=11)
         agent.fatigue_index = 0.0
         can_send, _, _ = await agent._check_cooldown_with_opportunity(0.85)
         assert can_send is True
@@ -596,10 +596,10 @@ class TestCheckCooldown:
     async def test_normal_opportunity_requires_full_cooldown(self):
         agent = make_agent()
         agent.fatigue_index = 0.0
-        # Test during midday to avoid evening peak reduction
+        # Test during midday (10:00-14:00) where multiplier is 1.0
         # 29 minutes since last -> just under 30 min standard cooldown
         with patch.object(da_mod, 'datetime') as mock_dt:
-            now = datetime(2026, 2, 19, 14, 0, 0)  # 2 PM (no peak time multiplier)
+            now = datetime(2026, 2, 19, 12, 0, 0)  # 12 PM (midday branch)
             mock_dt.now.return_value = now
             agent.last_notification_time = now - timedelta(minutes=29)
             can_send, _, _ = await agent._check_cooldown_with_opportunity(0.3)
@@ -628,7 +628,7 @@ class TestCheckCooldown:
         agent = make_agent()
         agent.fatigue_index = 0.0
         with patch.object(da_mod, 'datetime') as mock_dt:
-            now = datetime(2026, 2, 19, 14, 0, 0)  # midday, no peak multiplier
+            now = datetime(2026, 2, 19, 12, 0, 0)  # midday (10:00-14:00), multiplier 1.0
             mock_dt.now.return_value = now
             agent.last_notification_time = now - timedelta(minutes=5)
             can_send, req_cooldown, adap_cooldown = await agent._check_cooldown_with_opportunity(0.3)
@@ -5044,7 +5044,7 @@ class TestDecisionAgentFinalCoverage:
         agent = make_agent()
         agent.fatigue_index = 0.0
         with patch.object(da_mod, "datetime") as mock_dt:
-            now = datetime(2026, 2, 20, 18, 0, 0)
+            now = datetime(2026, 2, 20, 20, 0, 0)
             mock_dt.now.return_value = now
             agent.last_notification_time = now - timedelta(minutes=20)
             can_send, req_cooldown, _ = await agent._check_cooldown_with_opportunity(0.3)
@@ -5064,6 +5064,19 @@ class TestDecisionAgentFinalCoverage:
 
         assert can_send is False
         assert req_cooldown == pytest.approx(da_mod.MIN_COOLDOWN_MINUTES * 0.8)
+
+    @pytest.mark.asyncio
+    async def test_cooldown_sensitive_hours_multiplier_branch(self):
+        agent = make_agent()
+        agent.fatigue_index = 0.0
+        with patch.object(da_mod, "datetime") as mock_dt:
+            now = datetime(2026, 2, 20, 23, 0, 0)
+            mock_dt.now.return_value = now
+            agent.last_notification_time = now - timedelta(minutes=59)
+            can_send, req_cooldown, _ = await agent._check_cooldown_with_opportunity(0.3)
+
+        assert can_send is False
+        assert req_cooldown == pytest.approx(da_mod.MIN_COOLDOWN_MINUTES * 2.0)
 
     @pytest.mark.asyncio
     async def test_weekly_challenge_target_avg_zero_progress_branch(self):

@@ -117,7 +117,7 @@ REWARD_WEIGHTS = {
 MAX_NOTIFICATIONS_PER_DAY = 10       # Maximum notifications per day to prevent fatigue
 FATIGUE_THRESHOLD = 0.7              # User fatigue threshold (0 to 1) where 1 means fully fatigued
 MIN_COOLDOWN_MINUTES = 30            # Base cooldown between notifications
-CRITICAL_MIN_COOLDOWN_MINUTES = 5    # Absolute non-bypassable minimum even for critical opportunities
+CRITICAL_MIN_COOLDOWN_MINUTES = 10    # Absolute non-bypassable minimum even for critical opportunities
 HIGH_OPPORTUNITY_THRESHOLD = 0.6     # Score needed to bypass cooldown
 CRITICAL_OPPORTUNITY_THRESHOLD = 0.8 # Score for immediate notification
 
