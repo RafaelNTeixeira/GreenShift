@@ -125,7 +125,15 @@ class TaskManager:
         # Temperature-based tasks: only available when the user has AC (has_ac=True)
         # Without AC there is no actionable temperature control, and seasonal direction
         if self.sensors.get("temperature") and self.config_data.get("has_ac", False):
-            available_task_generators.append(self._generate_temperature_task)
+            outdoor_temp = self._resolve_outdoor_temperature()
+            task_type = self._get_temperature_task_type(outdoor_temp)
+            if task_type:
+                available_task_generators.append(self._generate_temperature_task)
+            else:
+                _LOGGER.debug(
+                    "Skipping temperature generator: no valid seasonal direction (outdoor_temp=%s)",
+                    outdoor_temp,
+                )
 
         # Power-based tasks (verifiable via power sensors)
         if self.sensors.get("power"):
@@ -189,6 +197,41 @@ class TaskManager:
 
         return tasks
 
+    def _resolve_outdoor_temperature(self) -> Optional[float]:
+        """Resolve outdoor temperature from weather entity, with sensor fallback."""
+        outdoor_temp: Optional[float] = None
+
+        weather_entity = self.config_data.get("weather_entity")
+        if weather_entity:
+            weather_state = self.hass.states.get(weather_entity)
+            if weather_state and weather_state.attributes:
+                try:
+                    outdoor_temp = float(weather_state.attributes.get("temperature"))
+                except (TypeError, ValueError):
+                    outdoor_temp = None
+
+        if outdoor_temp is None:
+            outdoor_temp_sensor = self.config_data.get("outdoor_temp_sensor")
+            if outdoor_temp_sensor:
+                sensor_state = self.hass.states.get(outdoor_temp_sensor)
+                if sensor_state and sensor_state.state not in ("unavailable", "unknown", None):
+                    try:
+                        outdoor_temp = float(sensor_state.state)
+                    except (TypeError, ValueError):
+                        outdoor_temp = None
+
+        return outdoor_temp
+
+    def _get_temperature_task_type(self, outdoor_temp: Optional[float]) -> Optional[str]:
+        """Return seasonal temperature task type or None when no thermal action is appropriate."""
+        if outdoor_temp is None:
+            return None
+        if outdoor_temp > OUTDOOR_HOT_TEMP_THRESHOLD:
+            return "temperature_increase"
+        if outdoor_temp <= OUTDOOR_COLD_TEMP_THRESHOLD:
+            return "temperature_reduction"
+        return None
+
     async def _generate_temperature_task(self) -> Optional[Dict]:
         """
         Generate a seasonal temperature task.
@@ -201,39 +244,13 @@ class TaskManager:
         Returns:
             dict: A task dictionary or None if it cannot be generated.
         """
-        # Determine outdoor temperature from the weather entity 
-        outdoor_temp: Optional[float] = None
-        weather_entity = self.config_data.get("weather_entity")
-        if weather_entity:
-            weather_state = self.hass.states.get(weather_entity)
-            if weather_state and weather_state.attributes:
-                try:
-                    outdoor_temp = float(weather_state.attributes.get("temperature"))
-                except (TypeError, ValueError):
-                    outdoor_temp = None
-
-        # Fallback: use outdoor temperature sensor
-        if outdoor_temp is None:
-            outdoor_temp_sensor = self.config_data.get("outdoor_temp_sensor")
-            if outdoor_temp_sensor:
-                sensor_state = self.hass.states.get(outdoor_temp_sensor)
-                if sensor_state and sensor_state.state not in ("unavailable", "unknown", None):
-                    try:
-                        outdoor_temp = float(sensor_state.state)
-                    except (TypeError, ValueError):
-                        outdoor_temp = None
-
-        is_hot_outside = outdoor_temp is not None and outdoor_temp > OUTDOOR_HOT_TEMP_THRESHOLD
-        is_cold_outside = outdoor_temp is not None and outdoor_temp <= OUTDOOR_COLD_TEMP_THRESHOLD
-
-        # Decide task type and stats key based on season
-        task_type = None
-        if is_hot_outside:
-            task_type = "temperature_increase"
-        elif is_cold_outside:
-            task_type = "temperature_reduction"
-        else:
+        outdoor_temp = self._resolve_outdoor_temperature()
+        task_type = self._get_temperature_task_type(outdoor_temp)
+        if not task_type:
             return None
+
+        is_hot_outside = task_type == "temperature_increase"
+        is_cold_outside = task_type == "temperature_reduction"
         
         stats = await self.storage.get_task_difficulty_stats(task_type)
         difficulty = await self._calculate_task_difficulty(stats)

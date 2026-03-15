@@ -266,6 +266,44 @@ class TestGenerateDailyTasksSensorAvailability:
         result = await tm.generate_daily_tasks()
         assert len(result) >= 1
 
+    @pytest.mark.asyncio
+    async def test_neutral_outdoor_excludes_temperature_generator_from_candidates(self):
+        """Option A: neutral outdoor temp must prevent temperature generator from being selectable."""
+        sensors = {"power": ["sensor.power_1"], "temperature": ["sensor.t1"]}
+        tm = make_task_manager(
+            sensors=sensors,
+            config={"has_ac": True, "weather_entity": "weather.home"},
+        )
+
+        weather_state = MagicMock()
+        weather_state.attributes = {"temperature": 20.0}  # between cold/hot thresholds
+        tm.hass.states.get = MagicMock(return_value=weather_state)
+
+        with patch.object(tm_mod.np.random, "choice", wraps=tm_mod.np.random.choice) as choice_spy:
+            await tm.generate_daily_tasks()
+
+        candidates = choice_spy.call_args.args[0]
+        assert tm._generate_temperature_task not in candidates
+
+    @pytest.mark.asyncio
+    async def test_cold_outdoor_includes_temperature_generator_in_candidates(self):
+        """Temperature generator must remain selectable when outdoor temp requires seasonal action."""
+        sensors = {"power": ["sensor.power_1"], "temperature": ["sensor.t1"]}
+        tm = make_task_manager(
+            sensors=sensors,
+            config={"has_ac": True, "weather_entity": "weather.home"},
+        )
+
+        weather_state = MagicMock()
+        weather_state.attributes = {"temperature": 5.0}
+        tm.hass.states.get = MagicMock(return_value=weather_state)
+
+        with patch.object(tm_mod.np.random, "choice", wraps=tm_mod.np.random.choice) as choice_spy:
+            await tm.generate_daily_tasks()
+
+        candidates = choice_spy.call_args.args[0]
+        assert tm._generate_temperature_task in candidates
+
 
 # -----------------------------------------------------------------------------
 # difficulty_multipliers

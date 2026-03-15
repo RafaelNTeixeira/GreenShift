@@ -4,7 +4,7 @@ Green Shift includes a comprehensive test suite covering core functionality and 
 
 ## Coverage Summary
 
-**1154 tests** across 11 modules - total measured coverage **100%**.
+**1156 tests** across 11 modules - total measured coverage **100%**.
 
 | Module | Tests | Coverage | Notes |
 |--------|-------|----------|-------|
@@ -17,7 +17,7 @@ Green Shift includes a comprehensive test suite covering core functionality and 
 | `test_select.py` | 37 | **100%** | |
 | `test_sensor.py` | 129 | **100%** | |
 | `test_storage.py` | 131 | **100%** | Database operations, data persistence, retention |
-| `test_task_manager.py` | 128 | **100%** | Task generation/verification and persistence |
+| `test_task_manager.py` | 130 | **100%** | Task generation/verification and persistence |
 | `test_translations_runtime.py` | 66 | **100%** | Multilingual support, templates |
 
 ## Running Tests
@@ -144,7 +144,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Data retention and cleanup (age-based pruning)
 - State file operations (JSON read/write, corrupt-file recovery)
 
-### `test_task_manager.py` - 128 tests, **100%** coverage
+### `test_task_manager.py` - 130 tests, **100%** coverage
 - Task generation with sensor constraints
 - Phase guards (baseline vs active)
 - Working hours enforcement
