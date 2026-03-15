@@ -1183,49 +1183,46 @@ class DecisionAgent:
         # Gather context first (needed for filtering)
         context = await self._gather_notification_context(action_type)
 
-        # Filter templates based on context (for behavioral notifications)
-        if action_type == "behavioural":
-            # Build a list of (absolute_index, template) pairs so the stored
-            # template_index always refers to the position in all_templates,
-            # which is consistent across languages and filter states.
-            filtered_indexed = []
+        # Build a list of (absolute_index, template) pairs so the stored
+        # template_index always refers to the position in all_templates,
+        # which is consistent across languages and filter states.
+        filtered_indexed = []
 
-            for i, template in enumerate(all_templates):
-                context_filter = template.get("context_filter")
+        for i, template in enumerate(all_templates):
+            context_filter = template.get("context_filter")
 
-                # Templates without a filter are always available
-                if not context_filter:
-                    filtered_indexed.append((i, template))
-                elif context_filter == "daylight_waste" and context.get("is_daylight_waste"):
-                    filtered_indexed.append((i, template))
-                elif context_filter == "away_mode" and context.get("is_away_mode"):
-                    filtered_indexed.append((i, template))
-                elif context_filter == "nighttime" and context.get("is_nighttime"):
-                    filtered_indexed.append((i, template))
+            # Templates without a filter are always available
+            if not context_filter:
+                filtered_indexed.append((i, template))
+            elif context_filter == "daylight_waste" and context.get("is_daylight_waste"):
+                filtered_indexed.append((i, template))
+            elif context_filter == "away_mode" and context.get("is_away_mode"):
+                filtered_indexed.append((i, template))
+            elif context_filter == "nighttime" and context.get("is_nighttime"):
+                filtered_indexed.append((i, template))
+            elif context_filter == "above_baseline" and context.get("is_above_baseline"):
+                filtered_indexed.append((i, template))
+            elif context_filter == "below_baseline" and context.get("is_below_baseline"):
+                filtered_indexed.append((i, template))
+            elif context_filter == "above_target" and context.get("is_above_target"):
+                filtered_indexed.append((i, template))
+            elif context_filter == "below_target" and context.get("is_below_target"):
+                filtered_indexed.append((i, template))
 
-            # Fall back to generic (no context_filter) templates when none matched
-            if not filtered_indexed:
-                filtered_indexed = [
-                    (i, t) for i, t in enumerate(all_templates)
-                    if not t.get("context_filter")
-                ]
+        # Fall back to generic (no context_filter) templates when none matched
+        if not filtered_indexed:
+            filtered_indexed = [
+                (i, t) for i, t in enumerate(all_templates)
+                if not t.get("context_filter")
+            ]
 
-            if not filtered_indexed:
-                _LOGGER.warning("No suitable templates found for action type: %s", action_type)
-                return None
+        if not filtered_indexed:
+            _LOGGER.warning("No suitable templates found for action type: %s", action_type)
+            return None
 
-            _LOGGER.debug("Filtered %d behavioral templates based on context", len(filtered_indexed))
-            picked_pos = random.randint(0, len(filtered_indexed) - 1)
-            template_index, template = filtered_indexed[picked_pos]
-        else:
-            templates = all_templates
-
-            if not templates:
-                _LOGGER.warning("No suitable templates found for action type: %s", action_type)
-                return None
-
-            template_index = random.randint(0, len(templates) - 1)
-            template = templates[template_index]
+        _LOGGER.debug("Filtered %d %s templates based on context", len(filtered_indexed), action_type)
+        picked_pos = random.randint(0, len(filtered_indexed) - 1)
+        template_index, template = filtered_indexed[picked_pos]
 
         # Format message
         try:
@@ -1260,11 +1257,34 @@ class DecisionAgent:
         context["target_power"] = int(self.baseline_consumption * (1 - self.target_percentage / 100))
 
         # Calculate percentage difference
+        context["percent_above"] = 0
+        context["percent_below"] = 0
+        context["percent_above_target"] = 0
+        context["percent_below_target"] = 0
+        context["is_above_baseline"] = False
+        context["is_below_baseline"] = False
+        context["is_above_target"] = False
+        context["is_below_target"] = False
+
         if self.baseline_consumption > 0:
-            diff = ((current_state.get("power", 0) - self.baseline_consumption) / self.baseline_consumption) * 100
-            context["percent_above"] = int(diff)
-        else:
-            context["percent_above"] = 0
+            current_power = current_state.get("power", 0)
+            diff = ((current_power - self.baseline_consumption) / self.baseline_consumption) * 100
+            if diff > 0:
+                context["percent_above"] = int(diff)
+                context["is_above_baseline"] = True
+            else:
+                context["percent_below"] = int(abs(diff))
+                context["is_below_baseline"] = True
+
+            target_power = self.baseline_consumption * (1 - self.target_percentage / 100)
+            if target_power > 0:
+                target_diff = ((current_power - target_power) / target_power) * 100
+                if target_diff > 0:
+                    context["percent_above_target"] = int(target_diff)
+                    context["is_above_target"] = True
+                else:
+                    context["percent_below_target"] = int(abs(target_diff))
+                    context["is_below_target"] = True
 
         # Find top power consumer
         top_device, top_power = await self._find_top_consumer()

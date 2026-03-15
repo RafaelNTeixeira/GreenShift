@@ -3371,6 +3371,9 @@ class TestBehaviouralTemplateAbsoluteIndex:
             "baseline_power": 1000,
             "target_power": 800,
             "percent_above": 10,
+            "percent_below": 10,
+            "percent_above_target": 10,
+            "percent_below_target": 10,
             "device_name": "Heater",
             "device_power": 200,
             "area_name": "Living room",
@@ -3379,6 +3382,10 @@ class TestBehaviouralTemplateAbsoluteIndex:
             "is_away_mode": is_away_mode,
             "is_daylight_waste": is_daylight_waste,
             "is_nighttime": is_nighttime,
+            "is_above_baseline": False,
+            "is_below_baseline": False,
+            "is_above_target": False,
+            "is_below_target": False,
         }
 
     @pytest.mark.asyncio
@@ -3499,6 +3506,85 @@ class TestBehaviouralTemplateAbsoluteIndex:
         assert seen_indices == {0, 1, 2, 3}, (
             f"All 4 normative templates must be reachable; got {seen_indices}"
         )
+
+    @pytest.mark.asyncio
+    async def test_non_behavioural_action_applies_context_filters_when_present(self):
+        """Non-behavioural templates with context_filter must respect semantic gating."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.target_percentage = 20.0
+
+        normative_templates = [
+            {"title": "Above", "message": "A", "context_filter": "above_target"},
+            {"title": "Below", "message": "B", "context_filter": "below_target"},
+            {"title": "Generic", "message": "G"},
+        ]
+        context = self._make_context()
+        context["is_above_target"] = True
+        context["is_below_target"] = False
+
+        with patch.object(
+            da_mod, "get_notification_templates",
+            return_value={"normative": normative_templates}
+        ), patch.object(
+            da_mod, "get_language",
+            new=AsyncMock(return_value="en")
+        ):
+            agent._gather_notification_context = AsyncMock(return_value=context)
+            seen_indices = set()
+            for _ in range(80):
+                result = await agent._generate_notification("normative")
+                assert result is not None
+                seen_indices.add(result["template_index"])
+
+        assert seen_indices.issubset({0, 2}), (
+            f"Only above_target+generic templates should be reachable; got {seen_indices}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_non_behavioural_above_baseline_filter_branch(self):
+        agent = make_agent()
+        templates = [{"title": "A", "message": "A", "context_filter": "above_baseline"}]
+        context = self._make_context()
+        context["is_above_baseline"] = True
+
+        with patch.object(da_mod, "get_notification_templates", return_value={"anomaly": templates}), patch.object(
+            da_mod, "get_language", new=AsyncMock(return_value="en")
+        ):
+            agent._gather_notification_context = AsyncMock(return_value=context)
+            result = await agent._generate_notification("anomaly")
+
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_non_behavioural_below_baseline_filter_branch(self):
+        agent = make_agent()
+        templates = [{"title": "B", "message": "B", "context_filter": "below_baseline"}]
+        context = self._make_context()
+        context["is_below_baseline"] = True
+
+        with patch.object(da_mod, "get_notification_templates", return_value={"anomaly": templates}), patch.object(
+            da_mod, "get_language", new=AsyncMock(return_value="en")
+        ):
+            agent._gather_notification_context = AsyncMock(return_value=context)
+            result = await agent._generate_notification("anomaly")
+
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_non_behavioural_below_target_filter_branch(self):
+        agent = make_agent()
+        templates = [{"title": "C", "message": "C", "context_filter": "below_target"}]
+        context = self._make_context()
+        context["is_below_target"] = True
+
+        with patch.object(da_mod, "get_notification_templates", return_value={"normative": templates}), patch.object(
+            da_mod, "get_language", new=AsyncMock(return_value="en")
+        ):
+            agent._gather_notification_context = AsyncMock(return_value=context)
+            result = await agent._generate_notification("normative")
+
+        assert result is not None
 
 
 # -----------------------------------------------------------------------------
@@ -4624,7 +4710,7 @@ class TestDecisionAgentFinalCoverage:
         assert context["percent_above"] == 0
 
     @pytest.mark.asyncio
-    async def test_gather_context_keeps_negative_percentage_when_below_baseline(self):
+    async def test_gather_context_sets_percent_below_when_below_baseline(self):
         agent = make_agent()
         agent.baseline_consumption = 800.0
         agent.data_collector.get_current_state = MagicMock(return_value={
@@ -4641,7 +4727,40 @@ class TestDecisionAgentFinalCoverage:
             mock_dt.now.return_value = datetime(2026, 2, 20, 13, 0, 0)
             context = await agent._gather_notification_context("normative")
 
-        assert context["percent_above"] < 0
+        assert context["percent_above"] == 0
+        assert context["percent_below"] > 0
+        assert context["is_below_baseline"] is True
+        assert context["is_above_baseline"] is False
+        assert context["is_below_target"] is True
+        assert context["percent_below_target"] > 0
+
+    @pytest.mark.asyncio
+    async def test_gather_context_target_percentages_are_relative_to_target(self):
+        """Regression for baseline=1000, target=850, current=950 -> ~12% above target."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.target_percentage = 15.0  # target 850
+        agent.data_collector.get_current_state = MagicMock(return_value={
+            "power": 950.0,
+            "temperature": 21.0,
+            "illuminance": 100,
+            "occupancy": True,
+        })
+        agent.data_collector.get_area_state = MagicMock(return_value={"temperature": 21.0})
+        agent._find_top_consumer = AsyncMock(return_value=("Heater", 100.0))
+        agent._find_highest_anomaly_area = AsyncMock(return_value=("Office", "temperature"))
+
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 20, 13, 0, 0)
+            context = await agent._gather_notification_context("normative")
+
+        assert context["is_above_target"] is True
+        assert context["is_below_target"] is False
+        assert context["percent_above_target"] == 11  # int(11.76...)
+        assert context["percent_below_target"] == 0
+        # Still below baseline -> baseline-relative percentages must remain independent
+        assert context["percent_above"] == 0
+        assert context["percent_below"] == 5
 
     @pytest.mark.asyncio
     async def test_gather_context_covers_afternoon_and_evening_time_keys(self):

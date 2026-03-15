@@ -191,15 +191,29 @@ class TestGetNotificationTemplates:
         en_templates = get_notification_templates("en")
         assert templates == en_templates
 
-    def test_en_templates_use_signed_percent_format(self):
+    def test_en_templates_use_split_percent_placeholders(self):
         templates = get_notification_templates("en")
-        assert "{percent_above:+d}" in templates["anomaly"][0]["message"]
-        assert "{percent_above:+d}" in templates["normative"][0]["message"]
+        assert "{percent_above}" in templates["anomaly"][0]["message"]
+        assert "{percent_below}" in templates["anomaly"][1]["message"]
+        assert "{percent_above_target}" in templates["normative"][0]["message"]
+        assert "{percent_below_target}" in templates["normative"][1]["message"]
 
-    def test_pt_templates_use_signed_percent_format(self):
+    def test_pt_templates_use_split_percent_placeholders(self):
         templates = get_notification_templates("pt")
-        assert "{percent_above:+d}" in templates["anomaly"][0]["message"]
-        assert "{percent_above:+d}" in templates["normative"][0]["message"]
+        assert "{percent_above}" in templates["anomaly"][0]["message"]
+        assert "{percent_below}" in templates["anomaly"][1]["message"]
+        assert "{percent_above_target}" in templates["normative"][0]["message"]
+        assert "{percent_below_target}" in templates["normative"][1]["message"]
+
+    def test_normative_templates_have_semantic_context_filters(self):
+        en_templates = get_notification_templates("en")["normative"]
+        pt_templates = get_notification_templates("pt")["normative"]
+
+        en_filters = {t.get("context_filter") for t in en_templates if t.get("context_filter")}
+        pt_filters = {t.get("context_filter") for t in pt_templates if t.get("context_filter")}
+
+        assert {"above_target", "below_target", "above_baseline", "below_baseline"}.issubset(en_filters)
+        assert {"above_target", "below_target", "above_baseline", "below_baseline"}.issubset(pt_filters)
 
 
 # -----------------------------------------------------------------------------
@@ -457,20 +471,35 @@ class TestNormativeTemplateVariables:
         templates = get_notification_templates(lang)
         return [t["message"] for t in templates.get("normative", [])]
 
-    def test_en_normative_does_not_use_baseline_power_as_goal(self):
-        """EN normative messages must not reference {baseline_power} as a W goal."""
-        for msg in self._normative_messages("en"):
-            # "{baseline_power}W goal" is the wrong pattern that was fixed
-            assert "{baseline_power}W goal" not in msg, (
-                f"EN normative message still uses {{baseline_power}} as a goal: {msg!r}"
-            )
+    def test_en_normative_target_messages_use_target_percent_vars(self):
+        target_msgs = [
+            t["message"]
+            for t in get_notification_templates("en").get("normative", [])
+            if t.get("context_filter") in {"above_target", "below_target"}
+        ]
+        assert target_msgs
+        assert any("{percent_above_target}" in m for m in target_msgs)
+        assert any("{percent_below_target}" in m for m in target_msgs)
 
-    def test_pt_normative_does_not_use_baseline_power_as_goal(self):
-        """PT normative messages must not reference {baseline_power} as a W goal."""
-        for msg in self._normative_messages("pt"):
-            assert "{baseline_power}W" not in msg, (
-                f"PT normative message still uses {{baseline_power}} as a goal/reference: {msg!r}"
-            )
+    def test_pt_normative_target_messages_use_target_percent_vars(self):
+        target_msgs = [
+            t["message"]
+            for t in get_notification_templates("pt").get("normative", [])
+            if t.get("context_filter") in {"above_target", "below_target"}
+        ]
+        assert target_msgs
+        assert any("{percent_above_target}" in m for m in target_msgs)
+        assert any("{percent_below_target}" in m for m in target_msgs)
+
+    def test_pt_normative_baseline_messages_use_baseline_power(self):
+        baseline_msgs = [
+            t["message"]
+            for t in get_notification_templates("pt").get("normative", [])
+            if t.get("context_filter") in {"above_baseline", "below_baseline"}
+        ]
+        assert baseline_msgs
+        for msg in baseline_msgs:
+            assert "{baseline_power}" in msg
 
     def test_en_normative_uses_target_power_in_goal_messages(self):
         """EN normative messages that mention a reduction goal must use {target_power}."""

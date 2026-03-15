@@ -27,7 +27,13 @@ NOTIFICATION_TEMPLATES = {
         "anomaly": [
             {
                 "title": "Unusual Consumption Pattern",
-                "message": "📊 Your current power usage ({current_power}W) is {percent_above:+d}% relative to your typical baseline ({baseline_power}W). Check if any devices were left on accidentally."
+                "message": "📊 Your current power usage ({current_power}W) is {percent_above}% above your typical baseline ({baseline_power}W). Check if any devices were left on accidentally.",
+                "context_filter": "above_baseline"
+            },
+            {
+                "title": "Efficient Consumption Pattern",
+                "message": "✅ Great job. Your current power usage ({current_power}W) is {percent_below}% below your typical baseline ({baseline_power}W). Keep this efficient pattern going.",
+                "context_filter": "below_baseline"
             },
             {
                 "title": "Energy Anomaly Detected",
@@ -86,19 +92,23 @@ NOTIFICATION_TEMPLATES = {
         "normative": [
             {
                 "title": "Weekly Goal Update",
-                "message": "🎯 Weekly goal update: your consumption this week is {percent_above:+d}% relative to your target ({target_power}W)."
+                "message": "🎯 Weekly goal update: your consumption this week is {percent_above_target}% above your target ({target_power}W).",
+                "context_filter": "above_target"
             },
             {
-                "title": "Progress Check-In",
-                "message": "🏆 You've saved energy before - your best week showed {target_power}W average. Current week: {current_power}W. You can do it again!"
+                "title": "Weekly Goal Progress",
+                "message": "🏆 Excellent progress. Your consumption this week is {percent_below_target}% below your target ({target_power}W).",
+                "context_filter": "below_target"
             },
             {
                 "title": "Benchmark Update",
-                "message": "📈 Your current energy use ({current_power}W) is {percent_above:+d}% relative to your benchmark. Let's keep improving this week."
+                "message": "📈 Your current energy use ({current_power}W) is {percent_above}% above your baseline ({baseline_power}W). Let's keep improving this week.",
+                "context_filter": "above_baseline"
             },
             {
                 "title": "Target Achievement",
-                "message": "🌟 Great progress! You're currently {percent_above:+d}% relative to your weekly reduction target."
+                "message": "🌟 Great progress. Your current energy use ({current_power}W) is {percent_below}% below your baseline ({baseline_power}W).",
+                "context_filter": "below_baseline"
             }
         ],
 
@@ -123,7 +133,13 @@ NOTIFICATION_TEMPLATES = {
         "anomaly": [
             {
                 "title": "Padrão de Consumo Incomum",
-                "message": "📊 O seu consumo de energia atual ({current_power}W) está {percent_above:+d}% em relação à sua baseline típica ({baseline_power}W). Verifique se deixou algum dispositivo ligado acidentalmente."
+                "message": "📊 O seu consumo de energia atual ({current_power}W) está {percent_above}% acima da sua baseline típica ({baseline_power}W). Verifique se deixou algum dispositivo ligado acidentalmente.",
+                "context_filter": "above_baseline"
+            },
+            {
+                "title": "Padrão de Consumo Eficiente",
+                "message": "✅ Excelente. O seu consumo de energia atual ({current_power}W) está {percent_below}% abaixo da sua baseline típica ({baseline_power}W). Mantenha este padrão eficiente.",
+                "context_filter": "below_baseline"
             },
             {
                 "title": "Anomalia de Energia Detetada",
@@ -182,19 +198,23 @@ NOTIFICATION_TEMPLATES = {
         "normative": [
             {
                 "title": "Atualização de Meta Semanal",
-                "message": "🎯 Atualização de objetivo semanal: o seu consumo esta semana está {percent_above:+d}% em relação à sua meta ({target_power}W)."
+                "message": "🎯 Atualização de objetivo semanal: o seu consumo esta semana está {percent_above_target}% acima da sua meta ({target_power}W).",
+                "context_filter": "above_target"
             },
             {
-                "title": "Verificação de Progresso",
-                "message": "🏆 Já poupou energia antes - a sua melhor semana mostrou uma média de {target_power}W. Semana atual: {current_power}W. Consegue fazê-lo novamente!"
+                "title": "Progresso da Meta Semanal",
+                "message": "🏆 Excelente progresso. O seu consumo esta semana está {percent_below_target}% abaixo da sua meta ({target_power}W).",
+                "context_filter": "below_target"
             },
             {
                 "title": "Atualização de Benchmark",
-                "message": "📈 O seu uso de energia atual ({current_power}W) está {percent_above:+d}% em relação ao seu benchmark. Vamos continuar a melhorar esta semana."
+                "message": "📈 O seu uso de energia atual ({current_power}W) está {percent_above}% acima da sua baseline ({baseline_power}W). Vamos continuar a melhorar esta semana.",
+                "context_filter": "above_baseline"
             },
             {
                 "title": "Conquista de Meta",
-                "message": "🌟 Ótimo progresso! Está atualmente a {percent_above:+d}% em relação à sua meta de redução semanal."
+                "message": "🌟 Ótimo progresso. O seu uso de energia atual ({current_power}W) está {percent_below}% abaixo da sua baseline ({baseline_power}W).",
+                "context_filter": "below_baseline"
             }
         ],
 
