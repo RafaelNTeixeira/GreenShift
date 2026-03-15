@@ -1089,6 +1089,36 @@ class TestCalculateRewardWithFeedback:
 
         assert reward < 0
 
+    @pytest.mark.asyncio
+    async def test_rejection_suppresses_energy_credit_even_if_power_drops(self):
+        """Rejected notifications must not be rewarded by an energy drop signal."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.fatigue_index = 0.0
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 200.0})
+
+        reward = await agent._calculate_reward_with_feedback(accepted=False, initial_power=1000.0)
+
+        # With suppression enabled this must be feedback-only: 0 + 0.5*(-0.5) = -0.25
+        assert reward == pytest.approx(-0.25, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_late_feedback_ignores_energy_component_after_two_hours(self):
+        """When feedback is delayed >2h, reward should use only feedback and fatigue."""
+        agent = make_agent()
+        agent.baseline_consumption = 1000.0
+        agent.fatigue_index = 0.0
+        agent.data_collector.get_current_state = MagicMock(return_value={"power": 100.0})
+
+        reward = await agent._calculate_reward_with_feedback(
+            accepted=True,
+            initial_power=1000.0,
+            hours_elapsed=3.0,
+        )
+
+        # Energy is ignored for delayed feedback: 0 + 0.5*1.0 = 0.5
+        assert reward == pytest.approx(0.5, abs=0.01)
+
 
 # -----------------------------------------------------------------------------
 # _execute_action - mobile push notification
@@ -3744,6 +3774,20 @@ class TestHandleNotificationFeedback:
         # notif_id is NOT in notification_history
         await agent._handle_notification_feedback(notif_id, accepted=True)
 
+    @pytest.mark.asyncio
+    async def test_feedback_passes_hours_elapsed_to_reward_calculation(self):
+        """The delayed-feedback reward call must receive a computed hours_elapsed."""
+        notif_id = "test-hours-elapsed"
+        agent = _make_feedback_agent(notif_id)
+        agent.pending_episodes[notif_id]["timestamp"] = datetime.now() - timedelta(hours=3)
+
+        await agent._handle_notification_feedback(notif_id, accepted=True)
+
+        agent._calculate_reward_with_feedback.assert_called_once()
+        _, kwargs = agent._calculate_reward_with_feedback.call_args
+        assert "hours_elapsed" in kwargs
+        assert kwargs["hours_elapsed"] > 2.0
+
 
 # -----------------------------------------------------------------------------
 # _compute_noop_reward: near-baseline boundary (-0.1 band)
@@ -3899,6 +3943,26 @@ class TestCalculateOpportunityScore:
                 assert 0.0 <= score <= 1.0, (
                     f"Score {score} out of [0,1] for inputs: {c}"
                 )
+
+    @pytest.mark.asyncio
+    async def test_behaviour_floor_keeps_receptiveness_non_zero(self):
+        """behaviour_index=0 should still contribute via the 0.1 receptiveness floor."""
+        agent = self._base_agent(
+            power=1000.0,
+            baseline=1000.0,
+            occupancy=True,
+            anomaly=0.0,
+            fatigue=0.0,
+            behaviour=0.0,
+        )
+
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 12, 0, 0)
+            score = await agent._calculate_opportunity_score()
+
+        # savings=0, urgency=0, context=1.0, receptiveness floor=0.1
+        # => 0.20*0.1 + 0.10*1.0 = 0.12
+        assert score == pytest.approx(0.12, abs=0.01)
 
 
 # -----------------------------------------------------------------------------

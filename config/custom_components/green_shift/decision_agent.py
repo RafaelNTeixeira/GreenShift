@@ -1430,11 +1430,19 @@ class DecisionAgent:
         # Update Q-table with actual feedback (delayed Q-learning)
         if notification_id in self.pending_episodes:
             episode = self.pending_episodes.pop(notification_id)
+
+            # Responses received long after the nudge are less causal: power changes may
+            # mostly reflect natural day/night patterns instead of the intervention itself.
+            hours_elapsed = max(
+                0.0,
+                (datetime.now() - episode["timestamp"]).total_seconds() / 3600,
+            )
             
             # Calculate reward with actual user feedback
             reward = await self._calculate_reward_with_feedback(
                 accepted=accepted,
-                initial_power=episode["initial_power"]
+                initial_power=episode["initial_power"],
+                hours_elapsed=hours_elapsed,
             )
             
             # Update Q-table with dynamic gamma based on feedback
@@ -1527,7 +1535,7 @@ class DecisionAgent:
         await self.storage.log_blocked_notification(block_data)
         _LOGGER.debug("Blocked notification logged: reason=%s, opportunity=%.2f", reason, opportunity_score)
 
-    async def _calculate_reward_with_feedback(self, accepted: bool, initial_power: float) -> float:
+    async def _calculate_reward_with_feedback(self, accepted: bool, initial_power: float, hours_elapsed: float = 0.0) -> float:
         """
         Calculates reward based on ACTUAL user feedback (delayed Q-learning).
         This is called after user responds, not when notification is sent.
@@ -1543,6 +1551,9 @@ class DecisionAgent:
         Args:
             accepted (bool): Whether user accepted the notification
             initial_power (float): Power consumption when notification was sent
+            hours_elapsed (float): Hours between notification send and user feedback.
+                If above 2 hours, the energy component is ignored to avoid learning
+                from non-causal daily load shifts.
 
         Returns:
             float: The calculated reward for this episode.
@@ -1561,13 +1572,20 @@ class DecisionAgent:
 
         baseline = self.baseline_consumption if self.baseline_consumption > 0 else initial_power
 
-        if initial_power > 0:
+        if hours_elapsed > 2.0:
+            energy_saving = 0.0
+        elif initial_power > 0:
             direct_impact = (initial_power - current_power) / initial_power
             baseline_comparison = (baseline - current_power) / baseline if baseline > 0 else direct_impact
             energy_saving = max(0.0, 0.5 * direct_impact + 0.5 * baseline_comparison)
         elif baseline > 0:
             energy_saving = max(0.0, (baseline - current_power) / baseline)
         else:
+            energy_saving = 0.0
+
+        # Rejection means the intervention quality was poor regardless of exogenous
+        # consumption changes, so do not credit energy savings on rejected nudges.
+        if not accepted:
             energy_saving = 0.0
 
         # Direct feedback signal (actual user response, not aggregated behavior_index)
@@ -1584,9 +1602,9 @@ class DecisionAgent:
         )
         
         _LOGGER.debug(
-            "Reward with feedback: Energy=%.4f, Feedback=%.4f (%s), Fatigue=%.4f, Total=%.4f",
+            "Reward with feedback: Energy=%.4f, Feedback=%.4f (%s), Fatigue=%.4f, HoursElapsed=%.2f, Total=%.4f",
             energy_saving, feedback_reward, "accept" if accepted else "reject", 
-            fatigue_penalty, reward
+            fatigue_penalty, hours_elapsed, reward
         )
 
         return reward
@@ -2007,8 +2025,8 @@ class DecisionAgent:
         if area_anomaly_count > 0:
             urgency = min(urgency + (area_anomaly_count * 0.1), 1.0)
 
-        # Component 3: User receptiveness (inverse of fatigue, boosted by good behaviour)
-        receptiveness = (1.0 - self.fatigue_index) * self.behaviour_index
+        # Component 3: User receptiveness (inverse of fatigue + non-zero behaviour floor)
+        receptiveness = (1.0 - self.fatigue_index) * max(self.behaviour_index, 0.1)
 
         # Component 4: Context appropriateness (time of day + occupancy)
         now = datetime.now()
