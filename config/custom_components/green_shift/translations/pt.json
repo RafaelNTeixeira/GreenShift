@@ -77,6 +77,30 @@
       "no_working_days": "Por favor selecione pelo menos um dia de trabalho."
     }
   },
+  "options": {
+    "step": {
+      "sensor_management": {
+        "title": "Gerir Sensores",
+        "description": "Reveja ou atualize os sensores selecionados. Encontrámos **{discovered_count}** sensores compatíveis.",
+        "data": {
+          "main_total_energy_sensor": "Medidor Principal de Energia (kWh Total)",
+          "main_total_power_sensor": "Medidor Principal de Potência (Watts Total)",
+          "weather_entity": "Fornecedor Meteorológico (Opcional)",
+          "outdoor_temp_sensor": "Sensor de Temperatura Exterior (Opcional)",
+          "confirmed_energy": "Aparelhos e Tomadas (Energia)",
+          "confirmed_power": "Aparelhos e Tomadas (Potência)",
+          "confirmed_temp": "Sensores de Temperatura",
+          "confirmed_hum": "Sensores de Humidade",
+          "confirmed_lux": "Sensores de Luminosidade",
+          "confirmed_occ": "Sensores de Ocupação"
+        }
+      },
+      "area_assignment": {
+        "title": "Atualizar Atribuição de Áreas",
+        "description": "Atribua uma área a cada um dos **{count}** sensores selecionados. Os medidores principais do edifício são excluídos automaticamente."
+      }
+    }
+  },
   "selector": {
     "currency": {
       "options": {

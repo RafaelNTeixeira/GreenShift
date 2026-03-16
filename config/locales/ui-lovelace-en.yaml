@@ -1159,6 +1159,46 @@ views:
               name: Electricity Price (per kWh)
               icon: mdi:lightning-bolt-circle
 
+        # --- SENSOR & AREA MANAGEMENT ---
+        - type: horizontal-stack
+          cards:
+            - type: markdown
+              content: |
+                ### 🧩 Sensors & Areas Management
+                Add or remove sensors and fix area assignments at any time, no reinstall needed.
+
+                Go to **Settings → Devices & Services → Green Shift → Configure (Gear Icon)** and update however you like!
+
+                {%- set p = (state_attr('sensor.hardware_sensors', 'power') or []) | length -%}
+                {%- set e = (state_attr('sensor.hardware_sensors', 'energy') or []) | length -%}
+                {%- set t = (state_attr('sensor.hardware_sensors', 'temperature') or []) | length -%}
+                {%- set h = (state_attr('sensor.hardware_sensors', 'humidity') or []) | length -%}
+                {%- set l = (state_attr('sensor.hardware_sensors', 'illuminance') or []) | length -%}
+                {%- set o = (state_attr('sensor.hardware_sensors', 'occupancy') or []) | length -%}
+                {%- set total = p + e + t + h + l + o -%}
+
+                </br>
+                
+                **Currently tracking {{ total }} sensor{{ 's' if total != 1 else '' }}**
+        
+                | Category | Active |
+                |---|:---:|
+                | ⚡ Power | {{ p }} |
+                | 🔋 Energy | {{ e }} |
+                | 🌡️ Temperature | {{ t }} |
+                | 💧 Humidity | {{ h }} |
+                | 💡 Illuminance | {{ l }} |
+                | 👁️ Occupancy | {{ o }} |
+              
+            - type: button
+              name: Manage Sensors & Areas
+              icon: mdi:tune-variant
+              icon_height: 30px
+              action_name: CONFIGURE
+              tap_action:
+                action: navigate
+                navigation_path: /config/integrations/integration/green_shift
+
         # --- HELP FOOTER ---
         - type: markdown
           content: |

@@ -1118,3 +1118,208 @@ class TestOutdoorTempSensorField:
         indoor_temps = config_flow.data["discovered_sensors"]["temperature"]
         assert "sensor.outside_temp" not in indoor_temps
         assert "sensor.living_room_temp" in indoor_temps
+
+
+# ============================================================================
+# Options Flow (Post-setup sensor/area management)
+# ============================================================================
+
+class TestOptionsFlowHelpers:
+    """Cover helper utilities and options flow bootstrap."""
+
+    def test_merge_unique_preserves_order_and_deduplicates(self):
+        merged = config_flow_mod._merge_unique(["a", "b", "a"], ["b", "c", None, ""])
+        assert merged == ["a", "b", "c"]
+
+    def test_async_get_options_flow_returns_options_flow_instance(self, config_flow):
+        entry = MagicMock()
+        entry.data = {}
+        entry.options = {}
+
+        options_flow = config_flow.async_get_options_flow(entry)
+
+        assert isinstance(options_flow, config_flow_mod.GreenShiftOptionsFlow)
+
+
+class TestOptionsFlowSteps:
+    """Cover options flow steps and branches."""
+
+    @pytest.fixture
+    def options_flow(self, mock_hass):
+        entry = MagicMock()
+        entry.data = {
+            "main_total_energy_sensor": "sensor.energy_main",
+            "main_total_power_sensor": "sensor.power_main",
+            "weather_entity": "weather.home",
+            "outdoor_temp_sensor": "sensor.outdoor_temp",
+            "discovered_sensors": {
+                "energy": ["sensor.energy_main", "sensor.energy_old"],
+                "power": ["sensor.power_main", "sensor.power_old"],
+                "temperature": ["sensor.temp_old"],
+                "humidity": ["sensor.hum_old"],
+                "illuminance": ["sensor.lux_old"],
+                "occupancy": ["binary_sensor.occ_old"],
+            },
+        }
+        entry.options = {
+            "discovered_sensors": {
+                "energy": ["sensor.energy_opt"],
+                "power": ["sensor.power_opt"],
+                "temperature": [],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            }
+        }
+
+        flow = config_flow_mod.GreenShiftOptionsFlow(entry)
+        flow.hass = mock_hass
+        return flow
+
+    async def test_step_init_discovers_and_merges_sensors(self, options_flow, discovered_sensors):
+        with patch.object(config_flow_mod, "async_discover_sensors", new_callable=AsyncMock, return_value=discovered_sensors):
+            result = await options_flow.async_step_init()
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "sensor_management"
+        # Keeps previous sensors and includes discovered ones
+        assert "sensor.energy_opt" in options_flow.discovered_cache["energy"]
+        assert "sensor.energy_total" in options_flow.discovered_cache["energy"]
+
+    async def test_sorted_entities_returns_empty_for_unknown_category(self, options_flow):
+        options_flow.discovered_cache = {"power": []}
+        assert options_flow._get_sorted_entities("energy") == []
+
+    async def test_sorted_entities_orders_values_descending(self, options_flow, mock_hass):
+        options_flow.hass = mock_hass
+        options_flow.discovered_cache = {"power": ["sensor.p1", "sensor.p2"]}
+
+        def get_state(entity_id):
+            state = MagicMock()
+            state.state = "10" if entity_id == "sensor.p1" else "100"
+            state.attributes = {"unit_of_measurement": "W"}
+            return state
+
+        mock_hass.states.get = get_state
+        assert options_flow._get_sorted_entities("power") == ["sensor.p2", "sensor.p1"]
+
+    async def test_get_weather_entities_from_hass_state_machine(self, options_flow, mock_hass):
+        state_1 = MagicMock()
+        state_1.entity_id = "weather.home"
+        state_2 = MagicMock()
+        state_2.entity_id = "weather.office"
+        mock_hass.states.async_all = MagicMock(return_value=[state_1, state_2])
+
+        result = options_flow._get_weather_entities()
+        assert result == ["weather.home", "weather.office"]
+
+    async def test_sensor_management_show_form_uses_existing_defaults(self, options_flow, mock_hass):
+        mock_hass.states.async_all = MagicMock(return_value=[])
+        mock_hass.states.get = MagicMock(return_value=None)
+        options_flow.discovered_cache = {
+            "energy": ["sensor.energy_main"],
+            "power": ["sensor.power_main"],
+            "temperature": ["sensor.temp_old"],
+            "humidity": ["sensor.hum_old"],
+            "illuminance": ["sensor.lux_old"],
+            "occupancy": ["binary_sensor.occ_old"],
+        }
+
+        result = await options_flow.async_step_sensor_management()
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "sensor_management"
+
+    async def test_sensor_management_submit_builds_options_and_injects_main_sensors(self, options_flow):
+        user_input = {
+            "main_total_energy_sensor": "sensor.energy_main",
+            "main_total_power_sensor": "sensor.power_main",
+            "weather_entity": "weather.home",
+            "outdoor_temp_sensor": "sensor.outdoor_temp",
+            "confirmed_energy": ["sensor.energy_room"],
+            "confirmed_power": [],
+            "confirmed_temp": ["sensor.temp_room"],
+            "confirmed_hum": [],
+            "confirmed_lux": [],
+            "confirmed_occ": [],
+        }
+
+        result = await options_flow.async_step_sensor_management(user_input)
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "area_assignment"
+        assert "sensor.energy_main" in options_flow.options_data["discovered_sensors"]["energy"]
+        assert "sensor.power_main" in options_flow.options_data["discovered_sensors"]["power"]
+
+    async def test_options_area_assignment_show_form_handles_defaults_and_exceptions(self, options_flow, mock_entity_registry):
+        options_flow.options_data = {
+            "main_total_energy_sensor": "sensor.energy_main",
+            "main_total_power_sensor": "sensor.power_main",
+            "discovered_sensors": {
+                "energy": ["sensor.energy_main", "sensor.energy_room"],
+                "power": ["sensor.power_main", "sensor.power_room"],
+                "temperature": ["sensor.bad_entity"],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            },
+        }
+
+        def area_side_effect(hass, entity_id):
+            if entity_id == "sensor.bad_entity":
+                raise Exception("boom")
+            if entity_id == "sensor.energy_room":
+                return "area_kitchen"
+            return None
+
+        with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=mock_entity_registry):
+            with patch.object(config_flow_mod, "get_entity_area_id", side_effect=area_side_effect):
+                result = await options_flow.async_step_area_assignment()
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "area_assignment"
+
+    async def test_options_area_assignment_submit_updates_registry_and_creates_entry(self, options_flow, mock_entity_registry):
+        options_flow.options_data = {
+            "main_total_energy_sensor": "sensor.energy_main",
+            "main_total_power_sensor": "sensor.power_main",
+            "discovered_sensors": {
+                "energy": ["sensor.energy_main", "sensor.energy_room"],
+                "power": ["sensor.power_main", "sensor.power_room"],
+                "temperature": [],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            },
+        }
+
+        with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=mock_entity_registry):
+            result = await options_flow.async_step_area_assignment(
+                {
+                    "sensor.energy_room": "area_living",
+                    "sensor.power_room": None,
+                }
+            )
+
+        assert result["type"] == "create_entry"
+        mock_entity_registry.async_update_entity.assert_called_once_with("sensor.energy_room", area_id="area_living")
+
+    async def test_options_area_assignment_submit_logs_update_exception_and_still_creates_entry(self, options_flow, mock_entity_registry):
+        options_flow.options_data = {
+            "main_total_energy_sensor": None,
+            "main_total_power_sensor": None,
+            "discovered_sensors": {
+                "energy": ["sensor.energy_room"],
+                "power": [],
+                "temperature": [],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            },
+        }
+        mock_entity_registry.async_update_entity = MagicMock(side_effect=Exception("registry failed"))
+
+        with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=mock_entity_registry):
+            result = await options_flow.async_step_area_assignment({"sensor.energy_room": "area_x"})
+
+        assert result["type"] == "create_entry"

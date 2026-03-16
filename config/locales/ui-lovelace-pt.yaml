@@ -1134,6 +1134,46 @@ views:
               name: Preço da Eletricidade (por kWh)
               icon: mdi:lightning-bolt-circle
 
+        # --- GESTAO DE SENSORES E AREAS ---
+        - type: horizontal-stack
+          cards:
+            - type: markdown
+              content: |
+                ### 🧩 Gestão de Sensores e Áreas
+                Adiciona ou remove sensores e corrige atribuições de áreas a qualquer momento, sem necessidade de reinstalação.
+
+                Vai a **Configurações → Dispositivos & Serviços → Green Shift → Configurar (Ícone de Engrenagem)** e atualize como preferir!
+
+                {%- set p = (state_attr('sensor.hardware_sensors', 'power') or []) | length -%}
+                {%- set e = (state_attr('sensor.hardware_sensors', 'energy') or []) | length -%}
+                {%- set t = (state_attr('sensor.hardware_sensors', 'temperature') or []) | length -%}
+                {%- set h = (state_attr('sensor.hardware_sensors', 'humidity') or []) | length -%}
+                {%- set l = (state_attr('sensor.hardware_sensors', 'illuminance') or []) | length -%}
+                {%- set o = (state_attr('sensor.hardware_sensors', 'occupancy') or []) | length -%}
+                {%- set total = p + e + t + h + l + o -%}
+
+                </br>
+                
+                **Atualmente a monitorizar {{ total }} sensor{{ 's' if total != 1 else '' }}**
+        
+                | Categoria | Ativo |
+                |---|:---:|
+                | ⚡ Poder | {{ p }} |
+                | 🔋 Energia | {{ e }} |
+                | 🌡️ Temperature | {{ t }} |
+                | 💧 Humidade | {{ h }} |
+                | 💡 Luminosidade | {{ l }} |
+                | 👁️ Ocupação | {{ o }} |
+              
+            - type: button
+              name: Gestão de Sensores e Áreas
+              icon: mdi:tune-variant
+              icon_height: 30px
+              action_name: CONFIGURE
+              tap_action:
+                action: navigate
+                navigation_path: /config/integrations/integration/green_shift
+
         # --- RODAPÉ DE AJUDA ---
         - type: markdown
           content: |

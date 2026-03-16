@@ -110,6 +110,21 @@ async_setup_entry = init_mod.async_setup_entry
 async_unload_entry = init_mod.async_unload_entry
 
 
+class TestReloadEntryListener:
+    @pytest.mark.asyncio
+    async def test_async_reload_entry_calls_config_reload(self):
+        hass = MagicMock()
+        hass.config_entries = MagicMock()
+        hass.config_entries.async_reload = AsyncMock()
+
+        entry = MagicMock()
+        entry.entry_id = "entry_123"
+
+        await init_mod._async_reload_entry(hass, entry)
+
+        hass.config_entries.async_reload.assert_awaited_once_with("entry_123")
+
+
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------

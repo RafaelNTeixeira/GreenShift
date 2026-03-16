@@ -34,6 +34,15 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _merge_unique(primary: list, secondary: list) -> list:
+    """Merge two lists preserving order and removing duplicates."""
+    merged = []
+    for value in (primary or []) + (secondary or []):
+        if value and value not in merged:
+            merged.append(value)
+    return merged
+
 class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """
     Config flow for Green Shift integration.
@@ -49,6 +58,12 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize flow storage."""
         self.data = {}
         self.discovered_cache = {}
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        """Return options flow handler."""
+        return GreenShiftOptionsFlow(config_entry)
 
     async def async_step_user(self, user_input=None):
         """
@@ -406,3 +421,191 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_create_entry(title="Green Shift", data=self.data)
 
         return self.async_show_form(step_id="intervention_info", last_step=True)
+
+
+class GreenShiftOptionsFlow(config_entries.OptionsFlow):
+    """Allow post-setup sensor and area management."""
+
+    def __init__(self, config_entry):
+        self._config_entry = config_entry
+        self.discovered_cache = {}
+        self.options_data = {}
+
+    async def async_step_init(self, user_input=None):
+        """Entry point for options flow."""
+        # Load latest available entities and keep previously selected sensors even if temporarily unavailable.
+        discovered_now = await async_discover_sensors(self.hass)
+        current_config = {**self._config_entry.data, **self._config_entry.options}
+        current_sensors = current_config.get("discovered_sensors", {})
+
+        self.discovered_cache = {
+            category: _merge_unique(discovered_now.get(category, []), current_sensors.get(category, []))
+            for category in ["energy", "power", "temperature", "humidity", "illuminance", "occupancy"]
+        }
+
+        return await self.async_step_sensor_management()
+
+    @callback
+    def _get_sorted_entities(self, category: str):
+        """Return entities sorted by current numeric value descending."""
+        entities = self.discovered_cache.get(category, [])
+        if not entities:
+            return []
+
+        entity_values = []
+        for entity_id in entities:
+            state = self.hass.states.get(entity_id)
+            val, _ = get_normalized_value(state, category)
+            if val is None:
+                val = -1.0
+            entity_values.append((entity_id, val))
+
+        entity_values.sort(key=lambda x: x[1], reverse=True)
+        return [x[0] for x in entity_values]
+
+    def _get_weather_entities(self):
+        """Get list of available weather entities."""
+        weather_entities = []
+        for state in self.hass.states.async_all("weather"):
+            weather_entities.append(state.entity_id)
+        return weather_entities
+
+    async def async_step_sensor_management(self, user_input=None):
+        """Select main sensors and per-category sensor lists."""
+        current_config = {**self._config_entry.data, **self._config_entry.options}
+
+        if user_input is not None:
+            confirmed_energy = list(user_input.get("confirmed_energy", []))
+            confirmed_power = list(user_input.get("confirmed_power", []))
+            main_energy = user_input.get("main_total_energy_sensor")
+            main_power = user_input.get("main_total_power_sensor")
+
+            if main_energy and main_energy not in confirmed_energy:
+                confirmed_energy.append(main_energy)
+            if main_power and main_power not in confirmed_power:
+                confirmed_power.append(main_power)
+
+            self.options_data = {
+                "main_total_energy_sensor": main_energy,
+                "main_total_power_sensor": main_power,
+                "weather_entity": user_input.get("weather_entity"),
+                "outdoor_temp_sensor": user_input.get("outdoor_temp_sensor"),
+                "discovered_sensors": {
+                    "energy": confirmed_energy,
+                    "power": confirmed_power,
+                    "temperature": list(user_input.get("confirmed_temp", [])),
+                    "humidity": list(user_input.get("confirmed_hum", [])),
+                    "illuminance": list(user_input.get("confirmed_lux", [])),
+                    "occupancy": list(user_input.get("confirmed_occ", [])),
+                },
+            }
+            return await self.async_step_area_assignment()
+
+        sorted_energy = self._get_sorted_entities("energy")
+        sorted_power = self._get_sorted_entities("power")
+        weather_list = self._get_weather_entities()
+
+        existing_energy = current_config.get("discovered_sensors", {}).get("energy", [])
+        existing_power = current_config.get("discovered_sensors", {}).get("power", [])
+        existing_temp = current_config.get("discovered_sensors", {}).get("temperature", [])
+        existing_hum = current_config.get("discovered_sensors", {}).get("humidity", [])
+        existing_lux = current_config.get("discovered_sensors", {}).get("illuminance", [])
+        existing_occ = current_config.get("discovered_sensors", {}).get("occupancy", [])
+
+        default_energy = _merge_unique(existing_energy, sorted_energy)
+        default_power = _merge_unique(existing_power, sorted_power)
+        default_temp = _merge_unique(existing_temp, self.discovered_cache.get("temperature", []))
+        default_hum = _merge_unique(existing_hum, self.discovered_cache.get("humidity", []))
+        default_lux = _merge_unique(existing_lux, self.discovered_cache.get("illuminance", []))
+        default_occ = _merge_unique(existing_occ, self.discovered_cache.get("occupancy", []))
+
+        weather_default = current_config.get("weather_entity") or (weather_list[0] if weather_list else None)
+        main_energy_default = current_config.get("main_total_energy_sensor") or (sorted_energy[0] if sorted_energy else None)
+        main_power_default = current_config.get("main_total_power_sensor") or (sorted_power[0] if sorted_power else None)
+
+        data_schema = vol.Schema({
+            vol.Optional("weather_entity", description={"suggested_value": weather_default}): EntitySelector(
+                EntitySelectorConfig(domain="weather", multiple=False)
+            ),
+            vol.Optional("outdoor_temp_sensor", description={"suggested_value": current_config.get("outdoor_temp_sensor")}): EntitySelector(
+                EntitySelectorConfig(domain="sensor", device_class="temperature", multiple=False)
+            ),
+            vol.Optional("main_total_energy_sensor", description={"suggested_value": main_energy_default}): EntitySelector(
+                EntitySelectorConfig(domain="sensor", device_class="energy")
+            ),
+            vol.Optional("main_total_power_sensor", description={"suggested_value": main_power_default}): EntitySelector(
+                EntitySelectorConfig(domain="sensor", device_class="power")
+            ),
+            vol.Optional("confirmed_energy", default=default_energy): EntitySelector(
+                EntitySelectorConfig(domain="sensor", device_class="energy", multiple=True)
+            ),
+            vol.Optional("confirmed_power", default=default_power): EntitySelector(
+                EntitySelectorConfig(domain="sensor", device_class="power", multiple=True)
+            ),
+            vol.Optional("confirmed_temp", default=default_temp): EntitySelector(
+                EntitySelectorConfig(domain="sensor", device_class="temperature", multiple=True)
+            ),
+            vol.Optional("confirmed_hum", default=default_hum): EntitySelector(
+                EntitySelectorConfig(domain="sensor", device_class="humidity", multiple=True)
+            ),
+            vol.Optional("confirmed_lux", default=default_lux): EntitySelector(
+                EntitySelectorConfig(domain="sensor", device_class="illuminance", multiple=True)
+            ),
+            vol.Optional("confirmed_occ", default=default_occ): EntitySelector(
+                EntitySelectorConfig(domain="binary_sensor", device_class="occupancy", multiple=True)
+            ),
+        })
+
+        return self.async_show_form(
+            step_id="sensor_management",
+            data_schema=data_schema,
+            description_placeholders={
+                "discovered_count": str(sum(len(v) for v in self.discovered_cache.values()))
+            },
+            last_step=False,
+        )
+
+    async def async_step_area_assignment(self, user_input=None):
+        """Assign areas to currently selected sensors."""
+        all_sensors = []
+        for entities in self.options_data.get("discovered_sensors", {}).values():
+            all_sensors.extend(entities)
+
+        all_sensors = list(set(all_sensors))
+
+        main_energy = self.options_data.get("main_total_energy_sensor")
+        main_power = self.options_data.get("main_total_power_sensor")
+        if main_energy in all_sensors:
+            all_sensors.remove(main_energy)
+        if main_power in all_sensors:
+            all_sensors.remove(main_power)
+
+        if user_input is not None:
+            ent_reg = er.async_get(self.hass)
+            for entity_id, area_id in user_input.items():
+                if area_id:
+                    try:
+                        ent_reg.async_update_entity(entity_id, area_id=area_id)
+                    except Exception as e:
+                        _LOGGER.warning("Failed to assign area for %s: %s", entity_id, e)
+
+            return self.async_create_entry(title="", data=self.options_data)
+
+        schema = {}
+        for entity_id in all_sensors:
+            try:
+                current_area_id = get_entity_area_id(self.hass, entity_id)
+                selector = AreaSelector(AreaSelectorConfig(multiple=False))
+                if current_area_id:
+                    schema[vol.Optional(entity_id, default=current_area_id)] = selector
+                else:
+                    schema[vol.Optional(entity_id)] = selector
+            except Exception as ex:
+                _LOGGER.error("Skipping entity %s in options area assignment due to error: %s", entity_id, ex)
+
+        return self.async_show_form(
+            step_id="area_assignment",
+            data_schema=vol.Schema(schema),
+            description_placeholders={"count": str(len(all_sensors))},
+            last_step=True,
+        )

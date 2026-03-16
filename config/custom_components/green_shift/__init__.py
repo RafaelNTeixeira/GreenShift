@@ -48,6 +48,11 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor", "select"]
 
 
+async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload config entry when options are updated."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """
     Setup of the component through config entry.
@@ -61,13 +66,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """
     hass.data.setdefault(DOMAIN, {})
 
-    # Use sensors selected from the user configuration
-    discovered_sensors = entry.data.get("discovered_sensors")
+    # Merge base config and runtime-editable options. Options override entry data.
+    config_data = {**entry.data, **entry.options}
+
+    # Use sensors selected from configuration/options
+    discovered_sensors = config_data.get("discovered_sensors")
 
     _LOGGER.debug("Setting up Green Shift with sensors: %s", discovered_sensors)
 
-    main_energy_sensor = entry.data.get("main_total_energy_sensor")
-    main_power_sensor = entry.data.get("main_total_power_sensor")
+    main_energy_sensor = config_data.get("main_total_energy_sensor")
+    main_power_sensor = config_data.get("main_total_power_sensor")
 
     _LOGGER.info("Configuring Green Shift with main energy sensor: %s", main_energy_sensor)
     _LOGGER.info("Configuring Green Shift with main power sensor: %s", main_power_sensor)
@@ -75,7 +83,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await sync_helper_entities(hass, entry)
 
     # Initialize storage manager (SQLite + JSON)
-    storage = StorageManager(hass, config_data=entry.data)
+    storage = StorageManager(hass, config_data=config_data)
     await storage.setup()
 
     # Initialize backup manager
@@ -86,15 +94,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await backup_manager.create_backup(backup_type="startup")
 
     # Initialize the real-time data collector
-    collector = DataCollector(hass, discovered_sensors, main_energy_sensor, main_power_sensor, storage, config_data=entry.data)
+    collector = DataCollector(hass, discovered_sensors, main_energy_sensor, main_power_sensor, storage, config_data=config_data)
     await collector.setup()
 
     # Initialize the decision agent (AI)
-    agent = DecisionAgent(hass, discovered_sensors, collector, storage, config_data=entry.data)
+    agent = DecisionAgent(hass, discovered_sensors, collector, storage, config_data=config_data)
     await agent.setup()
 
     # Initialize task manager (pass agent for phase access)
-    task_manager = TaskManager(hass, discovered_sensors, collector, storage, agent, config_data=entry.data)
+    task_manager = TaskManager(hass, discovered_sensors, collector, storage, agent, config_data=config_data)
 
     # Record initial phase if fresh install
     state = await storage.load_state()
@@ -115,7 +123,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN]["task_manager"] = task_manager
     hass.data[DOMAIN]["backup_manager"] = backup_manager
     hass.data[DOMAIN]["discovered_sensors"] = discovered_sensors
-    hass.data[DOMAIN]["config_data"] = entry.data  # Store config for working hours checks
+    hass.data[DOMAIN]["config_data"] = config_data  # Store merged config for working hours checks
+
+    # Reload integration whenever options are changed from UI options flow.
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     # Platform setup
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

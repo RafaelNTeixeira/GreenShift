@@ -77,6 +77,30 @@
       "no_working_days": "Please select at least one working day."
     }
   },
+  "options": {
+    "step": {
+      "sensor_management": {
+        "title": "Manage Sensors",
+        "description": "Review or update your selected sensors. We found **{discovered_count}** compatible sensors.",
+        "data": {
+          "main_total_energy_sensor": "Main Energy Meter (Total kWh)",
+          "main_total_power_sensor": "Main Power Meter (Total Watts)",
+          "weather_entity": "Weather Provider (Optional)",
+          "outdoor_temp_sensor": "Outdoor Temperature Sensor (Optional)",
+          "confirmed_energy": "Appliances & Plugs (Energy)",
+          "confirmed_power": "Appliances & Plugs (Power)",
+          "confirmed_temp": "Temperature Sensors",
+          "confirmed_hum": "Humidity Sensors",
+          "confirmed_lux": "Illuminance Sensors",
+          "confirmed_occ": "Occupancy Sensors"
+        }
+      },
+      "area_assignment": {
+        "title": "Update Area Assignment",
+        "description": "Assign an area to each of the **{count}** selected sensors. Main building meters are excluded automatically."
+      }
+    }
+  },
   "selector": {
     "currency": {
       "options": {
