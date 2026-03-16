@@ -858,8 +858,8 @@ def check_research_aggregates(conn: Optional[sqlite3.Connection]) -> None:
              f"No aggregate row for {yesterday}.",
              "The midnight daily aggregation job did not run or failed silently. "
              "This is a critical gap in the academic study data. "
-             "Check the async_track_time_change listener registered at midnight "
-             "and look for exceptions in the HA log around 00:00.")
+             "Check the 30-minute async_track_time_interval for daily_aggregation_callback "
+             "and look for exceptions in the HA log.")
     else:
         energy = yesterday_agg["total_energy_kwh"]
         power  = yesterday_agg["avg_power_w"]
