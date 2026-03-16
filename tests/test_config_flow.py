@@ -1172,6 +1172,102 @@ class TestOptionsFlowHelpers:
 
         assert flow._requires_intervention_reset(entry.data) is True
 
+    def test_requires_intervention_reset_ignores_environmental_sensor_changes(self):
+        entry = MagicMock()
+        entry.data = {
+            "discovered_sensors": {
+                "energy": ["sensor.energy_a"],
+                "power": ["sensor.power_a"],
+                "temperature": ["sensor.temp_old"],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            },
+            "main_total_energy_sensor": "sensor.energy_a",
+            "main_total_power_sensor": "sensor.power_a",
+        }
+        entry.options = {}
+
+        flow = config_flow_mod.GreenShiftOptionsFlow(entry)
+        flow.options_data = {
+            "discovered_sensors": {
+                "energy": ["sensor.energy_a"],
+                "power": ["sensor.power_a"],
+                "temperature": ["sensor.temp_new"],
+                "humidity": ["sensor.hum_new"],
+                "illuminance": ["sensor.lux_new"],
+                "occupancy": ["binary_sensor.occ_new"],
+            },
+            "main_total_energy_sensor": "sensor.energy_a",
+            "main_total_power_sensor": "sensor.power_a",
+        }
+
+        assert flow._requires_intervention_reset(entry.data) is False
+
+    def test_requires_intervention_reset_detects_main_sensor_change(self):
+        entry = MagicMock()
+        entry.data = {
+            "discovered_sensors": {
+                "energy": ["sensor.energy_a"],
+                "power": ["sensor.power_a"],
+                "temperature": [],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            },
+            "main_total_energy_sensor": "sensor.energy_a",
+            "main_total_power_sensor": "sensor.power_a",
+        }
+        entry.options = {}
+
+        flow = config_flow_mod.GreenShiftOptionsFlow(entry)
+        flow.options_data = {
+            "discovered_sensors": {
+                "energy": ["sensor.energy_a"],
+                "power": ["sensor.power_a"],
+                "temperature": [],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            },
+            "main_total_energy_sensor": "sensor.energy_a",
+            "main_total_power_sensor": "sensor.power_b",
+        }
+
+        assert flow._requires_intervention_reset(entry.data) is True
+
+    def test_requires_intervention_reset_ignores_legacy_missing_main_in_sensor_lists(self):
+        entry = MagicMock()
+        entry.data = {
+            "discovered_sensors": {
+                "energy": ["sensor.energy_opt"],
+                "power": ["sensor.power_opt"],
+                "temperature": [],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            },
+            "main_total_energy_sensor": "sensor.energy_main",
+            "main_total_power_sensor": "sensor.power_main",
+        }
+        entry.options = {}
+
+        flow = config_flow_mod.GreenShiftOptionsFlow(entry)
+        flow.options_data = {
+            "discovered_sensors": {
+                "energy": ["sensor.energy_opt", "sensor.energy_main"],
+                "power": ["sensor.power_opt", "sensor.power_main"],
+                "temperature": [],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            },
+            "main_total_energy_sensor": "sensor.energy_main",
+            "main_total_power_sensor": "sensor.power_main",
+        }
+
+        assert flow._requires_intervention_reset(entry.data) is False
+
 
 class TestOptionsFlowSteps:
     """Cover options flow steps and branches."""
@@ -1282,6 +1378,65 @@ class TestOptionsFlowSteps:
         assert result["step_id"] == "area_assignment"
         assert "sensor.energy_main" in options_flow.options_data["discovered_sensors"]["energy"]
         assert "sensor.power_main" in options_flow.options_data["discovered_sensors"]["power"]
+
+    async def test_sensor_management_omitted_main_fields_keep_current_and_avoid_reset_for_environment_only_change(self, options_flow, mock_entity_registry):
+        options_flow.discovered_cache = {
+            "energy": ["sensor.energy_opt"],
+            "power": ["sensor.power_opt"],
+            "temperature": ["sensor.temp_old"],
+            "humidity": [],
+            "illuminance": [],
+            "occupancy": [],
+        }
+
+        result = await options_flow.async_step_sensor_management(
+            {
+                # main_total_* intentionally omitted to mimic HA options payload
+                "weather_entity": "weather.home",
+                "outdoor_temp_sensor": "sensor.outdoor_temp",
+                "confirmed_energy": ["sensor.energy_opt", "sensor.energy_main"],
+                "confirmed_power": ["sensor.power_opt", "sensor.power_main"],
+                "confirmed_temp": [],  # user removed temperature sensor only
+                "confirmed_hum": [],
+                "confirmed_lux": [],
+                "confirmed_occ": [],
+            }
+        )
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "area_assignment"
+        assert options_flow.options_data["main_total_energy_sensor"] == "sensor.energy_main"
+        assert options_flow.options_data["main_total_power_sensor"] == "sensor.power_main"
+
+        with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=mock_entity_registry):
+            final = await options_flow.async_step_area_assignment({})
+
+        assert final["type"] == "create_entry"
+
+    async def test_sensor_management_omitted_main_field_and_removed_main_energy_triggers_reset(self, options_flow, mock_entity_registry):
+        result = await options_flow.async_step_sensor_management(
+            {
+                # main_total_energy_sensor intentionally omitted and removed from confirmed list
+                "weather_entity": "weather.home",
+                "outdoor_temp_sensor": "sensor.outdoor_temp",
+                "confirmed_energy": ["sensor.energy_opt"],
+                "confirmed_power": ["sensor.power_opt", "sensor.power_main"],
+                "confirmed_temp": ["sensor.temp_old"],
+                "confirmed_hum": [],
+                "confirmed_lux": [],
+                "confirmed_occ": [],
+            }
+        )
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "area_assignment"
+        assert options_flow.options_data["main_total_energy_sensor"] is None
+
+        with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=mock_entity_registry):
+            final = await options_flow.async_step_area_assignment({})
+
+        assert final["type"] == "form"
+        assert final["step_id"] == "reset_confirmation"
 
     async def test_options_area_assignment_show_form_handles_defaults_and_exceptions(self, options_flow, mock_entity_registry):
         options_flow.options_data = {

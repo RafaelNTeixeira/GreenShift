@@ -433,27 +433,36 @@ class GreenShiftOptionsFlow(config_entries.OptionsFlow):
         self._pending_area_updates = {}
 
     @staticmethod
-    def _normalize_sensor_map(sensor_map: dict) -> dict:
-        """Normalize sensor selections for stable comparison."""
+    def _normalize_sensor_map(sensor_map: dict, main_energy: str = None, main_power: str = None) -> dict:
+        """Normalize core sensor selections for stable comparison."""
         normalized = {}
-        for category in ["energy", "power", "temperature", "humidity", "illuminance", "occupancy"]:
+        for category in ["energy", "power"]:
             values = [v for v in (sensor_map or {}).get(category, []) if v]
             normalized[category] = sorted(set(values))
+
+        # Keep scope comparison stable even if legacy configs omitted main sensors from lists.
+        if main_energy and main_energy not in normalized["energy"]:
+            normalized["energy"].append(main_energy)
+            normalized["energy"].sort()
+        if main_power and main_power not in normalized["power"]:
+            normalized["power"].append(main_power)
+            normalized["power"].sort()
+
         return normalized
 
     def _requires_intervention_reset(self, current_config: dict) -> bool:
-        """Return True when selected sensor scope changed and data should be reset."""
-        current_sensors = self._normalize_sensor_map(current_config.get("discovered_sensors", {}))
-        new_sensors = self._normalize_sensor_map(self.options_data.get("discovered_sensors", {}))
-
-        if current_sensors != new_sensors:
-            return True
-
-        watched_scalar_keys = [
-            "main_total_energy_sensor",
-            "main_total_power_sensor"
-        ]
-        return any(current_config.get(key) != self.options_data.get(key) for key in watched_scalar_keys)
+        """Return True when selected core sensor scope changed and data should be reset."""
+        current_sensors = self._normalize_sensor_map(
+            current_config.get("discovered_sensors", {}),
+            current_config.get("main_total_energy_sensor"),
+            current_config.get("main_total_power_sensor"),
+        )
+        new_sensors = self._normalize_sensor_map(
+            self.options_data.get("discovered_sensors", {}),
+            self.options_data.get("main_total_energy_sensor"),
+            self.options_data.get("main_total_power_sensor"),
+        )
+        return current_sensors != new_sensors
 
     def _apply_area_assignments(self, area_updates: dict) -> None:
         """Apply selected entity -> area assignments to entity registry."""
@@ -511,8 +520,21 @@ class GreenShiftOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             confirmed_energy = list(user_input.get("confirmed_energy", []))
             confirmed_power = list(user_input.get("confirmed_power", []))
-            main_energy = user_input.get("main_total_energy_sensor")
-            main_power = user_input.get("main_total_power_sensor")
+
+            current_main_energy = current_config.get("main_total_energy_sensor")
+            current_main_power = current_config.get("main_total_power_sensor")
+
+            if "main_total_energy_sensor" in user_input:
+                main_energy = user_input.get("main_total_energy_sensor")
+            else:
+                # If omitted but removed from confirmed sensors, treat as explicit unset.
+                main_energy = current_main_energy if current_main_energy in confirmed_energy else None
+
+            if "main_total_power_sensor" in user_input:
+                main_power = user_input.get("main_total_power_sensor")
+            else:
+                # If omitted but removed from confirmed sensors, treat as explicit unset.
+                main_power = current_main_power if current_main_power in confirmed_power else None
 
             if main_energy and main_energy not in confirmed_energy:
                 confirmed_energy.append(main_energy)
