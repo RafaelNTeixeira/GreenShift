@@ -453,8 +453,8 @@ All data is stored in: `config/green_shift_data/`
 - `state.json` - AI model state (Q-table, indices)
 - `backups/` - Organized backup snapshots:
   - `auto/` - Every 6 hours, keeps last 10 (~2.5 days)
-  - `startup/` - On integration startup, keeps last 3
-  - `shutdown/` - On integration shutdown, keeps last 3
+  - `startup/` - On integration startup, keeps last 2
+  - `shutdown/` - On integration shutdown, keeps last 2
   - `manual/` - User-created backups (never auto-deleted)
   - `pre_restore/` - On restoring database (saves current database state before changing it)
 

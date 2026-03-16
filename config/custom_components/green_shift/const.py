@@ -36,8 +36,8 @@ VERIFY_TASKS_INTERVAL_MINUTES = 15 # Frequency to verify tasks in minutes
 # Backup settings
 BACKUP_INTERVAL_HOURS = 6  # Create automatic backup every X hours
 KEEP_AUTO_BACKUPS = 10     # Keep last N auto backups (~2.5 days with 6h interval)
-KEEP_STARTUP_BACKUPS = 3   # Keep last N startup backups (prevents accumulation)
-KEEP_SHUTDOWN_BACKUPS = 3  # Keep last N shutdown backups (prevents accumulation)
+KEEP_STARTUP_BACKUPS = 2   # Keep last N startup backups (prevents accumulation)
+KEEP_SHUTDOWN_BACKUPS = 2  # Keep last N shutdown backups (prevents accumulation)
 
 # Data retention settings
 RESEARCH_RETENTION_DAYS = 120  # Keep research data for 120 days (4 months)
