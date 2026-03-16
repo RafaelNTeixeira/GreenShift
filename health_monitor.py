@@ -495,15 +495,15 @@ def check_ai_health(data_dir: Path) -> Optional[dict]:
             if isinstance(ts_raw, str):
                 try:
                     ep_ts = datetime.fromisoformat(ts_raw)
-                    if (now_dt - ep_ts).total_seconds() > 3600:
+                    if (now_dt - ep_ts).total_seconds() > 86400:
                         stale_count += 1
                 except ValueError:
                     stale_count += 1
         if stale_count:
             _log("WARNING", "Pending Episodes",
-                 f"{stale_count}/{len(pending)} pending episode(s) older than 1 hour.",
+                 f"{stale_count}/{len(pending)} pending episode(s) older than 24 hours.",
                  "These episodes are waiting for user response that will never come. "
-                 "They will be expired on the next AI cycle, but a high count means "
+                 "They should already have been expired by the AI cycle cleanup, but a high count means "
                  "users are ignoring notification prompts entirely.")
         else:
             _log("OK", "Pending Episodes",
@@ -626,9 +626,9 @@ def check_rl_and_nudges(conn: Optional[sqlite3.Connection]) -> None:
                    "FROM research_rl_episodes "
                    "ORDER BY timestamp DESC LIMIT 50")
     expired_count   = sum(1 for r in recent_ep if r["action_source"] == "expired")
-    shadow_count    = sum(1 for r in recent_ep if r["action_source"] == "shadow")
+    shadow_count    = sum(1 for r in recent_ep if r["action_source"] in ("shadow_exploit", "shadow_explore"))
     real_count      = sum(1 for r in recent_ep
-                          if r["action_source"] not in ("expired", "shadow", None))
+                          if r["action_source"] not in ("expired", "shadow_exploit", "shadow_explore", None))
 
     expired_pct = expired_count / len(recent_ep) * 100 if recent_ep else 0
 
@@ -669,7 +669,7 @@ def check_rl_and_nudges(conn: Optional[sqlite3.Connection]) -> None:
     recent_actions = _q(conn,
                         "SELECT action_name, COUNT(*) AS n "
                         "FROM research_rl_episodes "
-                        "WHERE action_source NOT IN ('shadow', 'expired') "
+                        "WHERE action_source NOT IN ('shadow_exploit', 'shadow_explore', 'expired') "
                         "GROUP BY action_name ORDER BY n DESC LIMIT 10")
     if recent_actions:
         dist_str = " | ".join(f"{r['action_name']}: {r['n']}" for r in recent_actions)
@@ -958,7 +958,11 @@ def check_additional(conn_sensor: Optional[sqlite3.Connection],
 
         # Check for duplicate notification IDs
         if notif_hist:
-            ids = [n.get("id") for n in notif_hist if isinstance(n, dict) and "id" in n]
+            ids = [
+                n.get("notification_id") or n.get("id")
+                for n in notif_hist
+                if isinstance(n, dict) and ("notification_id" in n or "id" in n)
+            ]
             if len(ids) != len(set(ids)):
                 _log("WARNING", "Duplicate Notification IDs",
                      f"{len(ids) - len(set(ids))} duplicate ID(s) in notification_history.",
