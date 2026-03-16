@@ -575,9 +575,12 @@ class TestCheckCooldown:
     async def test_high_opportunity_with_reduced_cooldown_met(self):
         agent = make_agent()
         agent.fatigue_index = 0.0
-        # Adaptive cooldown with fatigue=0: 30 * 1.0 * 1.0 = 30 min -> 50% = 15 min
-        agent.last_notification_time = datetime.now() - timedelta(minutes=16)
-        can_send, req_cooldown, adap_cooldown = await agent._check_cooldown_with_opportunity(0.65)
+        # Adaptive cooldown at midday with fatigue=0: 30 * 1.0 * 1.0 = 30 min -> 50% = 15 min
+        with patch.object(da_mod, 'datetime') as mock_dt:
+            now = datetime(2026, 2, 19, 12, 0, 0)
+            mock_dt.now.return_value = now
+            agent.last_notification_time = now - timedelta(minutes=16)
+            can_send, req_cooldown, adap_cooldown = await agent._check_cooldown_with_opportunity(0.65)
         assert can_send is True
         # For high opportunity, required = 50% of adaptive
         assert req_cooldown == pytest.approx(adap_cooldown * 0.5)
@@ -609,8 +612,11 @@ class TestCheckCooldown:
     async def test_normal_opportunity_cooldown_satisfied(self):
         agent = make_agent()
         agent.fatigue_index = 0.0
-        agent.last_notification_time = datetime.now() - timedelta(minutes=31)
-        can_send, _, _ = await agent._check_cooldown_with_opportunity(0.3)
+        with patch.object(da_mod, 'datetime') as mock_dt:
+            now = datetime(2026, 2, 19, 12, 0, 0)
+            mock_dt.now.return_value = now
+            agent.last_notification_time = now - timedelta(minutes=31)
+            can_send, _, _ = await agent._check_cooldown_with_opportunity(0.3)
         assert can_send is True
 
     @pytest.mark.asyncio
@@ -3835,7 +3841,9 @@ class TestComputeNoopRewardNearBaseline:
         agent = make_agent()
         agent.baseline_consumption = 1000.0
         agent.data_collector.get_current_state = MagicMock(return_value={"power": 1100.0})
-        reward = agent._compute_noop_reward()
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 12, 0, 0)
+            reward = agent._compute_noop_reward()
         assert reward == pytest.approx(-0.1), (
             f"Expected -0.1 for slightly-above-baseline, got {reward}"
         )
@@ -3845,7 +3853,9 @@ class TestComputeNoopRewardNearBaseline:
         agent = make_agent()
         agent.baseline_consumption = 1000.0
         agent.data_collector.get_current_state = MagicMock(return_value={"power": 1290.0})
-        reward = agent._compute_noop_reward()
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 12, 0, 0)
+            reward = agent._compute_noop_reward()
         assert reward == pytest.approx(-0.1), (
             f"29%% above baseline should be -0.1, got {reward}"
         )
@@ -3855,7 +3865,9 @@ class TestComputeNoopRewardNearBaseline:
         agent = make_agent()
         agent.baseline_consumption = 1000.0
         agent.data_collector.get_current_state = MagicMock(return_value={"power": 1300.0})
-        reward = agent._compute_noop_reward()
+        with patch.object(da_mod, "datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 1, 1, 12, 0, 0)
+            reward = agent._compute_noop_reward()
         # deviation = 0.3, formula -> max(-0.5, -0.3 * 0.5) = -0.15
         assert reward < -0.1, (
             f"30%% deviation must use miss-band formula (< -0.1), got {reward}"

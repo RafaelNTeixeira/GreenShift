@@ -140,6 +140,48 @@ class TestStorageInit:
         assert "research_blocked_notifications" in tables
 
 
+class TestResetInterventionData:
+
+    @pytest.mark.asyncio
+    async def test_reset_intervention_data_deletes_runtime_files(self, storage):
+        # Ensure runtime files exist before reset.
+        await storage.save_state({"phase": "active"})
+        await storage.store_sensor_snapshot(timestamp=datetime.now(), power=123.0)
+
+        # Touch sqlite sidecars to ensure cleanup handles them.
+        Path(str(storage.db_path) + "-wal").touch()
+        Path(str(storage.db_path) + "-shm").touch()
+        Path(str(storage.research_db_path) + "-wal").touch()
+        Path(str(storage.research_db_path) + "-shm").touch()
+
+        assert storage.db_path.exists()
+        assert storage.research_db_path.exists()
+        assert storage.state_file.exists()
+
+        await storage.reset_intervention_data()
+
+        assert not storage.db_path.exists()
+        assert not storage.research_db_path.exists()
+        assert not storage.state_file.exists()
+        assert not Path(str(storage.db_path) + "-wal").exists()
+        assert not Path(str(storage.db_path) + "-shm").exists()
+        assert not Path(str(storage.research_db_path) + "-wal").exists()
+        assert not Path(str(storage.research_db_path) + "-shm").exists()
+
+    @pytest.mark.asyncio
+    async def test_reset_intervention_data_continues_when_delete_fails(self, storage):
+        # Force one candidate to fail unlink by making it a directory.
+        bad_path = Path(str(storage.db_path) + "-wal")
+        bad_path.mkdir(exist_ok=True)
+
+        # Should not raise despite unlink failure on directory.
+        await storage.reset_intervention_data()
+
+        # Other primary files are still removed.
+        assert not storage.db_path.exists()
+        assert not storage.research_db_path.exists()
+
+
 # -----------------------------------------------------------------------------
 # store_sensor_snapshot
 # -----------------------------------------------------------------------------

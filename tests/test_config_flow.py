@@ -1140,6 +1140,38 @@ class TestOptionsFlowHelpers:
 
         assert isinstance(options_flow, config_flow_mod.GreenShiftOptionsFlow)
 
+    def test_requires_intervention_reset_detects_sensor_changes(self):
+        entry = MagicMock()
+        entry.data = {
+            "discovered_sensors": {
+                "energy": ["sensor.energy_a"],
+                "power": ["sensor.power_a"],
+                "temperature": [],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            },
+            "main_total_energy_sensor": "sensor.energy_a",
+            "main_total_power_sensor": "sensor.power_a",
+        }
+        entry.options = {}
+
+        flow = config_flow_mod.GreenShiftOptionsFlow(entry)
+        flow.options_data = {
+            "discovered_sensors": {
+                "energy": ["sensor.energy_b"],
+                "power": ["sensor.power_a"],
+                "temperature": [],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            },
+            "main_total_energy_sensor": "sensor.energy_b",
+            "main_total_power_sensor": "sensor.power_a",
+        }
+
+        assert flow._requires_intervention_reset(entry.data) is True
+
 
 class TestOptionsFlowSteps:
     """Cover options flow steps and branches."""
@@ -1279,7 +1311,7 @@ class TestOptionsFlowSteps:
         assert result["type"] == "form"
         assert result["step_id"] == "area_assignment"
 
-    async def test_options_area_assignment_submit_updates_registry_and_creates_entry(self, options_flow, mock_entity_registry):
+    async def test_options_area_assignment_submit_goes_to_reset_confirmation_when_sensor_scope_changes(self, options_flow, mock_entity_registry):
         options_flow.options_data = {
             "main_total_energy_sensor": "sensor.energy_main",
             "main_total_power_sensor": "sensor.power_main",
@@ -1301,10 +1333,57 @@ class TestOptionsFlowSteps:
                 }
             )
 
-        assert result["type"] == "create_entry"
-        mock_entity_registry.async_update_entity.assert_called_once_with("sensor.energy_room", area_id="area_living")
+        assert result["type"] == "form"
+        assert result["step_id"] == "reset_confirmation"
+        mock_entity_registry.async_update_entity.assert_not_called()
 
-    async def test_options_area_assignment_submit_logs_update_exception_and_still_creates_entry(self, options_flow, mock_entity_registry):
+    async def test_options_area_assignment_submit_without_scope_change_updates_registry_and_creates_entry(self, options_flow, mock_entity_registry):
+        options_flow.options_data = {
+            "main_total_energy_sensor": "sensor.energy_main",
+            "main_total_power_sensor": "sensor.power_main",
+            "weather_entity": "weather.home",
+            "outdoor_temp_sensor": "sensor.outdoor_temp",
+            "discovered_sensors": {
+                "energy": ["sensor.energy_opt"],
+                "power": ["sensor.power_opt"],
+                "temperature": [],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            },
+        }
+
+        with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=mock_entity_registry):
+            result = await options_flow.async_step_area_assignment({"sensor.energy_opt": "area_living"})
+
+        assert result["type"] == "create_entry"
+        mock_entity_registry.async_update_entity.assert_called_once_with("sensor.energy_opt", area_id="area_living")
+
+    async def test_reset_confirmation_requires_checkbox(self, options_flow, mock_entity_registry):
+        options_flow.options_data = {
+            "main_total_energy_sensor": None,
+            "main_total_power_sensor": None,
+            "discovered_sensors": {
+                "energy": ["sensor.energy_room"],
+                "power": [],
+                "temperature": [],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            },
+        }
+
+        with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=mock_entity_registry):
+            result = await options_flow.async_step_area_assignment({"sensor.energy_room": "area_x"})
+            assert result["step_id"] == "reset_confirmation"
+
+            confirmation = await options_flow.async_step_reset_confirmation({"confirm_reset": False})
+
+        assert confirmation["type"] == "form"
+        assert confirmation["step_id"] == "reset_confirmation"
+        assert confirmation["errors"]["base"] == "confirmation_required"
+
+    async def test_reset_confirmation_applies_areas_and_sets_reset_flag(self, options_flow, mock_entity_registry):
         options_flow.options_data = {
             "main_total_energy_sensor": None,
             "main_total_power_sensor": None,
@@ -1321,5 +1400,9 @@ class TestOptionsFlowSteps:
 
         with patch.object(sys.modules["homeassistant.helpers.entity_registry"], "async_get", return_value=mock_entity_registry):
             result = await options_flow.async_step_area_assignment({"sensor.energy_room": "area_x"})
+            assert result["step_id"] == "reset_confirmation"
+
+            result = await options_flow.async_step_reset_confirmation({"confirm_reset": True})
 
         assert result["type"] == "create_entry"
+        assert result["data"]["reset_intervention_requested"] is True

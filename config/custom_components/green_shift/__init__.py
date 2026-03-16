@@ -82,12 +82,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await sync_helper_entities(hass, entry)
 
+    # Initialize backup manager early to support pre-reset safety snapshots.
+    backup_manager = BackupManager(hass.config.path("green_shift_data"))
+
     # Initialize storage manager (SQLite + JSON)
     storage = StorageManager(hass, config_data=config_data)
-    await storage.setup()
 
-    # Initialize backup manager
-    backup_manager = BackupManager(hass.config.path("green_shift_data"))
+    if config_data.get("reset_intervention_requested"):
+        _LOGGER.warning(
+            "Sensor scope changed: resetting intervention data to avoid analysis bias and restart baseline"
+        )
+
+        # Keep a recovery point before deleting runtime data.
+        await backup_manager.create_backup(backup_type="manual")
+        await storage.reset_intervention_data()
+
+        # Clear one-shot reset flag so subsequent restarts do not wipe data again.
+        updated_options = dict(entry.options)
+        updated_options.pop("reset_intervention_requested", None)
+        hass.config_entries.async_update_entry(entry, options=updated_options)
+        config_data = {**entry.data, **updated_options}
+
+    await storage.setup()
 
     # Create initial backup on startup
     _LOGGER.info("Creating startup backup...")

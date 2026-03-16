@@ -430,6 +430,40 @@ class GreenShiftOptionsFlow(config_entries.OptionsFlow):
         self._config_entry = config_entry
         self.discovered_cache = {}
         self.options_data = {}
+        self._pending_area_updates = {}
+
+    @staticmethod
+    def _normalize_sensor_map(sensor_map: dict) -> dict:
+        """Normalize sensor selections for stable comparison."""
+        normalized = {}
+        for category in ["energy", "power", "temperature", "humidity", "illuminance", "occupancy"]:
+            values = [v for v in (sensor_map or {}).get(category, []) if v]
+            normalized[category] = sorted(set(values))
+        return normalized
+
+    def _requires_intervention_reset(self, current_config: dict) -> bool:
+        """Return True when selected sensor scope changed and data should be reset."""
+        current_sensors = self._normalize_sensor_map(current_config.get("discovered_sensors", {}))
+        new_sensors = self._normalize_sensor_map(self.options_data.get("discovered_sensors", {}))
+
+        if current_sensors != new_sensors:
+            return True
+
+        watched_scalar_keys = [
+            "main_total_energy_sensor",
+            "main_total_power_sensor"
+        ]
+        return any(current_config.get(key) != self.options_data.get(key) for key in watched_scalar_keys)
+
+    def _apply_area_assignments(self, area_updates: dict) -> None:
+        """Apply selected entity -> area assignments to entity registry."""
+        ent_reg = er.async_get(self.hass)
+        for entity_id, area_id in (area_updates or {}).items():
+            if area_id:
+                try:
+                    ent_reg.async_update_entity(entity_id, area_id=area_id)
+                except Exception as e:
+                    _LOGGER.warning("Failed to assign area for %s: %s", entity_id, e)
 
     async def async_step_init(self, user_input=None):
         """Entry point for options flow."""
@@ -581,14 +615,13 @@ class GreenShiftOptionsFlow(config_entries.OptionsFlow):
             all_sensors.remove(main_power)
 
         if user_input is not None:
-            ent_reg = er.async_get(self.hass)
-            for entity_id, area_id in user_input.items():
-                if area_id:
-                    try:
-                        ent_reg.async_update_entity(entity_id, area_id=area_id)
-                    except Exception as e:
-                        _LOGGER.warning("Failed to assign area for %s: %s", entity_id, e)
+            self._pending_area_updates = dict(user_input)
 
+            current_config = {**self._config_entry.data, **self._config_entry.options}
+            if self._requires_intervention_reset(current_config):
+                return await self.async_step_reset_confirmation()
+
+            self._apply_area_assignments(self._pending_area_updates)
             return self.async_create_entry(title="", data=self.options_data)
 
         schema = {}
@@ -607,5 +640,30 @@ class GreenShiftOptionsFlow(config_entries.OptionsFlow):
             step_id="area_assignment",
             data_schema=vol.Schema(schema),
             description_placeholders={"count": str(len(all_sensors))},
+            last_step=True,
+        )
+
+    async def async_step_reset_confirmation(self, user_input=None):
+        """Warn user that changing sensor scope restarts intervention from zero."""
+        errors = {}
+        if user_input is not None:
+            if not user_input.get("confirm_reset", False):
+                errors["base"] = "confirmation_required"
+            else:
+                self._apply_area_assignments(self._pending_area_updates)
+                options_payload = {
+                    **self.options_data,
+                    "reset_intervention_requested": True,
+                }
+                return self.async_create_entry(title="", data=options_payload)
+
+        data_schema = vol.Schema({
+            vol.Required("confirm_reset", default=False): vol.Coerce(bool),
+        })
+
+        return self.async_show_form(
+            step_id="reset_confirmation",
+            data_schema=data_schema,
+            errors=errors,
             last_step=True,
         )

@@ -74,10 +74,14 @@
       "negative_price": "O preço da eletricidade não pode ser negativo.",
       "invalid_price": "O preço da eletricidade é inválido.",
       "invalid_time_format": "O horário deve estar no formato HH:MM (ex. 09:00).",
-      "no_working_days": "Por favor selecione pelo menos um dia de trabalho."
+      "no_working_days": "Por favor selecione pelo menos um dia de trabalho.",
+      "confirmation_required": "Confirme que a alteração de sensores reinicia a intervenção do zero."
     }
   },
   "options": {
+    "error": {
+      "confirmation_required": "Confirme que a alteração de sensores reinicia a intervenção do zero."
+    },
     "step": {
       "sensor_management": {
         "title": "Gerir Sensores",
@@ -98,6 +102,13 @@
       "area_assignment": {
         "title": "Atualizar Atribuição de Áreas",
         "description": "Atribua uma área a cada um dos **{count}** sensores selecionados. Os medidores principais do edifício são excluídos automaticamente."
+      },
+      "reset_confirmation": {
+        "title": "Confirmar Reinício da Intervenção",
+        "description": "Alterou o conjunto de sensores monitorizados. Para prevenir viés na análise e garantir a melhor experiência de utilização, o Green Shift vai reiniciar a intervenção e voltar à baseline (dia 0).\n\nTodos os dados históricos da intervenção serão apagados, mas os backups são preservados.",
+        "data": {
+          "confirm_reset": "Compreendo e quero reiniciar a intervenção do zero"
+        }
       }
     }
   },

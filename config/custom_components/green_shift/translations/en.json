@@ -74,10 +74,14 @@
       "negative_price": "Electricity price cannot be negative.",
       "invalid_price": "Electricity price is invalid.",
       "invalid_time_format": "Time must be in HH:MM format (e.g. 09:00).",
-      "no_working_days": "Please select at least one working day."
+      "no_working_days": "Please select at least one working day.",
+      "confirmation_required": "Please confirm that changing sensors restarts the intervention from zero."
     }
   },
   "options": {
+    "error": {
+      "confirmation_required": "Please confirm that changing sensors restarts the intervention from zero."
+    },
     "step": {
       "sensor_management": {
         "title": "Manage Sensors",
@@ -98,6 +102,13 @@
       "area_assignment": {
         "title": "Update Area Assignment",
         "description": "Assign an area to each of the **{count}** selected sensors. Main building meters are excluded automatically."
+      },
+      "reset_confirmation": {
+        "title": "Confirm Intervention Reset",
+        "description": "You changed the monitored sensor scope. To prevent research bias and ensure the best user experience, Green Shift will reset the intervention and restart from baseline (day 0).\n\nAll historical intervention data will be deleted, but backups are preserved.",
+        "data": {
+          "confirm_reset": "I understand and want to restart the intervention from zero"
+        }
       }
     }
   },

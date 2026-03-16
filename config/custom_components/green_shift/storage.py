@@ -60,6 +60,38 @@ class StorageManager:
         await self._init_research_database()
         await self._cleanup_old_data()
 
+    async def reset_intervention_data(self):
+        """Delete intervention runtime data so setup starts from a fresh baseline.
+
+        Backups under green_shift_data/backups are intentionally preserved.
+        """
+
+        def _reset_files():
+            file_candidates = [
+                self.db_path,
+                Path(str(self.db_path) + "-wal"),
+                Path(str(self.db_path) + "-shm"),
+                self.research_db_path,
+                Path(str(self.research_db_path) + "-wal"),
+                Path(str(self.research_db_path) + "-shm"),
+                self.state_file,
+                self.state_file.with_suffix(".tmp"),
+            ]
+
+            for file_path in file_candidates:
+                try:
+                    if file_path.exists():
+                        file_path.unlink()
+                except Exception as exc:
+                    _LOGGER.warning("Failed to delete reset file %s: %s", file_path, exc)
+
+        async with self._state_lock:
+            async with self._db_lock:
+                async with self._research_db_lock:
+                    await self.hass.async_add_executor_job(_reset_files)
+
+        _LOGGER.info("Intervention data reset complete; backups preserved at %s", self.config_dir / "backups")
+
     async def _init_database(self):
         """Initialize SQLite database with schema."""
         def _create_tables():
