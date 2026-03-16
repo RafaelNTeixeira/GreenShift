@@ -40,7 +40,6 @@ Green Shift is **fully translated** including dynamic content (AI notifications 
      customize: !include locales/customize_pt.yaml  # or locales/customize_en.yaml
 
    lovelace:
-     mode: yaml
      dashboards:
        lovelace-green-shift:
          mode: yaml
@@ -106,7 +105,11 @@ cd /config/
 
 ### Step 3: Update configuration.yaml
 
-Add these lines to your `/config/configuration.yaml`:
+Use one of the following approaches, depending on your current setup.
+
+#### Option A: Fresh/minimal `configuration.yaml`
+
+If these sections are not defined yet in your file, you can add this block directly:
 
 ```yaml
 homeassistant:
@@ -115,7 +118,6 @@ homeassistant:
 
 # Lovelace dashboard configuration
 lovelace:
-  mode: yaml
   dashboards:
     lovelace-green-shift:
       mode: yaml
@@ -128,6 +130,32 @@ input_number: !include input_numbers.yaml
 input_select: !include input_selects.yaml
 input_boolean: !include input_booleans.yaml
 ```
+
+#### Option B: Existing/populated `configuration.yaml`
+
+If your file already has `homeassistant`, `lovelace`, `input_number`, `input_select` or `input_boolean`, do **not** duplicate those top-level keys. Merge Green Shift entries into your existing sections.
+
+Example (merge into existing structure):
+
+```yaml
+homeassistant:
+  name: My Home
+  customize: !include locales/customize_en.yaml
+
+lovelace:
+  dashboards:
+    lovelace-green-shift:
+      mode: yaml
+      filename: locales/ui-lovelace-en.yaml
+      title: Green Shift
+      icon: mdi:leaf
+
+# Keep your existing input_* definitions strategy:
+# - If they already use !include, merge Green Shift helpers into those included files
+# - If they are inline maps, add Green Shift helper entities inline
+```
+
+The key rule is simple: each top-level key should exist only once in `configuration.yaml`.
 
 ### Step 4: Configure Workday integration
 
@@ -462,7 +490,7 @@ All data is stored in: `config/green_shift_data/`
 
 ## 🧪 Testing
 
-Green Shift includes currently **1173 comprehensive tests** covering AI logic, backup systems, configuration and utility functions - with **100% total code coverage**.
+Green Shift includes currently **1185 comprehensive tests** covering AI logic, backup systems, configuration and utility functions - with **100% total code coverage**.
 
 ### Quick Start
 
@@ -487,11 +515,11 @@ python3 -m pytest -n auto tests/test_decision_agent.py -v
 
 **Test Coverage:**
 - ✅ **46 tests** - Backup management (100%)
-- ✅ **58 tests** - Config flow & sensor discovery (100%)
+- ✅ **69 tests** - Config flow & sensor discovery (100%)
 - ✅ **97 tests** - Real-time data collection & energy tracking (100%)
 - ✅ **351 tests** - AI decision agent & Q-learning (100%)
 - ✅ **58 tests** - Helper functions & conversions (100%)
-- ✅ **55 tests** - Integration setup/services/unload/discovery (100%)
+- ✅ **56 tests** - Integration setup/services/unload/discovery (100%)
 - ✅ **131 tests** - Database operations & persistence (100%)
 - ✅ **129 tests** - Sensor entities (100%)
 - ✅ **37 tests** - Select entities (100%)

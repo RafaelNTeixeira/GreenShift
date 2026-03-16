@@ -4,16 +4,16 @@ Green Shift includes a comprehensive test suite covering core functionality and 
 
 ## Coverage Summary
 
-**1173 tests** across 11 modules - total measured coverage **100%**.
+**1185 tests** across 11 modules - total measured coverage **100%**.
 
 | Module | Tests | Coverage | Notes |
 |--------|-------|----------|-------|
 | `test_backup_manager.py` | 46 | **100%** | Backup creation, cleanup, restoration |
-| `test_config_flow.py` | 58 | **100%** | Config flow, sensor discovery, area assignment |
+| `test_config_flow.py` | 69 | **100%** | Config flow, sensor discovery, area assignment |
 | `test_data_collector.py` | 97 | **100%** | Real-time monitoring, energy tracking |
 | `test_decision_agent.py` | 351 | **100%** | AI model, Q-learning, fatigue tracking, engagement persistence, state persistence, action masking |
 | `test_helpers.py` | 58 | **100%** | Utility functions, conversions, entity/area resolution, working hours |
-| `test_init.py` | 55 | **100%** | Integration setup/services/unload/discovery and callback/runtime edge paths |
+| `test_init.py` | 56 | **100%** | Integration setup/services/unload/discovery and callback/runtime edge paths |
 | `test_select.py` | 37 | **100%** | |
 | `test_sensor.py` | 129 | **100%** | |
 | `test_storage.py` | 131 | **100%** | Database operations, data persistence, retention |
@@ -66,7 +66,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Backup restoration (full state recovery)
 - Edge cases (missing backups, corrupted files, concurrent access)
 
-### `test_config_flow.py` - 58 tests, **100%** coverage
+### `test_config_flow.py` - 69 tests, **100%** coverage
 - Multi-step flow navigation (5 steps)
 - Environment mode branching (home vs office)
 - Sensor discovery and value-based sorting
@@ -111,7 +111,7 @@ After running tests, open `tests/htmlcov/index.html` in a browser to see detaile
 - Friendly name resolution (attribute, registry, entity_id fallback)
 - Daily working hours calculation (standard, custom, midnight-crossing, malformed config)
 
-### `test_init.py` - 55 tests, **100%** coverage
+### `test_init.py` - 56 tests, **100%** coverage
 - Service registration mocks
 - Entry setup/teardown
 - Event bus subscription hooks

@@ -18,8 +18,6 @@ homeassistant:
 
 # Lovelace UI configuration (YAML mode)
 lovelace:
-  mode: yaml
-  resources: []
   dashboards:
     lovelace-green-shift:
       mode: yaml
