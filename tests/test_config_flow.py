@@ -1358,6 +1358,78 @@ class TestOptionsFlowSteps:
         assert result["type"] == "form"
         assert result["step_id"] == "sensor_management"
 
+    async def test_sensor_management_defaults_do_not_auto_select_newly_discovered_sensors(self, options_flow):
+        """Only previously selected sensors are pre-selected in options form defaults."""
+        options_flow.discovered_cache = {
+            "energy": ["sensor.energy_new", "sensor.energy_opt"],
+            "power": ["sensor.power_new", "sensor.power_opt"],
+            "temperature": ["sensor.temp_new"],
+            "humidity": ["sensor.hum_new"],
+            "illuminance": ["sensor.lux_new"],
+            "occupancy": ["binary_sensor.occ_new"],
+        }
+
+        captured_defaults = {}
+
+        def capture_optional(key, **kwargs):
+            if "default" in kwargs:
+                captured_defaults[key] = kwargs["default"]
+            return key
+
+        with patch.object(options_flow, "_get_sorted_entities", side_effect=[["sensor.energy_new", "sensor.energy_opt"], ["sensor.power_new", "sensor.power_opt"]]):
+            with patch.object(options_flow, "_get_weather_entities", return_value=[]):
+                with patch.object(config_flow_mod.vol, "Optional", side_effect=capture_optional):
+                    result = await options_flow.async_step_sensor_management()
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "sensor_management"
+        assert captured_defaults["confirmed_energy"] == ["sensor.energy_opt"]
+        assert captured_defaults["confirmed_power"] == ["sensor.power_opt"]
+        assert captured_defaults["confirmed_temp"] == []
+        assert captured_defaults["confirmed_hum"] == []
+        assert captured_defaults["confirmed_lux"] == []
+        assert captured_defaults["confirmed_occ"] == []
+
+    async def test_sensor_management_defaults_exclude_main_sensors_from_confirmed_lists(self, options_flow):
+        """Main sensors should appear in dedicated fields, not pre-selected in confirmed_* lists."""
+        options_flow._config_entry.options = {
+            "main_total_energy_sensor": "sensor.energy_main",
+            "main_total_power_sensor": "sensor.power_main",
+            "discovered_sensors": {
+                "energy": ["sensor.energy_main", "sensor.energy_room"],
+                "power": ["sensor.power_main", "sensor.power_room"],
+                "temperature": [],
+                "humidity": [],
+                "illuminance": [],
+                "occupancy": [],
+            },
+        }
+        options_flow.discovered_cache = {
+            "energy": ["sensor.energy_main", "sensor.energy_room", "sensor.energy_new"],
+            "power": ["sensor.power_main", "sensor.power_room", "sensor.power_new"],
+            "temperature": [],
+            "humidity": [],
+            "illuminance": [],
+            "occupancy": [],
+        }
+
+        captured_defaults = {}
+
+        def capture_optional(key, **kwargs):
+            if "default" in kwargs:
+                captured_defaults[key] = kwargs["default"]
+            return key
+
+        with patch.object(options_flow, "_get_sorted_entities", side_effect=[["sensor.energy_new", "sensor.energy_room", "sensor.energy_main"], ["sensor.power_new", "sensor.power_room", "sensor.power_main"]]):
+            with patch.object(options_flow, "_get_weather_entities", return_value=[]):
+                with patch.object(config_flow_mod.vol, "Optional", side_effect=capture_optional):
+                    result = await options_flow.async_step_sensor_management()
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "sensor_management"
+        assert captured_defaults["confirmed_energy"] == ["sensor.energy_room"]
+        assert captured_defaults["confirmed_power"] == ["sensor.power_room"]
+
     async def test_sensor_management_submit_builds_options_and_injects_main_sensors(self, options_flow):
         user_input = {
             "main_total_energy_sensor": "sensor.energy_main",

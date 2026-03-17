@@ -568,16 +568,20 @@ class GreenShiftOptionsFlow(config_entries.OptionsFlow):
         existing_lux = current_config.get("discovered_sensors", {}).get("illuminance", [])
         existing_occ = current_config.get("discovered_sensors", {}).get("occupancy", [])
 
-        default_energy = _merge_unique(existing_energy, sorted_energy)
-        default_power = _merge_unique(existing_power, sorted_power)
-        default_temp = _merge_unique(existing_temp, self.discovered_cache.get("temperature", []))
-        default_hum = _merge_unique(existing_hum, self.discovered_cache.get("humidity", []))
-        default_lux = _merge_unique(existing_lux, self.discovered_cache.get("illuminance", []))
-        default_occ = _merge_unique(existing_occ, self.discovered_cache.get("occupancy", []))
+        # Keep defaults strictly aligned with what the user previously selected.
+        # Main sensors are configured in dedicated fields, so avoid pre-selecting
+        # them again in the multi-select lists.
+        # Newly discovered sensors remain available in the selector, but are not pre-selected.
+        default_energy = [e for e in existing_energy if e and e != current_config.get("main_total_energy_sensor")]
+        default_power = [p for p in existing_power if p and p != current_config.get("main_total_power_sensor")]
+        default_temp = list(existing_temp)
+        default_hum = list(existing_hum)
+        default_lux = list(existing_lux)
+        default_occ = list(existing_occ)
 
         weather_default = current_config.get("weather_entity") or (weather_list[0] if weather_list else None)
-        main_energy_default = current_config.get("main_total_energy_sensor") or (sorted_energy[0] if sorted_energy else None)
-        main_power_default = current_config.get("main_total_power_sensor") or (sorted_power[0] if sorted_power else None)
+        main_energy_default = current_config.get("main_total_energy_sensor")
+        main_power_default = current_config.get("main_total_power_sensor")
 
         data_schema = vol.Schema({
             vol.Optional("weather_entity", description={"suggested_value": weather_default}): EntitySelector(
