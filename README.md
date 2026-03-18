@@ -16,6 +16,7 @@
 - ⚙️ **Zero Configuration**: Helpers and dashboard created automatically
 - 🎯 **Phased Approach**: 14-day learning phase, then active engagement
 - 🌍 **Multilingual**: Integration for different languages
+- 🏠 **Multifunctional:** Adapts to office or home environments. The user chooses during setup.
 
 ### Supported Languages
 
@@ -157,7 +158,28 @@ lovelace:
 
 The key rule is simple: each top-level key should exist only once in `configuration.yaml`.
 
-### Step 4: Configure Workday integration
+### Step 4: Configure Home Assistant location and weather provider
+
+Configuring weather before adding Green Shift avoids having to re-open the config flow later.
+
+1. Go to **Settings** -> **System** -> **General**
+2. Confirm your **Home location/address** is set correctly
+3. Save changes
+
+> Adding your address helps Home Assistant resolve accurate latitude/longitude coordinates for the study location, which improves weather-based analysis.
+
+4. Go to **Settings** -> **Devices & Services**
+5. Click **+ ADD INTEGRATION**
+6. Search for **Met.no** and install it
+7. Confirm you have a weather entity available (for example, `weather.home`)
+
+> **Why Met.no?**
+>
+> Met.no has been tested with Green Shift and works well for climate-aware logic and HDD/CDD data collection.
+
+> **Note:** If you don't have access to WiFi or don't want to add the Weather component, you can always resort to a sensor that measures the outside temperature. Green Shift is able to manage that too.
+
+### Step 5: Configure Workday integration (if Office mode)
 
 Workday is required if you want Green Shift to correctly treat public holidays as non-working days in office mode.
 
@@ -169,7 +191,42 @@ Workday is required if you want Green Shift to correctly treat public holidays a
 
 > Green Shift uses `binary_sensor.workday_sensor` to avoid generating office-mode activity on holidays.
 
-### Step 5: Restart Home Assistant
+### Step 6: Configure areas in Home Assistant (Optional but recommended)
+
+Configure your Home Assistant areas before adding Green Shift, so area assignment in config flow is faster and clearer.
+
+1. Go to **Settings** -> **Areas, Labels & Zones** -> **Areas**
+2. Create the areas where available sensors are present (for example: Living Room, Kitchen, Bedroom, Office)
+
+> During Green Shift setup, selected sensors can be assigned to these areas. If areas are not created first, assignment becomes less organized.
+
+### Step 7: Prepare backup folders (important for some installations)
+
+Depending on your system permissions, Green Shift may not be allowed to create backup subfolders automatically.
+
+If you are facing problems with this, manually add the following folders under `/config/green_shift_data/backups/` if they do not exist:
+
+```bash
+mkdir -p /config/green_shift_data/backups/auto
+mkdir -p /config/green_shift_data/backups/startup
+mkdir -p /config/green_shift_data/backups/shutdown
+mkdir -p /config/green_shift_data/backups/manual
+mkdir -p /config/green_shift_data/backups/pre_restore
+```
+
+### Step 8: (Optional) Configure mobile app notifications and interaction
+
+If you want to interact with Green Shift on your phone and receive AI notifications:
+
+1. Install the **Home Assistant Companion App** (Android/iOS)
+2. Log in with the same Home Assistant user account that will receive notifications
+3. In phone settings, allow notifications for the Home Assistant app
+4. In the app, ensure notification permissions are enabled
+5. Open Home Assistant -> **Settings** -> **People** and confirm the mobile device is linked
+
+> Green Shift actionable notifications must be answered from the mobile notification panel (accept/reject actions in the notification) so feedback is recorded by the AI.
+
+### Step 9: Restart Home Assistant
 
 ```bash
 # Via Home Assistant UI
@@ -179,7 +236,7 @@ Settings → System → Restart Home Assistant
 ha core restart
 ```
 
-### Step 6: Add the Integration
+### Step 10: Add the Integration
 
 1. Go to **Settings** → **Devices & Services**
 2. Click **+ ADD INTEGRATION**
@@ -187,18 +244,12 @@ ha core restart
 4. Follow the configuration wizard:
    - Configure currency and environment settings
    - Select your sensors (energy, power, temperature, etc.)
-   - **Optional**: Select a weather entity for Heating/Cooling Degree Days analysis (see note below)
+  - Select your weather entity/outdoor temperature source (already configured in Step 4)
    - Assign areas to sensors
 
-> **Weather Entity (optional but recommended)**
->
-> Providing a weather entity (e.g. `weather.home`) unlocks several improvements:
->
-> - **Climate-aware task difficulty**: on extremely hot or cold days the temperature tasks are automatically scaled down so users are not penalised for conditions they cannot control.
-> - **Degree-day research data**: daily HDD/CDD values are recorded alongside consumption data for richer analysis.
->
-> The integration searches common weather entity names automatically, but you can select any `weather.*` or `sensor.*` (outdoor temperature) entity during setup.
-> If you skip this field the integration works normally: weather-dependent features are simply disabled.
+For a field-by-field explanation of every screen, see:
+
+- 📘 **[Config Flow Setup Guide](./docs/CONFIG_FLOW_SETUP.md)**
 
 ✅ **That's it!** The integration will now start collecting baseline data.
 
