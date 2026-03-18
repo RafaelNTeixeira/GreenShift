@@ -1,5 +1,20 @@
 # Green Shift - Energy Consumption Management System
 
+## Table of Contents
+
+- [About Green Shift](#-about-green-shift)
+- [Supported Languages](#supported-languages)
+- [Installation](#-installation)
+- [Dashboard Setup](#-dashboard-setup)
+- [How It Works](#-how-it-works)
+- [Automatic Sensor Discovery](#-automatic-sensor-discovery)
+- [Technical Architecture](#-technical-architecture)
+- [User Feedback Integration](#-user-feedback-integration)
+- [Configuration](#configuration)
+- [Data Safety & Backup](#data-safety-backup)
+- [Testing](#-testing)
+- [Contributing](#-contributing)
+
 ## 🌱 About Green Shift
 
 **Green Shift** is a Home Assistant custom component that uses **Reinforcement Learning** to help households and organizations optimize their energy consumption. The system learns your consumption patterns and provides personalized, behaviour-changing notifications to reduce energy use while minimizing user fatigue.
@@ -16,7 +31,7 @@
 - ⚙️ **Zero Configuration**: Helpers and dashboard created automatically
 - 🎯 **Phased Approach**: 14-day learning phase, then active engagement
 - 🌍 **Multilingual**: Integration for different languages
-- 🏠 **Multifunctional:** Adapts to office or home environments. The user chooses during setup.
+- 🏠 **Multifunctional:** Adapts to work or home environments. The user chooses during setup.
 
 ### Supported Languages
 
@@ -28,12 +43,12 @@ Green Shift is **fully translated** including dynamic content (AI notifications 
 **To switch languages:**
 
 1. **Update your Home Assistant system language**:
-   - Go to **Settings → System → General**
+   - Go to **Settings -> System -> General**
    - Scroll to **Language**
    - Select your language (e.g., Português)
    - Click **Save**
 
-   ⚠️ **Note**: The Profile language (Settings → Profile → Language) only changes the Home Assistant UI language, not the integration language. You must change the **System Language** for Green Shift to detect it.
+   ⚠️ **Note**: The Profile language (Settings -> Profile -> Language) only changes the Home Assistant UI language, not the integration language. You must change the **System Language** for Green Shift to detect it.
 
 2. **Update [`configuration.yaml`](./config/configuration.yaml)**:
    ```yaml
@@ -179,7 +194,7 @@ Configuring weather before adding Green Shift avoids having to re-open the confi
 
 > **Note:** If you don't have access to WiFi or don't want to add the Weather component, you can always resort to a sensor that measures the outside temperature. Green Shift is able to manage that too.
 
-### Step 5: Configure Workday integration (if Office mode)
+### Step 5: Configure Workday integration (for work environments)
 
 Workday is required if you want Green Shift to correctly treat public holidays as non-working days in office mode.
 
@@ -204,7 +219,7 @@ Configure your Home Assistant areas before adding Green Shift, so area assignmen
 
 Depending on your system permissions, Green Shift may not be allowed to create backup subfolders automatically.
 
-If you are facing problems with this, manually add the following folders under `/config/green_shift_data/backups/` if they do not exist:
+If you are facing problems with this, manually add the following folders under `/config/green_shift_data/backups/`:
 
 ```bash
 mkdir -p /config/green_shift_data/backups/auto
@@ -230,7 +245,7 @@ If you want to interact with Green Shift on your phone and receive AI notificati
 
 ```bash
 # Via Home Assistant UI
-Settings → System → Restart Home Assistant
+Settings -> System -> Restart Home Assistant
 
 # Or via terminal
 ha core restart
@@ -238,7 +253,7 @@ ha core restart
 
 ### Step 10: Add the Integration
 
-1. Go to **Settings** → **Devices & Services**
+1. Go to **Settings** -> **Devices & Services**
 2. Click **+ ADD INTEGRATION**
 3. Search for **"Green Shift"**
 4. Follow the configuration wizard:
@@ -261,16 +276,16 @@ For a field-by-field explanation of every screen, see:
 
 The dashboard is automatically created when the integration loads. Access it at:
 
-**Settings** → **Dashboards** → **lovelace-green-shift**
+**Settings** -> **Dashboards** -> **lovelace-green-shift**
 
 ### Manual Access to Dashboard Configuration
 
 If you need to edit or import the dashboard configuration:
 
-1. Go to **Settings** → **Dashboards**
+1. Go to **Settings** -> **Dashboards**
 2. Find **"Energy Research Platform"**
-3. Click the three dots (**⋮**) → **Edit Dashboard**
-4. Click **Edit** → **Edit in YAML**
+3. Click the three dots (**⋮**) -> **Edit Dashboard**
+4. Click **Edit** -> **Edit in YAML**
 
 The dashboard configuration is defined in `ui-lovelace.yaml`.
 
@@ -476,7 +491,7 @@ Daily-average tasks are not finalized immediately after generation.
 This avoids false early wins (for example, very low standby consumption right after 06:00 generation) and prevents streak/reward credit before a representative day window is observed.
 ---
 
-## ⚙️ Configuration
+## ⚙️ Configuration <a id="configuration"></a>
 
 ### Settings Tab
 
@@ -497,7 +512,7 @@ Configure these parameters:
 
 ---
 
-## 🛡️ Data Safety & Backup
+## 🛡️ Data Safety & Backup <a id="data-safety-backup"></a>
 
 Green Shift includes comprehensive data protection to ensure your energy data and AI learning state are never lost:
 

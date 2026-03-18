@@ -25,11 +25,11 @@ Green Shift provides **complete multilingual support** with two translation syst
 
 Home Assistant's translation system is **automatic** and requires **no language picker** in the config flow. The system works as follows:
 
-1. **System Language**: Home Assistant uses the system-wide language setting from **Settings → System → General → Language**. This is what Green Shift detects.
+1. **System Language**: Home Assistant uses the system-wide language setting from **Settings -> System -> General -> Language**. This is what Green Shift detects.
 2. **Automatic Loading**: HA automatically loads the corresponding translation file (e.g., `en.json`, `pt.json`)
 3. **Fallback**: If a translation doesn't exist for the system language, it falls back to English (`en.json`)
 
-⚠️ **Important**: The **Profile language** (Settings → Profile → Language) only changes the Home Assistant UI language, not the integration language. You must set the **System language** (Settings → System → General → Language) for Green Shift to use your preferred language.
+⚠️ **Important**: The **Profile language** (Settings -> Profile -> Language) only changes the Home Assistant UI language, not the integration language. You must set the **System language** (Settings -> System -> General -> Language) for Green Shift to use your preferred language.
 
 ## Supported Languages
 
@@ -67,7 +67,7 @@ Dynamic content like **AI notifications** and **daily tasks** cannot use static 
 
 ### How Runtime Translations Work
 
-1. **Language Detection**: System reads the system language from `hass.config.language` (Settings → System → General → Language)
+1. **Language Detection**: System reads the system language from `hass.config.language` (Settings -> System -> General -> Language)
 2. **Template Selection**: Chooses appropriate template dictionary (`en`, `pt`)
 3. **Dynamic Formatting**: Fills templates with real-time data (power values, device names, etc.)
 
@@ -87,7 +87,7 @@ NOTIFICATION_TEMPLATES = {
 
 **Runtime Execution:**
 ```python
-language = get_language(hass)  # → "pt"
+language = get_language(hass)  # -> "pt"
 templates = get_notification_templates(language)
 message = templates["specific"][0]["message"].format(
     device_name="Aquecedor da Sala",
@@ -168,7 +168,7 @@ Open `fr.json` and translate all text values, keeping the keys unchanged:
 
 1. Restart Home Assistant
 2. **Change system language**:
-   - Go to **Settings → System → General**
+   - Go to **Settings -> System -> General**
    - Scroll to **Language**
    - Select your new language
    - Click **Save**
@@ -176,7 +176,7 @@ Open `fr.json` and translate all text values, keeping the keys unchanged:
 4. Reconfigure or reload the Green Shift integration
 5. All UI elements should now appear in the selected language
 
-⚠️ **Note**: Changing only your Profile language (Settings → Profile → Language) will not work. You must change the **System language**.
+⚠️ **Note**: Changing only your Profile language (Settings -> Profile -> Language) will not work. You must change the **System language**.
 
 ## Translation Best Practices
 
@@ -325,7 +325,7 @@ submit_task_feedback:
 ## Testing Translations
 
 ### Visual Testing
-1. Change your HA system language (Settings → System → General → Language)
+1. Change your HA system language (Settings -> System -> General -> Language)
 2. Restart Home Assistant
 3. Check all UI elements:
    - Config flow steps
@@ -353,7 +353,7 @@ If you'd like to contribute a new language:
 ## Common Issues
 
 ### Translation Not Showing
-- **System language**: Ensure you changed the **System language** (Settings → System → General → Language), not just the Profile language
+- **System language**: Ensure you changed the **System language** (Settings -> System -> General -> Language), not just the Profile language
 - **Restart required**: Restart HA after changing system language or adding new translation files
 - **Cache**: Clear browser cache
 - **File name**: Ensure you used the correct ISO 639-1 code

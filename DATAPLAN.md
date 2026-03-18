@@ -15,7 +15,7 @@ GreenShift uses **two SQLite databases** and **one JSON file** for data persiste
 ### 1. Research Database (`research_data.db`)
 
 #### Table: `research_phase_metadata`
-Tracks study phase transitions (baseline → active).
+Tracks study phase transitions (baseline -> active).
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -83,7 +83,7 @@ Every RL agent decision with full context.
 | `fatigue_index` | REAL | User fatigue index at decision time |
 
 **Enhanced Context Fields**:
-- **`action_mask`**: Tracks which actions were blocked (e.g., no device to nudge → specific blocked)
+- **`action_mask`**: Tracks which actions were blocked (e.g., no device to nudge -> specific blocked)
   - Example: `{"noop": true, "specific": false, "anomaly": true, ...}`
 - **`time_of_day_hour`**: Enables temporal pattern analysis (when are nudges most effective?)
 - **`baseline_power_reference`**: Compares current vs baseline to measure intervention impact
