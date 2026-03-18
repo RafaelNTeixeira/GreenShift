@@ -4,6 +4,7 @@
 
 - [About Green Shift](#-about-green-shift)
 - [Supported Languages](#supported-languages)
+- [Requirements](#-requirements)
 - [Installation](#-installation)
 - [How It Works](#-how-it-works)
 - [Automatic Sensor Discovery](#-automatic-sensor-discovery)
@@ -65,6 +66,36 @@ Green Shift is **fully translated** including dynamic content (AI notifications 
 3. **Restart Home Assistant**
 
 📚 **[Translation Guide](./docs/TRANSLATIONS.md)** - Help us add more languages!
+
+---
+
+## 📋 Requirements
+
+Before starting installation, make sure you have the following:
+
+- A working **Home Assistant** instance.
+- Access to the HA configuration path (`/config/`).
+- Permission to create/edit files in:
+  - `/config/custom_components/green_shift/`
+  - `/config/` (for helper/locales YAML files)
+  - `/config/green_shift_data/` (runtime data and backups)
+- Ability to **restart Home Assistant** after copying files.
+
+### Storage Capacity (important)
+
+Green Shift stores live sensor data, research data, JSON AI state and periodic backups.
+
+- **Minimum free space**: **10 GB**
+- **Recommended free space**: **15 GB**
+- **For larger/long-running setups**: **25+ GB**
+
+#### Estimated Maximum Storage (Includes Backups)
+
+| Areas \ Sensors | 12 to 20 Sensors | 21 to 40 Sensors | 41+ Sensors |
+| :--- | :--- | :--- | :--- |
+| **4 to 6 Areas** | 5 - 9 GB | 7 - 13 GB | 10 - 18+ GB |
+| **7 to 12 Areas** | 6 - 11 GB | 8 - 17 GB | 11 - 22+ GB |
+| **13+ Areas** | 8 - 14+ GB | 10 - 20+ GB | 12 - 26+ GB |
 
 ---
 
