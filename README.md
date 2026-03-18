@@ -5,7 +5,6 @@
 - [About Green Shift](#-about-green-shift)
 - [Supported Languages](#supported-languages)
 - [Installation](#-installation)
-- [Dashboard Setup](#-dashboard-setup)
 - [How It Works](#-how-it-works)
 - [Automatic Sensor Discovery](#-automatic-sensor-discovery)
 - [Technical Architecture](#-technical-architecture)
@@ -267,27 +266,6 @@ For a field-by-field explanation of every screen, see:
 - 📘 **[Config Flow Setup Guide](./docs/CONFIG_FLOW_SETUP.md)**
 
 ✅ **That's it!** The integration will now start collecting baseline data.
-
----
-
-## 🎨 Dashboard Setup
-
-### Automatic Setup
-
-The dashboard is automatically created when the integration loads. Access it at:
-
-**Settings** -> **Dashboards** -> **lovelace-green-shift**
-
-### Manual Access to Dashboard Configuration
-
-If you need to edit or import the dashboard configuration:
-
-1. Go to **Settings** -> **Dashboards**
-2. Find **"Energy Research Platform"**
-3. Click the three dots (**⋮**) -> **Edit Dashboard**
-4. Click **Edit** -> **Edit in YAML**
-
-The dashboard configuration is defined in `ui-lovelace.yaml`.
 
 ---
 
