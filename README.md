@@ -552,7 +552,7 @@ data:
 
 All data is stored in: `config/green_shift_data/`
 - `sensor_data.db` - Last 14 days of sensor readings
-- `research_data.db` - Permanent research and analytics data
+- `research_data.db` - Research and analytics data (by default, retained for 4 months / 120 days)
 - `state.json` - AI model state (Q-table, indices)
 - `backups/` - Organized backup snapshots:
   - `auto/` - Every 6 hours, keeps last 10 (~2.5 days)
