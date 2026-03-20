@@ -8,7 +8,7 @@ Complete these first:
 
 1. Install Green Shift files and update `configuration.yaml`
 2. Configure weather integration (recommended: Met.no)
-3. Configure Workday integration (especially for office mode)
+3. Configure Workday integration (for office mode)
 4. Create and organize your Home Assistant areas (Settings -> Areas, Labels & Zones -> Areas)
 5. Restart Home Assistant
 

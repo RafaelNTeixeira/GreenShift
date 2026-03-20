@@ -231,7 +231,7 @@ Workday is required if you want Green Shift to correctly treat public holidays a
 1. Go to **Settings** -> **Devices & Services**
 2. Click **+ ADD INTEGRATION**
 3. Search for **Workday**
-4. Configure your country/region and holiday options
+4. Configure your country/region, the days that you work and holiday options
 5. Make sure the entity exists as `binary_sensor.workday_sensor`
 
 > Green Shift uses `binary_sensor.workday_sensor` to avoid generating office-mode activity on holidays.
