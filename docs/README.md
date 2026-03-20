@@ -4,6 +4,14 @@ This folder contains comprehensive documentation for the Green Shift project.
 
 ## 📚 Documentation Files
 
+### [CONFIG_FLOW_SETUP.md](./CONFIG_FLOW_SETUP.md)
+**Detailed guide to the configuration flow** covering:
+- Step-by-step walkthrough of each screen and field
+- Validation rules and tips for each setting
+- Expected behavior and outcomes of different choices
+
+**Start here if you want to understand how to set up Green Shift in Home Assistant!**
+
 ### [CONTRIBUTING.md](./CONTRIBUTING.md)
 **Complete contributor guide** covering:
 - How to set up development environment
