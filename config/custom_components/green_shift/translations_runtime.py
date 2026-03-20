@@ -92,12 +92,12 @@ NOTIFICATION_TEMPLATES = {
         "normative": [
             {
                 "title": "Weekly Goal Update",
-                "message": "🎯 Weekly goal update: your consumption this week is {percent_above_target}% above your target ({target_power}W).",
+                "message": "🎯 Weekly goal update: your current consumption is {percent_above_target}% above your weekly target ({target_power}W).",
                 "context_filter": "above_target"
             },
             {
                 "title": "Weekly Goal Progress",
-                "message": "🏆 Excellent progress. Your consumption this week is {percent_below_target}% below your target ({target_power}W).",
+                "message": "🏆 Excellent progress. Your current consumption is {percent_below_target}% below your weekly target ({target_power}W).",
                 "context_filter": "below_target"
             },
             {
@@ -198,12 +198,12 @@ NOTIFICATION_TEMPLATES = {
         "normative": [
             {
                 "title": "Atualização de Meta Semanal",
-                "message": "🎯 Atualização de objetivo semanal: o seu consumo esta semana está {percent_above_target}% acima da sua meta ({target_power}W).",
+                "message": "🎯 Atualização de objetivo semanal: o seu consumo atual está {percent_above_target}% acima da sua meta semanal ({target_power}W).",
                 "context_filter": "above_target"
             },
             {
                 "title": "Progresso da Meta Semanal",
-                "message": "🏆 Excelente progresso. O seu consumo esta semana está {percent_below_target}% abaixo da sua meta ({target_power}W).",
+                "message": "🏆 Excelente progresso. O seu consumo atual está {percent_below_target}% abaixo da sua meta semanal ({target_power}W).",
                 "context_filter": "below_target"
             },
             {
