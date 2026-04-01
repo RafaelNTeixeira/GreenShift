@@ -378,7 +378,7 @@ $$\langle S, A, M, P, R, \gamma \rangle$$
 11. Time of day (normalized 0-1)
 12. Day of week (normalized 0-1)
 
-**A - Action Space** (4 discrete actions):
+**A - Action Space** (5 discrete actions):
 ```python
 ACTIONS = {
     "noop": 0,          # No intervention
