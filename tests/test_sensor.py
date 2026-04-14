@@ -1392,6 +1392,6 @@ class TestSensorAdditionalCoverage:
         with patch.object(sensor_mod, "datetime") as mock_dt:
             aware_now = datetime.now(timezone.utc)
             mock_dt.now.return_value = aware_now
-            naive_ts = datetime.now() - timedelta(minutes=5)
+            naive_ts = datetime.utcnow() - timedelta(minutes=5)
             result = sensor._get_time_ago(naive_ts)
         assert result.endswith("ago")
