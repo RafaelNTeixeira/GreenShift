@@ -56,4 +56,9 @@ lab_setup_old.md
 # Research data
 /research_export
 /cleaned_data
-/feup_research_data.db
+/feup_db
+/feup_research_data
+/feup_cleaned_data
+/fhp_db
+/fhp_research_data
+/fhp_cleaned_data

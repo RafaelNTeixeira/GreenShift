@@ -338,7 +338,7 @@ def clean_area_daily_stats(df: pd.DataFrame) -> pd.DataFrame:
                   if df[c].isna().all() and c not in ("date", "created_at")]
     if fully_null:
         issues.append(
-            f"Columns without any value (100% NaN) — missing sensor data: "
+            f"Columns without any value (100% NaN) - missing sensor data: "
             f"{fully_null}"
         )
 
@@ -563,7 +563,7 @@ def clean_nudge_log(df: pd.DataFrame) -> pd.DataFrame:
     # -- 9. Flag response_* 100% NaN ------------------------------------------
     if df["response_timestamp"].isna().all():
         issues.append(
-            "response_timestamp: 100% NaN — no notifications were responded to yet "
+            "response_timestamp: 100% NaN - no notifications were responded to yet "
             "(expected behavior in the initial phase)"
         )
 
@@ -572,7 +572,7 @@ def clean_nudge_log(df: pd.DataFrame) -> pd.DataFrame:
     if dups.any():
         issues.append(
             f"{dups.sum()} rows with duplicated notification_id "
-            "(possible resends) — kept all"
+            "(possible resends) - kept all"
         )
 
     # -- 11. Sort -------------------------------------------------------------
@@ -589,7 +589,7 @@ def clean_phase_metadata(df: pd.DataFrame) -> pd.DataFrame:
     ------------------------
     Metadata of the study phases (baseline -> active).
     Known issues:
-      - Two records with phase='active' and different start_timestamps — indicates
+      - Two records with phase='active' and different start_timestamps - indicates
         a poorly recorded transition; keep both but flag.
       - end_timestamp: NaN in the ongoing active phase (expected).
       - baseline_occupancy_avg: 100% NaN.
@@ -613,7 +613,7 @@ def clean_phase_metadata(df: pd.DataFrame) -> pd.DataFrame:
     for phase, count in phase_counts.items():
         if count > 1:
             issues.append(
-                f"Phase '{phase}' appears {count}x — possible duplicate record "
+                f"Phase '{phase}' appears {count}x - possible duplicate record "
                 "of phase transition. Check manually."
             )
 
@@ -634,7 +634,7 @@ def clean_phase_metadata(df: pd.DataFrame) -> pd.DataFrame:
     # -- 6. Flag baseline_occupancy_avg 100% NaN ------------------------------
     if df["baseline_occupancy_avg"].isna().all():
         issues.append(
-            "baseline_occupancy_avg: 100% NaN — metric not calculated"
+            "baseline_occupancy_avg: 100% NaN - metric not calculated"
         )
 
     # -- 7. Sort --------------------------------------------------------------
@@ -652,7 +652,7 @@ def clean_rl_episodes(df: pd.DataFrame) -> pd.DataFrame:
     Episodes from the Reinforcement Learning agent (Q-learning).
     Known issues:
       - opportunity_score: NaN during baseline (agent in shadow mode, without
-        opportunity calculation — expected behavior).
+        opportunity calculation - expected behavior).
       - accepted: 100% NaN (baseline doesn't send real notifications).
       - gamma_used: some NaN in the first episodes.
       - state_vector, q_values, action_mask: JSON strings -> expand.
@@ -695,13 +695,13 @@ def clean_rl_episodes(df: pd.DataFrame) -> pd.DataFrame:
     if opp_null_baseline:
         issues.append(
             f"opportunity_score: {opp_null_baseline} NaN in the baseline phase "
-            "(agent in shadow mode — expected behavior)"
+            "(agent in shadow mode - expected behavior)"
         )
 
     # -- 6. accepted 100% NaN -------------------------------------------------
     if df["accepted"].isna().all():
         issues.append(
-            "accepted: 100% NaN — no real notifications sent yet "
+            "accepted: 100% NaN - no real notifications sent yet "
             "(baseline phase/shadow mode)"
         )
 
@@ -744,10 +744,10 @@ def clean_task_interactions(df: pd.DataFrame) -> pd.DataFrame:
     ---------------------------
     Daily gamification tasks presented to the user (up to 3/day).
     Known issues:
-      - area_name: 100% NaN — area association not implemented yet.
-      - first_view_timestamp: 100% NaN — user didn't open the app to view.
+      - area_name: 100% NaN - area association not implemented yet.
+      - first_view_timestamp: 100% NaN - user didn't open the app to view.
       - time_to_view_seconds: 100% NaN (depends on first_view_timestamp).
-      - user_feedback: 100% NaN — feedback not collected.
+      - user_feedback: 100% NaN - feedback not collected.
       - completion_value / completion_timestamp: NaN when completed == 0.
     """
     issues:       list[str] = []
@@ -811,7 +811,7 @@ def clean_task_interactions(df: pd.DataFrame) -> pd.DataFrame:
     ).round(2)
     added_cols.append("time_to_complete_minutes")
 
-    # -- 8. 100% NaN — flag ---------------------------------------------------
+    # -- 8. 100% NaN - flag ---------------------------------------------------
     fully_null = [c for c in df.columns
                   if df[c].isna().all() and c not in ("date", "created_at")]
     if fully_null:
@@ -911,7 +911,7 @@ def run_pipeline(input_dir: Path, output_dir: Path) -> bool:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'═' * 80}")
-    print("  GREEN SHIFT — DATA CLEANING PIPELINE")
+    print("  GREEN SHIFT - DATA CLEANING PIPELINE")
     print(f"{'═' * 80}")
     print(f"  Source      : {input_dir.resolve()}")
     print(f"  Destination : {output_dir.resolve()}")
@@ -924,7 +924,7 @@ def run_pipeline(input_dir: Path, output_dir: Path) -> bool:
         csv_path = input_dir / f"{table_name}.csv"
 
         if not csv_path.exists():
-            print(f"  ⚠  {table_name:<45} — file not found, ignored")
+            print(f"  ⚠  {table_name:<45} - file not found, ignored")
             continue
 
         try:
@@ -940,7 +940,7 @@ def run_pipeline(input_dir: Path, output_dir: Path) -> bool:
             success_count += 1
 
         except Exception as exc:
-            print(f"  ❌ {table_name:<45} — ERROR: {exc}")
+            print(f"  ❌ {table_name:<45} - ERROR: {exc}")
             fail_count += 1
 
     report.print_summary()

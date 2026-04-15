@@ -3,23 +3,20 @@ Export Research Data Script
 Exports all research data from research_data.db to CSV files for analysis.
 
 Usage:
-    python export_research.py [output_dir]
+    python export_research.py <db_path> [output_dir]
 
 Example:
-    python export_research.py ./research_export
-    python export_research.py /path/to/output
+    python export_research.py ./config/green_shift_data/research_data.db ./research_export
+    python export_research.py /path/to/research_data.db /path/to/output
 """
 
 import sqlite3
 import sys
+import argparse
 from pathlib import Path
-from datetime import datetime
 
-def export_research_data(db_path: str, output_dir: str = None):
+def export_research_data(db_path: str, output_dir: str):
     """Export all research data to CSV files."""
-    
-    if output_dir is None:
-        output_dir = "research_export"
     
     db_path = Path(db_path)
     output_path = Path(output_dir)
@@ -66,7 +63,6 @@ def export_research_data(db_path: str, output_dir: str = None):
     
     for table in tables:
         try:
-            # Check if table exists and has data
             cursor = conn.cursor()
             cursor.execute(f"SELECT COUNT(*) FROM {table}")
             row_count = cursor.fetchone()[0]
@@ -75,7 +71,6 @@ def export_research_data(db_path: str, output_dir: str = None):
                 print(f"⚠️  {table:<40} (0 rows - skipped)")
                 continue
             
-            # Export to CSV
             df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
             file_path = output_path / f"{table}.csv"
             df.to_csv(file_path, index=False)
@@ -100,42 +95,27 @@ def export_research_data(db_path: str, output_dir: str = None):
 
 def main():
     """Main entry point."""
-    if len(sys.argv) > 2:
-        print("❌ Too many arguments!")
-        print(__doc__)
-        return 1
-    
-    # Determine database path
-    if len(sys.argv) > 1:
-        output_dir = sys.argv[1]
-    else:
-        output_dir = "research_export"
-    
-    # Find research database
-    possible_paths = [
-        Path("config/green_shift_data/research_data.db"),
-        Path("green_shift_data/research_data.db"),
-        Path.home() / "config/green_shift_data/research_data.db"
-    ]
-    
-    db_path = None
-    for path in possible_paths:
-        if path.exists():
-            db_path = path
-            break
-    
-    if db_path is None:
-        print("❌ Could not find research_data.db!")
-        print("\n   Searched in:")
-        for path in possible_paths:
-            print(f"     - {path.absolute()}")
-        print("\n   Please specify the database path:")
-        print("   python export_research.py /path/to/research_data.db output_dir")
-        return 1
-    
-    # Run export
-    success = export_research_data(str(db_path), output_dir)
-    
+    parser = argparse.ArgumentParser(
+        description="Export research data from SQLite database to CSV files.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__
+    )
+    parser.add_argument(
+        "db_path",
+        metavar="DB_PATH",
+        help="Path to the research_data.db SQLite database"
+    )
+    parser.add_argument(
+        "output_dir",
+        nargs="?",
+        default="research_export",
+        metavar="OUTPUT_DIR",
+        help="Directory to write CSV files to (default: ./research_export)"
+    )
+
+    args = parser.parse_args()
+
+    success = export_research_data(args.db_path, args.output_dir)
     return 0 if success else 1
 
 if __name__ == "__main__":
