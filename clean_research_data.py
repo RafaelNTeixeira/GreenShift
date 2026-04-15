@@ -47,7 +47,7 @@ VALID_ACTION_SOURCES = {"shadow_explore", "shadow_exploit", "explore", "exploit"
                         "expired"}    # expired = episode expired without action
 # Block reasons from decision_agent.py _decide_action()
 VALID_BLOCK_REASONS = {"cooldown", "fatigue_threshold", "no_opportunity", "threshold"}
-VALID_WEATHER      = {"sunny", "cloudy", "rainy", "windy", "foggy", "snowy", "partly_cloudy"}
+# VALID_WEATHER      = {"sunny", "cloudy", "rainy", "windy", "foggy", "snowy", "partly_cloudy"}
 
 # Unix timestamp columns (seconds since epoch) -> convert to UTC datetime
 UNIX_TS_COLS = {
@@ -425,9 +425,6 @@ def clean_daily_aggregates(df: pd.DataFrame) -> pd.DataFrame:
 
     # -- 2. Categories --------------------------------------------------------
     df["phase"]             = flag_invalid_categories(df, "phase", VALID_PHASES, issues)
-    df["weather_condition"] = flag_invalid_categories(
-        df, "weather_condition", VALID_WEATHER, issues
-    )
 
     # -- 3. Count imputation: NaN -> 0 when total is 0 ------------------------
     #   Tasks
