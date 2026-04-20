@@ -474,13 +474,83 @@ def clean_daily_aggregates(df: pd.DataFrame) -> pd.DataFrame:
     )
     added_cols.append("nudge_acceptance_rate")
 
-    # -- 7. 100% NaN columns: flag --------------------------------------------
+    # -- 7. Auxiliary column: normalized energy by HDD (Enorm) ----------------
+    # Enorm = total_energy_kwh / hdd_base18
+    # HDD (Heating Degree Days) removes weather-driven variation so that consumption across days with different outdoor temperatures is comparable.
+    # Result is NaN when hdd_base18 is 0 or missing (e.g. summer days where the outdoor temperature never drops below the 18 °C base).
+    if "hdd_base18" in df.columns:
+        hdd_valid = df["hdd_base18"].notna() & (df["hdd_base18"] > 0)
+        df["energy_norm_hdd_kwh"] = np.where(
+            hdd_valid,
+            (df["total_energy_kwh"] / df["hdd_base18"]).round(4),
+            np.nan
+        )
+        n_zero_hdd = (~hdd_valid & df["hdd_base18"].notna()).sum()
+        if n_zero_hdd:
+            issues.append(
+                f"energy_norm_hdd_kwh: {n_zero_hdd} day(s) with hdd_base18 == 0 "
+                "-> Enorm set to NaN (no heating demand; consider cooling-degree "
+                "normalization for those days)"
+            )
+        added_cols.append("energy_norm_hdd_kwh")
+    else:
+        issues.append(
+            "energy_norm_hdd_kwh: skipped - column 'hdd_base18' not found"
+        )
+
+    # -- 8. Auxiliary column: working-hours efficiency ------------------------
+    # working_hours_efficiency = avg_power_working_hours - avg_power_off_hours
+    wh_col  = "avg_power_working_hours"
+    owh_col = "avg_power_off_hours"
+    if wh_col in df.columns and owh_col in df.columns:
+        both_present = df[wh_col].notna() & df[owh_col].notna()
+        df["working_hours_efficiency_w"] = np.where(
+            both_present,
+            (df[wh_col] - df[owh_col]).round(2),
+            np.nan
+        )
+        n_missing = (~both_present).sum()
+        if n_missing:
+            issues.append(
+                f"working_hours_efficiency_w: {n_missing} row(s) with NaN in "
+                f"'{wh_col}' or '{owh_col}' -> efficiency set to NaN"
+            )
+        added_cols.append("working_hours_efficiency_w")
+    else:
+        missing = [c for c in [wh_col, owh_col] if c not in df.columns]
+        issues.append(
+            f"working_hours_efficiency_w: skipped - missing column(s): {missing}"
+        )
+
+    # -- 9. Auxiliary column: day activity label ------------------------------
+    # is_active_day = 1 when at least one task was completed that day,
+    #                 0 for passive days (tasks generated but none completed, or no tasks generated at all).
+    # NaN when tasks_completed itself is NaN (data gap).
+    if "tasks_completed" in df.columns:
+        df["is_active_day"] = np.where(
+            df["tasks_completed"].isna(),
+            np.nan,
+            (df["tasks_completed"] > 0).astype(int)
+        )
+        n_active  = (df["is_active_day"] == 1).sum()
+        n_passive = (df["is_active_day"] == 0).sum()
+        issues.append(
+            f"is_active_day: {n_active} active day(s), {n_passive} passive day(s) "
+            "in this export"
+        )
+        added_cols.append("is_active_day")
+    else:
+        issues.append(
+            "is_active_day: skipped - column 'tasks_completed' not found"
+        )
+
+    # -- 10. 100% NaN columns: flag -------------------------------------------
     fully_null = [c for c in df.columns
                   if df[c].isna().all() and c not in ("date", "created_at")]
     if fully_null:
         issues.append(f"Columns without any value (100% NaN): {fully_null}")
 
-    # -- 8. Duplicates by date ------------------------------------------------
+    # -- 11. Duplicates by date -----------------------------------------------
     dups = df.duplicated(subset=["date"], keep=False)
     if dups.any():
         issues.append(
@@ -488,7 +558,7 @@ def clean_daily_aggregates(df: pd.DataFrame) -> pd.DataFrame:
         )
         df = df.sort_values("created_at").drop_duplicates(subset=["date"], keep="last")
 
-    # -- 9. Sort --------------------------------------------------------------
+    # -- 12. Sort -------------------------------------------------------------
     df = df.sort_values("date").reset_index(drop=True)
 
     report.register("research_daily_aggregates", original_rows, len(df),
