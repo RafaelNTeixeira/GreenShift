@@ -1143,7 +1143,7 @@ async def sync_helper_entities(hass: HomeAssistant, entry: ConfigEntry):
         hass (HomeAssistant): The Home Assistant instance.
         entry (ConfigEntry): The configuration entry containing the user-selected options.
     """
-    chosen_currency = entry.data.get("currency", "EUR")
+    chosen_currency = entry.data.get("currency", "eur")
     chosen_price = entry.data.get("electricity_price", 0.25)
     chosen_target = entry.data.get("energy_saving_target", 15)
 
