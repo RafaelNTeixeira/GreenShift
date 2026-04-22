@@ -50,7 +50,7 @@ dr_stub = sys.modules["homeassistant.helpers.device_registry"]
 
 const_spec = importlib.util.spec_from_file_location(
     "custom_components.green_shift.const",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "const.py",
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "const.py",
 )
 const_mod = importlib.util.module_from_spec(const_spec)
 const_mod.__package__ = "custom_components.green_shift"
@@ -96,7 +96,7 @@ import numpy as np  # noqa: E402 - already available in test env
 
 init_spec = importlib.util.spec_from_file_location(
     "gs_init",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "__init__.py",
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "__init__.py",
 )
 init_mod = importlib.util.module_from_spec(init_spec)
 init_mod.__package__ = "custom_components.green_shift"

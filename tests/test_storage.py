@@ -42,7 +42,7 @@ for mod_name in [
 # Import real const module
 const_spec = importlib.util.spec_from_file_location(
     "custom_components.green_shift.const",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "const.py"
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "const.py"
 )
 const_mod = importlib.util.module_from_spec(const_spec)
 const_mod.__package__ = "custom_components.green_shift"
@@ -51,7 +51,7 @@ sys.modules["custom_components.green_shift.const"] = const_mod
 
 helpers_spec = importlib.util.spec_from_file_location(
     "custom_components.green_shift.helpers",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "helpers.py"
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "helpers.py"
 )
 helpers_mod = importlib.util.module_from_spec(helpers_spec)
 helpers_mod.__package__ = "custom_components.green_shift"
@@ -61,7 +61,7 @@ sys.modules["custom_components.green_shift.helpers"] = helpers_mod
 # Load storage module
 storage_spec = importlib.util.spec_from_file_location(
     "storage",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "storage.py"
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "storage.py"
 )
 storage_mod = importlib.util.module_from_spec(storage_spec)
 storage_mod.__package__ = "custom_components.green_shift"

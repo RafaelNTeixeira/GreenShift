@@ -1,0 +1,212 @@
+# Services for Green Shift Integration
+
+submit_task_feedback:
+  name: Submit Task Feedback
+  description: Provide feedback on task difficulty
+  fields:
+    task_index:
+      name: Task Index
+      description: The index of the task (0 = first task, 1 = second, 2 = third)
+      required: true
+      example: 0
+      selector:
+        number:
+          min: 0
+          max: 2
+          mode: box
+    feedback:
+      name: Feedback
+      description: Your feedback on the task difficulty
+      required: true
+      example: "just_right"
+      selector:
+        select:
+          options:
+            - label: "Too Easy"
+              value: "too_easy"
+            - label: "Just Right"
+              value: "just_right"
+            - label: "Too Hard"
+              value: "too_hard"
+
+verify_tasks:
+  name: Verify Tasks
+  description: Manually trigger task verification for today
+  fields: {}
+
+regenerate_tasks:
+  name: Regenerate Tasks
+  description: Force regeneration of today's tasks (admin use only)
+  fields: {}
+
+respond_to_selection:
+  name: Respond to Selection
+  description: Accept or Reject the notification currently selected in the dropdown.
+  fields:
+    decision:
+      name: Decision
+      description: Either 'accept' or 'reject'
+      required: true
+      selector:
+        select:
+          options:
+            - accept
+            - reject
+
+
+# ========================================
+# ========     FOR DEBUGGING     =========
+# ========================================
+
+force_ai_process:
+  name: Force AI Processing
+  description: Manually trigger AI model processing (for testing)
+  fields: {}
+
+force_notification:
+  name: Force Notification
+  description: Bypass cooldowns and force a notification decision
+  fields: {}
+
+inject_test_data:
+  name: Inject Test Data
+  description: Generate synthetic historical data for testing. Note - 1 hour = 240 data points (15s intervals), so large values may take time.
+  fields:
+    hours:
+      name: Hours of data
+      description: How many hours of data to generate (1 hour = 240 readings at 15s intervals)
+      required: true
+      example: 2
+      selector:
+        number:
+          min: 1
+          max: 336  # 14 days
+          mode: box
+
+set_test_indices:
+  name: Set Test Indices
+  description: Manually set AI indices (fatigue, behavior, anomaly) for testing
+  fields:
+    fatigue:
+      name: Fatigue Index
+      description: Fatigue index (0.0 to 1.0)
+      required: false
+      example: 0.5
+      selector:
+        number:
+          min: 0.0
+          max: 1.0
+          step: 0.1
+          mode: slider
+    behavior:
+      name: Behavior Index
+      description: Behavior index (0.0 to 1.0)
+      required: false
+      example: 0.7
+      selector:
+        number:
+          min: 0.0
+          max: 1.0
+          step: 0.1
+          mode: slider
+    anomaly:
+      name: Anomaly Index
+      description: Anomaly index (0.0 to 1.0)
+      required: false
+      example: 0.3
+      selector:
+        number:
+          min: 0.0
+          max: 1.0
+          step: 0.1
+          mode: slider
+
+save_state:
+  name: Save State
+  description: Immediately persist the current AI agent state to JSON storage, without waiting for the periodic save interval.
+  fields: {}
+
+create_backup:
+  name: Create Backup
+  description: Manually create a backup of all Green Shift data
+  fields: {}
+
+restore_backup:
+  name: Restore from Backup
+  description: Restore Green Shift data from a specific backup
+  fields:
+    backup_name:
+      name: Backup Name
+      description: Path to backup (e.g., "auto/20260218_100000" or just "20260218_100000")
+      required: true
+      example: "auto/20260218_100000"
+      selector:
+        text:
+
+list_backups:
+  name: List Backups
+  description: List all available backups (check logs for output)
+  fields: {}
+
+test_data_retention:
+  name: Test Data Retention
+  description: Test and debug data retention mechanisms (notifications & RL episodes)
+  fields:
+    test_type:
+      name: Test Type
+      description: Type of retention test to run
+      required: true
+      example: "status"
+      selector:
+        select:
+          options:
+            - label: "Show Status"
+              value: "status"
+            - label: "Inject Notifications (test 100-limit)"
+              value: "inject_notifications"
+            - label: "Inject Old Episodes (test 4-month retention)"
+              value: "inject_old_episodes"
+            - label: "Set Overdue Cleanup (test 24h check)"
+              value: "set_overdue_cleanup"
+            - label: "Run Cleanup Manually"
+              value: "run_cleanup"
+    count:
+      name: Notification Count
+      description: Number of notifications to inject (for inject_notifications test)
+      required: false
+      example: 150
+      selector:
+        number:
+          min: 1
+          max: 500
+          mode: box
+    months:
+      name: Months of Data
+      description: Months of old data to inject (for inject_old_episodes test)
+      required: false
+      example: 5
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
+    episodes_per_day:
+      name: Episodes Per Day
+      description: Episodes per day to inject (for inject_old_episodes test)
+      required: false
+      example: 100
+      selector:
+        number:
+          min: 10
+          max: 5000
+          mode: box
+    hours_ago:
+      name: Hours Ago
+      description: Set last cleanup this many hours ago (for set_overdue_cleanup test)
+      required: false
+      example: 48
+      selector:
+        number:
+          min: 1
+          max: 168
+          mode: box

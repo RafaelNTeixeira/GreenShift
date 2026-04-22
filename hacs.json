@@ -1,0 +1,8 @@
+{
+  "name": "Green Shift",
+  "zip_release": true,
+  "hide_default_branch": false,
+  "homeassistant": "2024.1.0",
+  "hacs": "1.32.0",
+  "filename": "green_shift.zip"
+}

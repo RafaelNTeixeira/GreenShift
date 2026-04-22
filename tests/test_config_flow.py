@@ -62,7 +62,7 @@ selector_mock.AreaSelectorConfig = MagicMock
 # Import const module
 const_spec = importlib.util.spec_from_file_location(
     "custom_components.green_shift.const",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "const.py"
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "const.py"
 )
 const_mod = importlib.util.module_from_spec(const_spec)
 const_mod.__package__ = "custom_components.green_shift"
@@ -72,7 +72,7 @@ sys.modules["custom_components.green_shift.const"] = const_mod
 # Import helpers module
 helpers_spec = importlib.util.spec_from_file_location(
     "custom_components.green_shift.helpers",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "helpers.py"
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "helpers.py"
 )
 helpers_mod = importlib.util.module_from_spec(helpers_spec)
 helpers_mod.__package__ = "custom_components.green_shift"
@@ -88,7 +88,7 @@ sys.modules["custom_components.green_shift"] = init_mock
 # Import config_flow
 config_flow_spec = importlib.util.spec_from_file_location(
     "custom_components.green_shift.config_flow",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "config_flow.py"
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "config_flow.py"
 )
 config_flow_mod = importlib.util.module_from_spec(config_flow_spec)
 config_flow_mod.__package__ = "custom_components.green_shift"

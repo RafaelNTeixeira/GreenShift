@@ -1,10 +1,10 @@
 [run]
 # Source can be specified relative to where coverage is run
-# When run from tests/ directory, use ../config/...
+# When run from tests/ directory, use ../custom_components/...
 concurrency = multiprocessing
 source = 
-    ../config/custom_components/green_shift
-    config/custom_components/green_shift
+    ../custom_components/green_shift
+    custom_components/green_shift
 omit = 
     */tests/*
     */test_*.py

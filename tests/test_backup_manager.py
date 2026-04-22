@@ -23,7 +23,7 @@ if "homeassistant" not in sys.modules:
 
 spec = __import__("importlib").util.spec_from_file_location(
     "backup_manager",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "backup_manager.py"
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "backup_manager.py"
 )
 backup_mod = __import__("importlib").util.module_from_spec(spec)
 spec.loader.exec_module(backup_mod)

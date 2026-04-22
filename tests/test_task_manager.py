@@ -28,7 +28,7 @@ for mod_name in [
 # Import real translations_runtime module
 trans_spec = importlib.util.spec_from_file_location(
     "custom_components.green_shift.translations_runtime",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "translations_runtime.py"
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "translations_runtime.py"
 )
 trans_mod = importlib.util.module_from_spec(trans_spec)
 trans_mod.__package__ = "custom_components.green_shift"
@@ -45,7 +45,7 @@ sys.modules["custom_components.green_shift.helpers"] = helpers_stub
 # Import real const module
 const_spec = importlib.util.spec_from_file_location(
     "custom_components.green_shift.const",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "const.py"
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "const.py"
 )
 const_mod = importlib.util.module_from_spec(const_spec)
 const_mod.__package__ = "custom_components.green_shift"
@@ -55,7 +55,7 @@ sys.modules["custom_components.green_shift.const"] = const_mod
 # Load the real module
 spec = importlib.util.spec_from_file_location(
     "task_manager",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "task_manager.py"
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "task_manager.py"
 )
 tm_mod = importlib.util.module_from_spec(spec)
 tm_mod.__package__ = "custom_components.green_shift"

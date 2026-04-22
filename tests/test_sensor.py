@@ -73,7 +73,7 @@ sys.modules["homeassistant.helpers.dispatcher"].async_dispatcher_connect = Magic
 
 const_spec = importlib.util.spec_from_file_location(
     "custom_components.green_shift.const",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "const.py",
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "const.py",
 )
 const_mod = importlib.util.module_from_spec(const_spec)
 const_mod.__package__ = "custom_components.green_shift"
@@ -98,7 +98,7 @@ sys.modules["custom_components.green_shift.helpers"] = helpers_stub
 
 sensor_spec = importlib.util.spec_from_file_location(
     "gs_sensor",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "sensor.py",
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "sensor.py",
 )
 sensor_mod = importlib.util.module_from_spec(sensor_spec)
 sensor_mod.__package__ = "custom_components.green_shift"

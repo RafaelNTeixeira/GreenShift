@@ -45,7 +45,7 @@ dispatcher_stub.async_dispatcher_send = MagicMock()
 # Import real const module
 const_spec = importlib.util.spec_from_file_location(
     "custom_components.green_shift.const",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "const.py"
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "const.py"
 )
 const_mod = importlib.util.module_from_spec(const_spec)
 const_mod.__package__ = "custom_components.green_shift"
@@ -69,7 +69,7 @@ sys.modules["custom_components.green_shift.storage"] = storage_stub
 # Load data_collector module
 dc_spec = importlib.util.spec_from_file_location(
     "data_collector",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "data_collector.py"
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "data_collector.py"
 )
 dc_mod = importlib.util.module_from_spec(dc_spec)
 dc_mod.__package__ = "custom_components.green_shift"

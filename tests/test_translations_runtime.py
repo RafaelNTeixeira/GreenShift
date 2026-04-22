@@ -26,7 +26,7 @@ for mod_name in ["homeassistant", "homeassistant.core"]:
 # Load translations_runtime module
 trans_spec = importlib.util.spec_from_file_location(
     "translations_runtime",
-    pathlib.Path(__file__).parent.parent / "config" / "custom_components" / "green_shift" / "translations_runtime.py"
+    pathlib.Path(__file__).parent.parent / "custom_components" / "green_shift" / "translations_runtime.py"
 )
 trans_mod = importlib.util.module_from_spec(trans_spec)
 trans_mod.__package__ = "custom_components.green_shift"
