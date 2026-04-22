@@ -386,7 +386,7 @@ class TestSyncHelperEntities:
             None,
         )
         assert currency_call is not None
-        assert currency_call.args[2]["option"] == "EUR"
+        assert currency_call.args[2]["option"] == "eur"
 
     @pytest.mark.asyncio
     async def test_service_exception_does_not_propagate(self):

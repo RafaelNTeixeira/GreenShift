@@ -115,9 +115,9 @@
   "selector": {
     "currency": {
       "options": {
-        "eur": "Euro (€)",
-        "usd": "Dólar Americano ($)",
-        "gbp": "Libra Esterlina (£)"
+        "EUR": "Euro (€)",
+        "USD": "Dólar Americano ($)",
+        "GBP": "Libra Esterlina (£)"
       }
     },
     "environment_mode": {
