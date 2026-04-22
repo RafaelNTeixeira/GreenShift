@@ -2,10 +2,10 @@ currency:
   name: "Currency"
   icon: mdi:currency-eur
   options:
-    - EUR
-    - USD
-    - GBP
-  initial: EUR
+    - eur
+    - usd
+    - gbp
+  initial: eur
 
 task_difficulty:
   name: "Task Difficulty"

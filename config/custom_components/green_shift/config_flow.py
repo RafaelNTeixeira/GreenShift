@@ -102,9 +102,9 @@ class GreenShiftConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         data_schema = vol.Schema({
             # Currency selection with default and dropdown options
-            vol.Required("currency", default="EUR"): SelectSelector(
+            vol.Required("currency", default="eur"): SelectSelector(
                 SelectSelectorConfig(
-                    options=["EUR", "USD", "GBP"],
+                    options=["eur", "usd", "gbp"],
                     mode=SelectSelectorMode.DROPDOWN,
                     translation_key="currency"
                 )
