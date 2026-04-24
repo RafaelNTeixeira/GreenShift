@@ -3,7 +3,7 @@ clean_research_data.py
 ======================
 Data cleaning script for the energy-saving research project (Green Shift / Gamification + AI).
 
-Cleaned tables:
+Per-intervention DB tables (read from input_dir):
     - research_area_daily_stats
     - research_blocked_notifications
     - research_daily_aggregates
@@ -13,17 +13,26 @@ Cleaned tables:
     - research_task_interactions
     - research_weekly_challenges
 
+Cross-intervention forms file (passed explicitly via --forms):
+    - research_participant_survey (Google Forms export, spans all interventions)
+
 Usage:
-    python clean_research_data.py [input_dir] [output_dir]
+    python clean_research_data.py [input_dir] [output_dir] [--forms PATH] [--forms-output DIR]
 
 Examples:
-    python clean_research_data.py                                    # uses ./ and ./cleaned_data/
-    python clean_research_data.py ./research_export                  # uses custom input dir
-    python clean_research_data.py ./research_export/ ./cleaned_data  # custom input and output dirs
+    python clean_research_data.py                                         # uses ./ and ./cleaned_data/
+    python clean_research_data.py ./lab_export                            # custom input dir
+    python clean_research_data.py ./lab_export ./cleaned_lab              # custom input and output dirs
+    python clean_research_data.py ./lab_export ./cleaned_lab \
+        --forms ./global_data/research_participant_survey.csv             # forms -> ./cleaned_forms/ (default)
+    python clean_research_data.py ./lab_export ./cleaned_lab \
+        --forms ./global_data/research_participant_survey.csv \
+        --forms-output ./global_data                                      # forms -> custom folder
 """
 
 from __future__ import annotations
 
+import re
 import sys
 import json
 import warnings
@@ -958,6 +967,343 @@ def clean_weekly_challenges(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def clean_participant_survey(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    research_participant_survey
+    ---------------------------
+    End-of-study questionnaire filled in by participants via Google Forms.
+    Contains demographics, five Likert-scale sections, one ordinal fatigue
+    item, and three open-ended feedback questions.
+
+    Scales:
+      - SUS (Usability)        : 1-5  ("1 (Strongly Disagree)" ... "5 (Strongly Agree)")
+      - Gamification & Tasks   : 1-7  ("1 (Not true at all)"   ... "7 (Very true)")
+      - Notification Impact    : 1-5  (plain integers)
+      - Habit Formation        : 1-5  (plain integers)
+      - System Trust           : 1-5  (mixed: labels on anchors, plain int in between)
+      - Smarthome Familiarity  : 1-5  (plain integer)
+      - Fatigue                : ordinal text -> encoded 1-5
+
+    Known issues to handle:
+      - Column names contain emojis, leading/trailing spaces, and long sub-item
+        labels in square brackets -> renamed to short snake_case identifiers.
+      - Timestamp is a Google Forms Portuguese locale string
+        ("2026/04/24 9:27:35 a.m. CET") -> parsed to UTC datetime.
+      - Likert anchor rows mix labelled strings ("1 (Strongly Disagree)") with
+        plain integers -> unified to int via regex.
+      - Overall Fatigue uses frequency text ("Never"..."Always") -> encoded 1-5.
+      - Open-ended columns are free text; blank strings normalised to NaN.
+      - Computed column: sus_score (classic SUS 0-100 formula).
+    """
+    issues:       list[str] = []
+    dropped_cols: list[str] = []
+    added_cols:   list[str] = []
+    original_rows = len(df)
+
+    # -------------------------------------------------------------------------
+    # 1. Column renaming
+    # -------------------------------------------------------------------------
+    COLUMN_RENAME = {
+        # Demographics & metadata
+        "Carimbo de data/hora":
+            "submitted_at",
+        "🎂 What is your age group?  ":
+            "age_group",
+        "👤 What is your gender?  ":
+            "gender",
+        "  🏡 In which setting was the Green Shift system used?":
+            "setting",
+        "📱 How would you rate your familiarity and comfort with Smart Home "
+        "systems (like Home Assistant) before this study?  ":
+            "smarthome_familiarity",
+        # ⚙️ Usability (SUS) \ 10 items, 1-5 scale
+        "⚙️ Usability Rating  [I think that I would like to use this system frequently.]":
+            "sus_q1",
+        "⚙️ Usability Rating  [I found the system unnecessarily complex.]":
+            "sus_q2",
+        "⚙️ Usability Rating  [I thought the system was easy to use.]":
+            "sus_q3",
+        "⚙️ Usability Rating  [I think that I would need the support of a "
+        "technical person to be able to use this system.]":
+            "sus_q4",
+        "⚙️ Usability Rating  [I found the various functions in this system "
+        "were well integrated.]":
+            "sus_q5",
+        "⚙️ Usability Rating  [I thought there was too much inconsistency in "
+        "this system.]":
+            "sus_q6",
+        "⚙️ Usability Rating  [I would imagine that most people would learn to "
+        "use this system very quickly.]":
+            "sus_q7",
+        "⚙️ Usability Rating  [I found the system very cumbersome to use.]":
+            "sus_q8",
+        "⚙️ Usability Rating  [I felt very confident using the system.]":
+            "sus_q9",
+        "⚙️ Usability Rating  [I needed to learn a lot of things before I could "
+        "get going with this system.]":
+            "sus_q10",
+        # 🏆 Gamification & Tasks - 8 items, 1-7 scale
+        "🏆 Gamification and Tasks [I enjoyed completing the daily energy-saving "
+        "tasks very much.]":
+            "gamification_q1",
+        "🏆 Gamification and Tasks [The weekly challenges were fun to participate in.]":
+            "gamification_q2",
+        "🏆 Gamification and Tasks [I thought the gamification features (like "
+        "streaks and tasks) were quite enjoyable.]":
+            "gamification_q3",
+        "🏆 Gamification and Tasks [I would describe the energy-saving "
+        "interventions as very interesting.]":
+            "gamification_q4",
+        "🏆 Gamification and Tasks [I believe completing these daily tasks was "
+        "of some value to me.]":
+            "gamification_q5",
+        "🏆 Gamification and Tasks [I think that doing the weekly challenges is "
+        "useful for improving my daily energy consumption habits.]":
+            "gamification_q6",
+        "🏆 Gamification and Tasks [I believe this system could be of some value "
+        "to help me save energy in the long term.]":
+            "gamification_q7",
+        "🏆 Gamification and Tasks [I felt that doing these tasks was beneficial "
+        "for my household.]":
+            "gamification_q8",
+        # 🔔 Notification Impact - 5 items, 1-5 scale
+        "🔔 Notification Impact  [The total number of energy-saving notifications "
+        "I received per day was overwhelming.]":
+            "notification_q1",
+        "🔔 Notification Impact  [I felt annoyed by how often the AI suggested "
+        "actions or tasks.]":
+            "notification_q2",
+        "🔔 Notification Impact  [The system frequently sent me notifications at "
+        "inappropriate, highly disruptive, or inconvenient times.]":
+            "notification_q3",
+        "🔔 Notification Impact  [I felt that the AI learned to respect my "
+        "schedule and tolerance for interruptions over time.]":
+            "notification_q4",
+        "🔔 Notification Impact  [I felt pressured or coerced by the AI's "
+        "notifications rather than gently encouraged.]":
+            "notification_q5",
+        # 🥱 Overall Fatigue - ordinal text
+        "🥱 Overall Fatigue: How often did you experience \"notification fatigue\" "
+        "(the desire to ignore or disable the alerts) while using this system?  ":
+            "fatigue_overall",
+        # 🔄 Habit Formation - 4 items, 1-5 scale
+        "🔄 Habit Formation [Because of this system, I am now more conscious of "
+        "my energy usage even when I am not looking at the app.]":
+            "habit_q1",
+        "🔄 Habit Formation [I have continued to perform some energy-saving "
+        "actions even when not explicitly prompted by a task.]":
+            "habit_q2",
+        "🔄 Habit Formation [The weekly challenges helped me build new, long-term "
+        "habits regarding energy consumption.]":
+            "habit_q3",
+        "🔄 Habit Formation [I discuss energy saving more frequently with other "
+        "members of my household now than I did 3 months ago.]":
+            "habit_q4",
+        # 🔍 System Trust - 4 items, 1-5 scale
+        "🔍 System Trust  [I usually understood exactly why the AI was suggesting "
+        "a specific energy-saving action at that moment.]":
+            "trust_q1",
+        "🔍 System Trust  [The AI's recommendations felt directly relevant to my "
+        "household's current context (e.g., time of day, occupancy).]":
+            "trust_q2",
+        "🔍 System Trust  [I trusted the AI to make accurate suggestions regarding "
+        "my energy consumption.]":
+            "trust_q3",
+        "🔍 System Trust  [The system provided enough information for me to "
+        "understand how it calculated my task difficulty and rewards.]":
+            "trust_q4",
+        # 🪄🎯🗣️ Open-ended feedback
+        "🪄 If you could change one thing about how the AI interacts with you, "
+        "what would it be?  ":
+            "feedback_ai_change",
+        "🎯 Do you have any specific examples of a time the AI gave a highly "
+        "useful suggestion, or a highly inappropriate one? ":
+            "feedback_ai_examples",
+        "🗣️ Is there any other feedback regarding your experience over the past "
+        "months that you would like to share with the research team?":
+            "feedback_general",
+    }
+
+    # Strip leading/trailing spaces from column names before renaming so the
+    # mapping is resilient to minor whitespace drift in future form exports.
+    df.columns = [c.strip() for c in df.columns]
+    rename_stripped = {k.strip(): v for k, v in COLUMN_RENAME.items()}
+    df = df.rename(columns=rename_stripped)
+
+    unmapped = [c for c in df.columns if c not in rename_stripped.values()]
+    if unmapped:
+        issues.append(
+            f"Unexpected column(s) not in rename map (kept as-is): {unmapped}"
+        )
+
+    # -------------------------------------------------------------------------
+    # 2. Timestamp
+    # -------------------------------------------------------------------------
+    # Google Forms PT locale: "2026/04/24 9:27:35 a.m. CET"
+    if "submitted_at" in df.columns:
+        # Normalise a.m./p.m. -> AM/PM, strip the TZ abbreviation (CET, WET, …)
+        normalised = (
+            df["submitted_at"]
+            .astype(str)
+            .str.replace(r"\ba\.m\.\b", "AM", regex=True)
+            .str.replace(r"\bp\.m\.\b", "PM", regex=True)
+            .str.replace(r"\s+[A-Z]{2,4}$", "", regex=True)   # strip TZ suffix
+            .str.strip()
+        )
+        df["submitted_at"] = pd.to_datetime(normalised, errors="coerce", utc=False)
+        # Localise as UTC (CET submissions are treated as UTC; adjust the offset
+        # constant here if a different base timezone is needed).
+        df["submitted_at"] = df["submitted_at"].dt.tz_localize("UTC", ambiguous="NaT",
+                                                                nonexistent="NaT")
+        n_bad_ts = df["submitted_at"].isna().sum()
+        if n_bad_ts:
+            issues.append(
+                f"submitted_at: {n_bad_ts} value(s) failed to parse -> NaN"
+            )
+
+    # -------------------------------------------------------------------------
+    # 3. Likert extraction helper
+    # -------------------------------------------------------------------------
+    def _extract_likert_int(series: pd.Series, col: str) -> pd.Series:
+        """
+        Extracts the leading integer from Likert strings.
+        Handles both plain integers (4) and labelled anchors ("1 (Strongly Disagree)").
+        """
+        def _parse(val):
+            if pd.isna(val):
+                return np.nan
+            m = re.match(r"^\s*(\d+)", str(val))
+            return int(m.group(1)) if m else np.nan
+
+        result = series.apply(_parse)
+        n_failed = int(result.isna().sum()) - int(series.isna().sum())
+        if n_failed > 0:
+            issues.append(
+                f"Column '{col}': {n_failed} value(s) could not be parsed "
+                "as a Likert integer -> NaN"
+            )
+        return result
+
+    # -------------------------------------------------------------------------
+    # 4. Parse and validate Likert scales
+    # -------------------------------------------------------------------------
+    # SUS: 1-5
+    sus_cols = [f"sus_q{i}" for i in range(1, 11)]
+    for col in sus_cols:
+        if col in df.columns:
+            df[col] = _extract_likert_int(df[col], col)
+            df[col] = validate_range(df, col, 1, 5, issues)
+
+    # Gamification: 1-7
+    gamification_cols = [f"gamification_q{i}" for i in range(1, 9)]
+    for col in gamification_cols:
+        if col in df.columns:
+            df[col] = _extract_likert_int(df[col], col)
+            df[col] = validate_range(df, col, 1, 7, issues)
+
+    # Notification Impact: 1-5
+    notification_cols = [f"notification_q{i}" for i in range(1, 6)]
+    for col in notification_cols:
+        if col in df.columns:
+            df[col] = _extract_likert_int(df[col], col)
+            df[col] = validate_range(df, col, 1, 5, issues)
+
+    # Habit Formation: 1-5
+    habit_cols = [f"habit_q{i}" for i in range(1, 5)]
+    for col in habit_cols:
+        if col in df.columns:
+            df[col] = _extract_likert_int(df[col], col)
+            df[col] = validate_range(df, col, 1, 5, issues)
+
+    # System Trust: 1-5
+    trust_cols = [f"trust_q{i}" for i in range(1, 5)]
+    for col in trust_cols:
+        if col in df.columns:
+            df[col] = _extract_likert_int(df[col], col)
+            df[col] = validate_range(df, col, 1, 5, issues)
+
+    # SmartHome Familiarity: 1-5
+    if "smarthome_familiarity" in df.columns:
+        df["smarthome_familiarity"] = pd.to_numeric(
+            df["smarthome_familiarity"], errors="coerce"
+        )
+        df["smarthome_familiarity"] = validate_range(
+            df, "smarthome_familiarity", 1, 5, issues
+        )
+
+    # -------------------------------------------------------------------------
+    # 5. Fatigue: ordinal text -> integer (1=Never ... 5=Always)
+    # -------------------------------------------------------------------------
+    FATIGUE_MAP = {
+        "Never":     1,
+        "Rarely":    2,
+        "Sometimes": 3,
+        "Often":     4,
+        "Always":    5,
+    }
+    if "fatigue_overall" in df.columns:
+        raw_fatigue = df["fatigue_overall"].str.strip()
+        df["fatigue_overall_encoded"] = raw_fatigue.map(FATIGUE_MAP)
+        n_unmapped = raw_fatigue.notna().sum() - df["fatigue_overall_encoded"].notna().sum()
+        if n_unmapped:
+            bad_vals = raw_fatigue[
+                raw_fatigue.notna() & df["fatigue_overall_encoded"].isna()
+            ].unique().tolist()
+            issues.append(
+                f"fatigue_overall: {n_unmapped} value(s) not in "
+                f"{{Never, Rarely, Sometimes, Often, Always}} -> "
+                f"fatigue_overall_encoded set to NaN ({bad_vals})"
+            )
+        added_cols.append("fatigue_overall_encoded")
+
+    # -------------------------------------------------------------------------
+    # 6. Open-ended text: normalise blank strings to NaN
+    # -------------------------------------------------------------------------
+    open_ended_cols = ["feedback_ai_change", "feedback_ai_examples", "feedback_general"]
+    for col in open_ended_cols:
+        if col in df.columns:
+            df[col] = df[col].where(
+                df[col].astype(str).str.strip().str.len() > 0, other=np.nan
+            )
+
+    # -------------------------------------------------------------------------
+    # 7. Computed column: SUS score (classic formula, 0-100)
+    # -------------------------------------------------------------------------
+    # Odd items (positive): contribution = value - 1
+    # Even items (negative): contribution = 5 - value
+    # SUS = sum(contributions) * 2.5
+    sus_odd  = [f"sus_q{i}" for i in [1, 3, 5, 7, 9]]
+    sus_even = [f"sus_q{i}" for i in [2, 4, 6, 8, 10]]
+    required_sus = sus_odd + sus_even
+
+    if all(c in df.columns for c in required_sus):
+        odd_score  = df[sus_odd].subtract(1).sum(axis=1, min_count=len(sus_odd))
+        even_score = df[sus_even].rsub(5).sum(axis=1, min_count=len(sus_even))
+        df["sus_score"] = ((odd_score + even_score) * 2.5).round(2)
+        df["sus_score"] = validate_range(df, "sus_score", 0, 100, issues)
+        n_missing_sus = df["sus_score"].isna().sum()
+        if n_missing_sus:
+            issues.append(
+                f"sus_score: {n_missing_sus} row(s) with NaN (incomplete SUS responses)"
+            )
+        added_cols.append("sus_score")
+    else:
+        missing_sus = [c for c in required_sus if c not in df.columns]
+        issues.append(f"sus_score: skipped - missing SUS column(s): {missing_sus}")
+
+    # -------------------------------------------------------------------------
+    # 8. Sort by submission time
+    # -------------------------------------------------------------------------
+    if "submitted_at" in df.columns:
+        df = df.sort_values("submitted_at").reset_index(drop=True)
+
+    report.register(
+        "research_participant_survey", original_rows, len(df),
+        issues, dropped_cols, added_cols
+    )
+    return df
+
+
 # ------------------------------------------------------------------------------
 # MAIN PIPELINE
 # ------------------------------------------------------------------------------
@@ -974,19 +1320,31 @@ CLEANERS = {
 }
 
 
-def run_pipeline(input_dir: Path, output_dir: Path) -> bool:
+def run_pipeline(input_dir: Path, output_dir: Path,
+                 forms_path: "Path | None" = None,
+                 forms_output_dir: "Path | None" = None) -> bool:
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Default forms output: sibling folder named "cleaned_forms"
+    if forms_path is not None and forms_output_dir is None:
+        forms_output_dir = output_dir.parent / "cleaned_forms"
+    if forms_output_dir is not None:
+        forms_output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'═' * 80}")
     print("  GREEN SHIFT - DATA CLEANING PIPELINE")
     print(f"{'═' * 80}")
     print(f"  Source      : {input_dir.resolve()}")
     print(f"  Destination : {output_dir.resolve()}")
+    if forms_path:
+        print(f"  Forms file  : {forms_path.resolve()}")
+        print(f"  Forms dest  : {forms_output_dir.resolve()}")
     print(f"  Date/time   : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
 
     success_count = 0
     fail_count    = 0
 
+    # -- Per-intervention DB tables -------------------------------------------
     for table_name, cleaner_fn in CLEANERS.items():
         csv_path = input_dir / f"{table_name}.csv"
 
@@ -1010,6 +1368,32 @@ def run_pipeline(input_dir: Path, output_dir: Path) -> bool:
             print(f"  ❌ {table_name:<45} - ERROR: {exc}")
             fail_count += 1
 
+    # -- Cross-intervention forms file (optional) -----------------------------
+    forms_label = "research_participant_survey"
+    if forms_path is not None:
+        if not forms_path.exists():
+            print(f"  ❌ {forms_label:<45} - forms file not found: {forms_path}")
+            fail_count += 1
+        else:
+            try:
+                df_raw   = pd.read_csv(forms_path)
+                df_clean = clean_participant_survey(df_raw.copy())
+
+                out_path = forms_output_dir / f"{forms_label}_clean.csv"
+                df_clean.to_csv(out_path, index=False)
+
+                print(f"  ✅ {forms_label:<45} "
+                      f"({len(df_raw)} -> {len(df_clean)} rows, "
+                      f"{len(df_clean.columns)} columns)"
+                      f" -> {forms_output_dir.name}/{out_path.name}")
+                success_count += 1
+
+            except Exception as exc:
+                print(f"  ❌ {forms_label:<45} - ERROR: {exc}")
+                fail_count += 1
+    else:
+        print(f"  -  {forms_label:<45} - skipped (no --forms path provided)")
+
     report.print_summary()
 
     print(f"  ✅ Success : {success_count} tables")
@@ -1020,18 +1404,58 @@ def run_pipeline(input_dir: Path, output_dir: Path) -> bool:
 
 
 def main() -> int:
-    if len(sys.argv) > 3:
-        print("Usage: python clean_research_data.py [input_dir] [output_dir]")
-        return 1
+    import argparse
 
-    input_dir  = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
-    output_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("cleaned_data")
+    parser = argparse.ArgumentParser(
+        prog="clean_research_data.py",
+        description="Green Shift - data cleaning pipeline",
+    )
+    parser.add_argument(
+        "input_dir",
+        nargs="?",
+        default=".",
+        help="Directory containing the per-intervention DB CSV exports (default: .)",
+    )
+    parser.add_argument(
+        "output_dir",
+        nargs="?",
+        default="cleaned_data",
+        help="Directory to write cleaned CSVs into (default: ./cleaned_data)",
+    )
+    parser.add_argument(
+        "--forms",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Path to the cross-intervention Google Forms CSV "
+            "(research_participant_survey). Optional - omit if you only "
+            "want to clean the DB tables for a single intervention."
+        ),
+    )
+    parser.add_argument(
+        "--forms-output",
+        metavar="DIR",
+        default=None,
+        help=(
+            "Directory to write the cleaned forms CSV into. "
+            "Defaults to a sibling of output_dir named 'cleaned_forms'. "
+            "Has no effect when --forms is not provided."
+        ),
+    )
+    args = parser.parse_args()
+
+    input_dir        = Path(args.input_dir)
+    output_dir       = Path(args.output_dir)
+    forms_path       = Path(args.forms) if args.forms else None
+    forms_output_dir = Path(args.forms_output) if args.forms_output else None
 
     if not input_dir.exists():
         print(f"❌ Input directory not found: {input_dir}")
         return 1
 
-    ok = run_pipeline(input_dir, output_dir)
+    ok = run_pipeline(input_dir, output_dir,
+                      forms_path=forms_path,
+                      forms_output_dir=forms_output_dir)
     return 0 if ok else 1
 
 
