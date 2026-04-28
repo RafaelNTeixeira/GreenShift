@@ -69,6 +69,80 @@ UNIX_TS_COLS = {
     ],
 }
 
+# Decimal precision per column.
+# Rules of thumb used:
+#   Power / energy values  -> 2 dp  
+#   Energy (kWh)           -> 4 dp  
+#   0-1 indices / scores   -> 4 dp  
+#   Environment sensors    -> 2 dp  
+#   Occupancy / time       -> 2 dp
+#   Percentages / rates    -> 2 dp
+COLUMN_ROUNDING: dict[str, int] = {
+    # Power & energy
+    "avg_power_w":                2,
+    "max_power_w":                2,
+    "min_power_w":                2,
+    "peak_power_w":               2,
+    "avg_power_working_hours":    2,
+    "avg_power_off_hours":        2,
+    "current_power":              2,
+    "power_at_generation":        2,
+    "total_energy_kwh":           4,
+    "energy_norm_hdd_kwh":        4,
+    "working_hours_efficiency_w": 2,
+    "baseline_W":                 2,
+    "actual_W":                   2,
+    "savings_W":                  2,
+    "baseline_consumption_W":     2,
+    "baseline_power_reference":   2,
+    "sv_global_power_w":          2,
+    "sv_top_consumer_w":          2,
+    # Indices / RL values (0-1)
+    "anomaly_index":              4,
+    "behaviour_index":            4,
+    "fatigue_index":              4,
+    "opportunity_score":          4,
+    "avg_anomaly_index":          4,
+    "avg_behaviour_index":        4,
+    "avg_fatigue_index":          4,
+    "reward":                     4,
+    "epsilon":                    4,
+    "gamma_used":                 4,
+    "max_q_value":                4,
+    "nudge_acceptance_rate":      4,
+    "q_noop":                     4,
+    "q_specific":                 4,
+    "q_anomaly":                  4,
+    "q_behavioural":              4,
+    "q_normative":                4,
+    "sv_anomaly_index":           4,
+    "sv_behaviour_index":         4,
+    "sv_fatigue_index":           4,
+    "sv_time_of_day_norm":        4,
+    "sv_day_of_week_norm":        4,
+    # Environment sensors
+    "avg_temperature":            2,
+    "avg_humidity":               2,
+    "avg_illuminance":            2,
+    "sv_temperature_c":           2,
+    "sv_humidity_pct":            2,
+    "sv_illuminance_lx":          2,
+    # Occupancy
+    "avg_occupancy_count":        2,
+    "occupancy_percentage":       2,
+    "total_occupied_hours":       2,
+    # Percentages & rates
+    "savings_percentage":         2,
+    "target_percentage":          2,
+    # Time
+    "response_time_minutes":      2,
+    "time_to_complete_minutes":   2,
+    "duration_days":              2,
+    # Weather
+    "hdd_base18":                 2,
+    "outdoor_temp_celsius":       2,
+}
+
 # Columns with JSON strings (dictionary or list) -> expand into new columns
 JSON_COLS = {
     "research_blocked_notifications": ["action_mask", "state_vector"],
@@ -292,6 +366,20 @@ def validate_range(df: pd.DataFrame, col: str, lo: float, hi: float,
     return df[col].where(~mask, other=np.nan)
 
 
+def round_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Rounds float columns to their defined precision from COLUMN_ROUNDING.
+    Only acts on columns that are present in the DataFrame and have a float dtype.
+    Integer/bool/object columns are left untouched.
+    """
+    for col, decimals in COLUMN_ROUNDING.items():
+        if col in df.columns:
+            # Only round genuine float columns; leave int/bool/object alone
+            if pd.api.types.is_float_dtype(df[col]):
+                df[col] = df[col].round(decimals)
+    return df
+
+
 # ------------------------------------------------------------------------------
 # CLEANING PER TABLE
 # ------------------------------------------------------------------------------
@@ -355,7 +443,10 @@ def clean_area_daily_stats(df: pd.DataFrame) -> pd.DataFrame:
     df["has_sensor_data"] = df["avg_power_w"].notna().astype(int)
     added_cols.append("has_sensor_data")
 
-    # -- 7. Sort --------------------------------------------------------------
+    # -- 7. Round numeric columns ---------------------------------------------
+    df = round_columns(df)
+
+    # -- 8. Sort --------------------------------------------------------------
     df = df.sort_values(["date", "area_name"]).reset_index(drop=True)
 
     report.register("research_area_daily_stats", original_rows, len(df),
@@ -404,7 +495,10 @@ def clean_blocked_notifications(df: pd.DataFrame) -> pd.DataFrame:
     df = pd.concat([df, sv_expanded, mask_expanded], axis=1)
     added_cols += list(sv_expanded.columns) + list(mask_expanded.columns)
 
-    # -- 5. Sort --------------------------------------------------------------
+    # -- 5. Round numeric columns ---------------------------------------------
+    df = round_columns(df)
+
+    # -- 6. Sort --------------------------------------------------------------
     df = df.sort_values("timestamp").reset_index(drop=True)
 
     report.register("research_blocked_notifications", original_rows, len(df),
@@ -567,7 +661,10 @@ def clean_daily_aggregates(df: pd.DataFrame) -> pd.DataFrame:
         )
         df = df.sort_values("created_at").drop_duplicates(subset=["date"], keep="last")
 
-    # -- 12. Sort -------------------------------------------------------------
+    # -- 12. Round numeric columns --------------------------------------------
+    df = round_columns(df)
+
+    # -- 13. Sort -------------------------------------------------------------
     df = df.sort_values("date").reset_index(drop=True)
 
     report.register("research_daily_aggregates", original_rows, len(df),
@@ -651,7 +748,10 @@ def clean_nudge_log(df: pd.DataFrame) -> pd.DataFrame:
             "(possible resends) - kept all"
         )
 
-    # -- 11. Sort -------------------------------------------------------------
+    # -- 11. Round numeric columns --------------------------------------------
+    df = round_columns(df)
+
+    # -- 12. Sort -------------------------------------------------------------
     df = df.sort_values("timestamp").reset_index(drop=True)
 
     report.register("research_nudge_log", original_rows, len(df),
@@ -713,7 +813,10 @@ def clean_phase_metadata(df: pd.DataFrame) -> pd.DataFrame:
             "baseline_occupancy_avg: 100% NaN - metric not calculated"
         )
 
-    # -- 7. Sort --------------------------------------------------------------
+    # -- 7. Round numeric columns ---------------------------------------------
+    df = round_columns(df)
+
+    # -- 8. Sort --------------------------------------------------------------
     df = df.sort_values("start_timestamp").reset_index(drop=True)
 
     report.register("research_phase_metadata", original_rows, len(df),
@@ -806,7 +909,10 @@ def clean_rl_episodes(df: pd.DataFrame) -> pd.DataFrame:
             subset=["episode_number", "phase"], keep="last"
         )
 
-    # -- 9. Sort --------------------------------------------------------------
+    # -- 9. Round numeric columns ---------------------------------------------
+    df = round_columns(df)
+
+    # -- 10. Sort -------------------------------------------------------------
     df = df.sort_values(["phase", "episode_number"]).reset_index(drop=True)
 
     report.register("research_rl_episodes", original_rows, len(df),
@@ -893,7 +999,10 @@ def clean_task_interactions(df: pd.DataFrame) -> pd.DataFrame:
     if fully_null:
         issues.append(f"Columns without any value (100% NaN): {fully_null}")
 
-    # -- 9. Sort --------------------------------------------------------------
+    # -- 9. Round numeric columns ---------------------------------------------
+    df = round_columns(df)
+
+    # -- 10. Sort -------------------------------------------------------------
     df = df.sort_values(["date", "task_type"]).reset_index(drop=True)
 
     report.register("research_task_interactions", original_rows, len(df),
@@ -959,7 +1068,10 @@ def clean_weekly_challenges(df: pd.DataFrame) -> pd.DataFrame:
     df["is_ongoing"] = df["actual_W"].isna().astype(int)
     added_cols.append("is_ongoing")
 
-    # -- 8. Sorting -----------------------------------------------------------
+    # -- 8. Round numeric columns ---------------------------------------------
+    df = round_columns(df)
+
+    # -- 9. Sorting -----------------------------------------------------------
     df = df.sort_values("week_start_date").reset_index(drop=True)
 
     report.register("research_weekly_challenges", original_rows, len(df),
@@ -1296,6 +1408,11 @@ def clean_participant_survey(df: pd.DataFrame) -> pd.DataFrame:
     # -------------------------------------------------------------------------
     if "submitted_at" in df.columns:
         df = df.sort_values("submitted_at").reset_index(drop=True)
+
+    # -------------------------------------------------------------------------
+    # 9. Round numeric columns
+    # -------------------------------------------------------------------------
+    df = round_columns(df)
 
     report.register(
         "research_participant_survey", original_rows, len(df),
