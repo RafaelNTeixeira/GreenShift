@@ -41,7 +41,7 @@ KEEP_SHUTDOWN_BACKUPS = 2  # Keep last N shutdown backups (prevents accumulation
 
 # Data retention settings
 RESEARCH_RETENTION_DAYS = 120  # Keep research data for 120 days (4 months)
-NOTIFICATION_HISTORY_LIMIT = 100 # Keep last N notifications in JSON state
+NOTIFICATION_HISTORY_LIMIT = 20 # Keep last N notifications in JSON state
 
 # Weather-related constants
 BASE_TEMPERATURE = 18.0
