@@ -97,6 +97,7 @@ COLUMN_ROUNDING: dict[str, int] = {
     "baseline_power_reference":   2,
     "sv_global_power_w":          2,
     "sv_top_consumer_w":          2,
+    "inst_task_savings":          2,
     # Indices / RL values (0-1)
     "anomaly_index":              4,
     "behaviour_index":            4,
@@ -134,6 +135,7 @@ COLUMN_ROUNDING: dict[str, int] = {
     # Percentages & rates
     "savings_percentage":         2,
     "target_percentage":          2,
+    "percentage_savings":         2,
     # Time
     "response_time_minutes":      2,
     "time_to_complete_minutes":   2,
@@ -999,10 +1001,32 @@ def clean_task_interactions(df: pd.DataFrame) -> pd.DataFrame:
     if fully_null:
         issues.append(f"Columns without any value (100% NaN): {fully_null}")
 
-    # -- 9. Round numeric columns ---------------------------------------------
+    # -- 9. Auxiliary columns: Task Savings -----------------------------------
+    # inst_task_savings = baseline_value - completion_value
+    # percentage_savings = (inst_task_savings / baseline_value) * 100
+    # Calculated only for completed tasks to avoid misleading data.
+    
+    is_completed = df["completed"] == 1
+    
+    df["inst_task_savings"] = np.where(
+        is_completed,
+        df["baseline_value"] - df["completion_value"],
+        np.nan
+    )
+    
+    valid_baseline = df["baseline_value"] > 0
+    df["percentage_savings"] = np.where(
+        is_completed & valid_baseline,
+        (df["inst_task_savings"] / df["baseline_value"]) * 100,
+        np.nan
+    )
+    
+    added_cols += ["inst_task_savings", "percentage_savings"]
+
+    # -- 10. Round numeric columns ---------------------------------------------
     df = round_columns(df)
 
-    # -- 10. Sort -------------------------------------------------------------
+    # -- 11. Sort -------------------------------------------------------------
     df = df.sort_values(["date", "task_type"]).reset_index(drop=True)
 
     report.register("research_task_interactions", original_rows, len(df),
