@@ -844,8 +844,8 @@ def clean_rl_episodes(df: pd.DataFrame) -> pd.DataFrame:
     original_rows = len(df)
 
     # -- 1. Timestamps --------------------------------------------------------
-    df["timestamp"]  = unix_to_datetime(df["timestamp"],  "timestamp")
-    df["created_at"] = pd.to_datetime(df["created_at"],   errors="coerce")
+    df["timestamp"]  = unix_to_datetime(df["timestamp"], "timestamp").dt.strftime('%Y-%m-%d')
+    df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
 
     # -- 2. Categories --------------------------------------------------------
     df["phase"]         = flag_invalid_categories(df, "phase",         VALID_PHASES,        issues)

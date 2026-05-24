@@ -15,14 +15,14 @@ FEUP_EXPORT_DIR := ./feup_data/feup_research_data
 FEUP_CLEAN_DIR := ./feup_data/feup_cleaned_data
 
 # HOME1 (planned)
-# HOME1_DB := ./home1_data/home1_db/research_data.db
-# HOME1_EXPORT_DIR := ./home1_data/home1_research_data
-# HOME1_CLEAN_DIR := ./home1_data/home1_cleaned_data
+HOME1_DB := ./home1_data/home1_db/research_data.db
+HOME1_EXPORT_DIR := ./home1_data/home1_research_data
+HOME1_CLEAN_DIR := ./home1_data/home1_cleaned_data
 
 # HOME2 (planned)
-# HOME2_DB := ./home2_data/home2_db/research_data.db
-# HOME2_EXPORT_DIR := ./home2_data/home2_research_data
-# HOME2_CLEAN_DIR := ./home2_data/home2_cleaned_data
+HOME2_DB := ./home2_data/home2_db/research_data.db
+HOME2_EXPORT_DIR := ./home2_data/home2_research_data
+HOME2_CLEAN_DIR := ./home2_data/home2_cleaned_data
 
 FORMS_FILE := ./global_data/research_participant_survey.csv
 FORMS_FILE_FOLDER_OUTPUT := ./global_data
