@@ -32,17 +32,17 @@ FORMS_FILE_FOLDER_OUTPUT := ./global_data
 export_all:
 	$(PYTHON) export_research.py $(FHP_DB) $(FHP_EXPORT_DIR)
 	$(PYTHON) export_research.py $(FEUP_DB) $(FEUP_EXPORT_DIR)
-	# $(PYTHON) export_research.py $(HOME1_DB) $(HOME1_EXPORT_DIR)
+	$(PYTHON) export_research.py $(HOME1_DB) $(HOME1_EXPORT_DIR)
 	# $(PYTHON) export_research.py $(HOME2_DB) $(HOME2_EXPORT_DIR)
 
 clean_all:
 	$(PYTHON) clean_research_data.py $(FHP_EXPORT_DIR) $(FHP_CLEAN_DIR) --forms $(FORMS_FILE) --forms-output $(FORMS_FILE_FOLDER_OUTPUT)
 	$(PYTHON) clean_research_data.py $(FEUP_EXPORT_DIR) $(FEUP_CLEAN_DIR) 
-	# $(PYTHON) clean_research_data.py $(HOME1_EXPORT_DIR) $(HOME1_CLEAN_DIR) 
-	# $(PYTHON) clean_research_data.py $(HOME2_EXPORT_DIR) $(HOME2_CLEAN_DIR)
+	$(PYTHON) clean_research_data.py $(HOME1_EXPORT_DIR) $(HOME1_CLEAN_DIR) 
+	$(PYTHON) clean_research_data.py $(HOME2_EXPORT_DIR) $(HOME2_CLEAN_DIR)
 
 merge:
 	$(PYTHON) merge_research_data.py $(FHP_CLEAN_DIR) $(FEUP_CLEAN_DIR)
-	# $(PYTHON) merge_research_data.py $(FHP_CLEAN_DIR) $(FEUP_CLEAN_DIR) $(HOME1_CLEAN_DIR) $(HOME2_CLEAN_DIR)
+	$(PYTHON) merge_research_data.py $(FHP_CLEAN_DIR) $(FEUP_CLEAN_DIR) $(HOME1_CLEAN_DIR) $(HOME2_CLEAN_DIR)
 
 all: export_all clean_all merge
