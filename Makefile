@@ -33,7 +33,7 @@ export_all:
 	$(PYTHON) export_research.py $(FHP_DB) $(FHP_EXPORT_DIR)
 	$(PYTHON) export_research.py $(FEUP_DB) $(FEUP_EXPORT_DIR)
 	$(PYTHON) export_research.py $(HOME1_DB) $(HOME1_EXPORT_DIR)
-	# $(PYTHON) export_research.py $(HOME2_DB) $(HOME2_EXPORT_DIR)
+	$(PYTHON) export_research.py $(HOME2_DB) $(HOME2_EXPORT_DIR)
 
 clean_all:
 	$(PYTHON) clean_research_data.py $(FHP_EXPORT_DIR) $(FHP_CLEAN_DIR) --forms $(FORMS_FILE) --forms-output $(FORMS_FILE_FOLDER_OUTPUT)
