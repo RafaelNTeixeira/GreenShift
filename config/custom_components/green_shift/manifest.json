@@ -7,7 +7,7 @@
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/RafaelNTeixeira/GreenShift",
-  "integration_type": "hub",
+  "integration_type": "service",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/RafaelNTeixeira/GreenShift/issues",
   "requirements": [
