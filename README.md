@@ -50,7 +50,7 @@ Green Shift is **fully translated** including dynamic content (AI notifications 
 
    ⚠️ **Note**: The Profile language (Settings -> Profile -> Language) only changes the Home Assistant UI language, not the integration language. You must change the **System Language** for Green Shift to detect it.
 
-2. **Update [`configuration.yaml`](./config/configuration.yaml)**:
+2. **Update `configuration.yaml`**:
    ```yaml
    homeassistant:
      customize: !include locales/customize_pt.yaml  # or locales/customize_en.yaml

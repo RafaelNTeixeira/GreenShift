@@ -85,21 +85,21 @@ Create a symbolic link to test your changes:
 
 ```bash
 # Navigate to HA custom_components folder
-cd /config/custom_components/
+cd /custom_components/
 
 # Create symbolic link to your development folder
-ln -s /path/to/your/GreenShift/config/custom_components/green_shift green_shift
+ln -s /path/to/your/GreenShift/custom_components/green_shift green_shift
 ```
 
 **Key Files Structure:**
-- [`config/custom_components/green_shift/`](../config/custom_components/green_shift/) - Integration code
-- [`config/custom_components/green_shift/translations/`](../config/custom_components/green_shift/translations/) - JSON translation files
-- [`config/locales/`](../config/locales/) - YAML translation files (dashboards & helpers)
-- [`config/configuration.yaml`](../config/configuration.yaml) - HA configuration
+- [`custom_components/green_shift/`](../custom_components/green_shift/) - Integration code
+- [`custom_components/green_shift/translations/`](../custom_components/green_shift/translations/) - JSON translation files
+- [`custom_components/green_shift//locales/`](../custom_components/green_shift/locales/) - YAML translation files (dashboards & helpers)
+- `configuration.yaml` - HA configuration
 
 ### 3. Enable Debug Logging
 
-Add to your [`configuration.yaml`](../config/configuration.yaml):
+Add to your `configuration.yaml`:
 
 ```yaml
 logger:
@@ -160,31 +160,31 @@ async def example_function(hass: HomeAssistant, param: str) -> dict:
 
 ### File Organization
 
-**Integration Code** ([`config/custom_components/green_shift/`](../config/custom_components/green_shift/)):
-- **[`__init__.py`](../config/custom_components/green_shift/__init__.py)**: Integration setup and entry point
-- **[`config_flow.py`](../config/custom_components/green_shift/config_flow.py)**: Configuration flow UI
-- **[`sensor.py`](../config/custom_components/green_shift/sensor.py)**: Sensor entity definitions
-- **[`select.py`](../config/custom_components/green_shift/select.py)**: Select entity definitions
-- **[`const.py`](../config/custom_components/green_shift/const.py)**: Constants and configuration
-- **[`data_collector.py`](../config/custom_components/green_shift/data_collector.py)**: Real-time data collection
-- **[`decision_agent.py`](../config/custom_components/green_shift/decision_agent.py)**: AI decision-making logic
-- **[`task_manager.py`](../config/custom_components/green_shift/task_manager.py)**: Task generation and verification
-- **[`storage.py`](../config/custom_components/green_shift/storage.py)**: Database management
-- **[`helpers.py`](../config/custom_components/green_shift/helpers.py)**: Utility functions
-- **[`translations_runtime.py`](../config/custom_components/green_shift/translations_runtime.py)**: Dynamic content translations
+**Integration Code** ([`custom_components/green_shift/`](../custom_components/green_shift/)):
+- **[`__init__.py`](../custom_components/green_shift/__init__.py)**: Integration setup and entry point
+- **[`config_flow.py`](../custom_components/green_shift/config_flow.py)**: Configuration flow UI
+- **[`sensor.py`](../custom_components/green_shift/sensor.py)**: Sensor entity definitions
+- **[`select.py`](../custom_components/green_shift/select.py)**: Select entity definitions
+- **[`const.py`](../custom_components/green_shift/const.py)**: Constants and configuration
+- **[`data_collector.py`](../custom_components/green_shift/data_collector.py)**: Real-time data collection
+- **[`decision_agent.py`](../custom_components/green_shift/decision_agent.py)**: AI decision-making logic
+- **[`task_manager.py`](../custom_components/green_shift/task_manager.py)**: Task generation and verification
+- **[`storage.py`](../custom_components/green_shift/storage.py)**: Database management
+- **[`helpers.py`](../custom_components/green_shift/helpers.py)**: Utility functions
+- **[`translations_runtime.py`](../custom_components/green_shift/translations_runtime.py)**: Dynamic content translations
 
-**Translation Files** ([`config/custom_components/green_shift/translations/`](../config/custom_components/green_shift/translations/)):
-- **[`en.json`](../config/custom_components/green_shift/translations/en.json)**: English translations
-- **[`pt.json`](../config/custom_components/green_shift/translations/pt.json)**: Portuguese translations
+**Translation Files** ([`custom_components/green_shift/translations/`](../custom_components/green_shift/translations/)):
+- **[`en.json`](../custom_components/green_shift/translations/en.json)**: English translations
+- **[`pt.json`](../custom_components/green_shift/translations/pt.json)**: Portuguese translations
 
-**Configuration Files** ([`config/`](../config/)):
-- **[`configuration.yaml`](../config/configuration.yaml)**: Main HA configuration
+**Configuration Files** ([``](../)):
+- **`configuration.yaml`**: Main HA configuration
 
-**Locale Files** ([`config/locales/`](../config/locales/)):
-- **[`ui-lovelace-en.yaml`](../config/locales/ui-lovelace-en.yaml)**: English dashboard
-- **[`ui-lovelace-pt.yaml`](../config/locales/ui-lovelace-pt.yaml)**: Portuguese dashboard
-- **[`customize_en.yaml`](../config/locales/customize_en.yaml)**: English helper names
-- **[`customize_pt.yaml`](../config/locales/customize_pt.yaml)**: Portuguese helper names
+**Locale Files** ([`locales/`](../custom_components/green_shift/locales/)):
+- **[`ui-lovelace-en.yaml`](../custom_components/green_shift/locales/ui-lovelace-en.yaml)**: English dashboard
+- **[`ui-lovelace-pt.yaml`](../custom_components/green_shift/locales/ui-lovelace-pt.yaml)**: Portuguese dashboard
+- **[`customize_en.yaml`](../custom_components/green_shift/locales/customize_en.yaml)**: English helper names
+- **[`customize_pt.yaml`](../custom_components/green_shift/locales/customize_pt.yaml)**: Portuguese helper names
 
 ### Best Practices
 
@@ -219,9 +219,9 @@ Translate sensors, services and config flow:
 
 ### 2. Dynamic Content Translations (Python)
 
-Translate AI notifications and tasks in [`translations_runtime.py`](../config/custom_components/green_shift/translations_runtime.py):
+Translate AI notifications and tasks in [`translations_runtime.py`](../custom_components/green_shift/translations_runtime.py):
 
-1. Edit [`translations_runtime.py`](../config/custom_components/green_shift/translations_runtime.py)
+1. Edit [`translations_runtime.py`](../custom_components/green_shift/translations_runtime.py)
 2. Add your language code to:
    - `NOTIFICATION_TEMPLATES["XX"]`
    - `TASK_TEMPLATES["XX"]`
@@ -230,15 +230,15 @@ Translate AI notifications and tasks in [`translations_runtime.py`](../config/cu
 
 ### 3. Dashboard Translations (YAML)
 
-1. Copy [`config/locales/ui-lovelace-en.yaml`](../config/locales/ui-lovelace-en.yaml) to `config/locales/ui-lovelace-XX.yaml`
+1. Copy [`locales/ui-lovelace-en.yaml`](../custom_components/green_shift/locales/ui-lovelace-en.yaml) to `custom_components/green_shift/locales/ui-lovelace-XX.yaml`
 2. Translate all markdown content and card titles
 3. Keep entity IDs unchanged
 
 ### 4. Helper Translations (YAML)
 
-1. Copy [`config/locales/customize_en.yaml`](../config/locales/customize_en.yaml) to `config/locales/customize_XX.yaml`
+1. Copy [`locales/customize_en.yaml`](../custom_components/green_shift/locales/customize_en.yaml) to `custom_components/green_shift/locales/customize_XX.yaml`
 2. Translate all `friendly_name` values
-3. Update [`configuration.yaml`](../config/configuration.yaml) to reference your new file:
+3. Update `configuration.yaml` to reference your new file:
    ```yaml
    homeassistant:
      customize: !include locales/customize_XX.yaml

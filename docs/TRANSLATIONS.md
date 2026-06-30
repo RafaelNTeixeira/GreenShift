@@ -40,7 +40,7 @@ Currently, Green Shift supports:
 
 ## Translation Structure
 
-Translation files are located in: [`config/custom_components/green_shift/translations/`](../config/custom_components/green_shift/translations/)
+Translation files are located in: [`custom_components/green_shift/translations/`](../custom_components/green_shift/translations/)
 
 Each translation file follows this structure:
 
@@ -63,7 +63,7 @@ Each translation file follows this structure:
 
 ## Runtime Translations (Dynamic Content)
 
-Dynamic content like **AI notifications** and **daily tasks** cannot use static JSON files because they are generated at runtime with variable data. For these, we use a Python module: [`translations_runtime.py`](../config/custom_components/green_shift/translations_runtime.py)
+Dynamic content like **AI notifications** and **daily tasks** cannot use static JSON files because they are generated at runtime with variable data. For these, we use a Python module: [`translations_runtime.py`](../custom_components/green_shift/translations_runtime.py)
 
 ### How Runtime Translations Work
 
@@ -116,7 +116,7 @@ message = templates["specific"][0]["message"].format(
 
 ### Adding Runtime Translations for New Language
 
-Edit [`translations_runtime.py`](../config/custom_components/green_shift/translations_runtime.py) and add your language code to:
+Edit [`translations_runtime.py`](../custom_components/green_shift/translations_runtime.py) and add your language code to:
 1. `NOTIFICATION_TEMPLATES["xx"]` - All notification templates
 2. `TASK_TEMPLATES["xx"]` - All task title/description templates
 3. `DIFFICULTY_DISPLAY["xx"]` - Difficulty level names
@@ -130,7 +130,7 @@ To add support for a new language (e.g., French):
 
 ### 1. Create the Translation File
 
-Create a new file in [`config/custom_components/green_shift/translations/`](../config/custom_components/green_shift/translations/): `translations/fr.json`
+Create a new file in [`custom_components/green_shift/translations/`](../custom_components/green_shift/translations/): `translations/fr.json`
 
 Use the ISO 639-1 language code:
 - French: `fr`
@@ -141,10 +141,10 @@ Use the ISO 639-1 language code:
 
 ### 2. Copy the English Template
 
-Start by copying [`en.json`](../config/custom_components/green_shift/translations/en.json) and translating all strings:
+Start by copying [`en.json`](../custom_components/green_shift/translations/en.json) and translating all strings:
 
 ```bash
-cp config/custom_components/green_shift/translations/en.json config/custom_components/green_shift/translations/fr.json
+cp custom_components/green_shift/translations/en.json custom_components/green_shift/translations/fr.json
 ```
 
 ### 3. Translate All Strings
@@ -201,7 +201,7 @@ Input helpers (like `input_number.energy_saving_target` and `input_select.curren
 
 ### Configuration
 
-Edit your [`configuration.yaml`](../config/configuration.yaml) and choose **ONE** customize file:
+Edit your `configuration.yaml` and choose **ONE** customize file:
 
 **For English:**
 ```yaml
@@ -217,9 +217,9 @@ homeassistant:
 
 ⚠️ **Important**: You can only have **ONE** active `customize:` line. Comment out the others with `#`.
 
-**Available customize files in [`config/locales/`](../config/locales/):**
-- [`customize_en.yaml`](../config/locales/customize_en.yaml) - English helper names
-- [`customize_pt.yaml`](../config/locales/customize_pt.yaml) - Portuguese helper names
+**Available customize files in [`custom_components/green_shift/locales/`](../custom_components/green_shift/locales/):**
+- [`customize_en.yaml`](../custom_components/green_shift/locales/customize_en.yaml) - English helper names
+- [`customize_pt.yaml`](../custom_components/green_shift/locales/customize_pt.yaml) - Portuguese helper names
 
 ### Customize File Structure
 
@@ -252,16 +252,16 @@ The customize files translate:
 
 ## Translating Lovelace UI
 
-The Lovelace dashboards are located in [`config/locales/`](../config/locales/) and contain hardcoded text that needs manual translation.
+The Lovelace dashboards are located in [`custom_components/green_shift/locales/`](../custom_components/green_shift/locales/) and contain hardcoded text that needs manual translation.
 
 ### ✅ Available Translated Dashboards
 
-- **English:** [`ui-lovelace-en.yaml`](../config/locales/ui-lovelace-en.yaml)
-- **Portuguese:** [`ui-lovelace-pt.yaml`](../config/locales/ui-lovelace-pt.yaml)
+- **English:** [`ui-lovelace-en.yaml`](../custom_components/green_shift/locales/ui-lovelace-en.yaml)
+- **Portuguese:** [`ui-lovelace-pt.yaml`](../custom_components/green_shift/locales/ui-lovelace-pt.yaml)
 
 ### Quick Setup
 
-Update your [`configuration.yaml`](../config/configuration.yaml) to select the dashboard language:
+Update your `configuration.yaml` to select the dashboard language:
 
 ```yaml
 lovelace:
